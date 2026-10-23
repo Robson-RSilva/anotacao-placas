@@ -1,54 +1,79 @@
 # Arquitetura
 
 ```text
-navegador (páginas estáticas)          máquina (Python)                  pasta e Drive
-┌──────────────────────────┐   HTTP   ┌──────────────────────────┐      ┌──────────────────────┐
-│ central, câmera, revisão │ ───────► │ servidor local (FastAPI) │ ───► │ pasta de trabalho    │
-│ molde + solver em JS     │ 127.0.0.1│ pré-processamento, filas,│      │ (um arquivo por      │
-└──────────────────────────┘          │ placar, unificar         │      │  pessoa e versão)    │
-                                      └──────────────────────────┘      └──────────┬───────────┘
-                                                                                   │ sincronização
-                                                                            Google Drive (equipe)
+GitHub Pages (site estático)          navegador de cada pessoa                     pasta e Drive
+┌───────────────────────────┐  baixa  ┌──────────────────────────────────────┐    ┌──────────────────────┐
+│ web/: HTML, CSS, JS,      │ ──────► │ aplicativo de uma página             │    │ pasta de trabalho    │
+│ esquemas e exemplo        │ (uma    │  · filas, gabarito, placar, molde    │───►│ (um arquivo por      │
+└───────────────────────────┘  vez)   │  · importação num worker (WebCodecs) │    │  pessoa e versão)    │
+                                      │ File System Access API ou OPFS       │    └──────────┬───────────┘
+                                      └──────────────────────────────────────┘               │ sincronização
+                                                                                   Google Drive (equipe)
+                                      Python (quem coordena e treina): validar, unificar, gabarito, prever
 ```
 
-- **Por que um servidor local e não só páginas estáticas:** o pré-processamento usa OpenCV, e uma
-  página estática sozinha não roda isso nem grava livremente numa pasta. O servidor só atende a
-  própria máquina; nada sai dela a não ser pela sincronização do Drive.
+- **Por que só páginas estáticas:** cada pessoa anota no próprio computador sem instalar nada. O
+  navegador faz tudo o que antes pedia um servidor local: grava numa pasta escolhida (File System
+  Access API, Chrome e Edge), decodifica vídeo (WebCodecs) e roda o ajuste da câmera. O GitHub Pages
+  só entrega os arquivos do site; nenhum dado passa por ele (ADR-0005).
+- **Onde ficam os dados:** na pasta escolhida — de preferência a pasta da equipe sincronizada pelo
+  Google Drive para computador — ou, sem ela, no armazenamento do próprio navegador (Origin Private
+  File System), com entrada e saída por .zip. A alça da pasta fica no IndexedDB, então a página lembra
+  a escolha; a permissão o navegador confirma com um clique.
 - **Sem banco de dados:** a verdade são os arquivos JSON na pasta. Filas, placar e conjuntos são
-  sempre recalculados deles (com cache por data de modificação), e dão o mesmo resultado em qualquer
-  máquina da equipe.
+  sempre recalculados deles (com cache por data de modificação e tamanho), e dão o mesmo resultado em
+  qualquer máquina. Nada que várias pessoas escrevam vai para um arquivo só.
 - **O molde arrastável:** a página projeta o campo inteiro pela câmera; arrastar um ponto roda um
   Levenberg–Marquardt em 8 parâmetros (pan, tilt, roll, zoom, distorção e posição) que leva aquele
   ponto ao cursor sem tirar do lugar os já travados. Uma âncora em torno da câmera de partida decide
   o que se mexe com poucas pistas: com um ponto só giram pan e tilt; com dois entram zoom e roll; com
   quatro, a posição; com cinco, a distorção.
+- **A importação:** um worker lê o MP4 em blocos (o índice com um leitor próprio de ISO BMFF), faz o
+  SHA-256 por partes, decodifica todos os quadros com o WebCodecs e guarda só os descritores de
+  quadros reduzidos a 160 × 90. Depois acha os cortes, agrupa as tomadas, sorteia e decodifica de
+  novo só os grupos de quadros (GOP) com sorteados, para gravá-los em JPEG na resolução original.
 
-## Módulos (`src/anotacao/`)
+## Módulos
+
+### Páginas (`web/js/`)
 
 | Módulo | Papel |
 | --- | --- |
-| `convencoes.py` | referencial, IDs, versão do manual |
-| `camera.py`, `campo.py` | modelo de câmera e molde do campo — idênticos ao laboratório |
+| `nucleo/convencoes.js` | referencial, IDs, versões da ferramenta e do manual |
+| `nucleo/camera.js`, `nucleo/campo.js` | modelo de câmera e molde do campo — idênticos ao laboratório |
+| `nucleo/solver.js` | ajuste da câmera ao que se arrasta e trava |
+| `nucleo/esquema.js`, `nucleo/formatos.js` | validação pelos JSON Schemas do Python e pelas regras entre campos |
+| `nucleo/pasta.js`, `nucleo/indice.js` | layout da pasta, escrita que nunca sobrescreve, índice com cache |
+| `nucleo/filas.js`, `nucleo/gabarito.js`, `nucleo/placar.js`, `nucleo/avaliacao.js` | o que cada pessoa faz a seguir, liberação, placar e medidas em px |
+| `nucleo/rotulos.js` | montar e gravar rótulos e revisões |
+| `nucleo/zip.js`, `nucleo/transferencia.js` | levar e trazer arquivos em .zip |
+| `nucleo/hash.js`, `nucleo/aleatorio.js`, `nucleo/estatistica.js` | SHA-256 por partes, sorteio reprodutível, mediana e percentil |
+| `video/mp4.js` | índice do MP4: codec e tabela de amostras |
+| `video/descritores.js`, `video/cortes.js`, `video/sorteio.js` | do vídeo aos quadros sorteados (as contas da v0.1) |
+| `video/importar.js`, `video/trabalhador.js` | a importação, num worker |
+| `ui/` | as vistas (central, câmera, revisão, importar, coordenação), o editor e a escolha da pasta |
+
+`nucleo/` e as contas de `video/` não dependem da página: rodam no Node (`node --test`) e no worker.
+
+### Python (`src/anotacao/`)
+
+| Módulo | Papel |
+| --- | --- |
+| `convencoes.py`, `camera.py`, `campo.py` | as mesmas convenções e o mesmo modelo, testados contra o laboratório |
 | `formatos.py` | modelos dos arquivos (pydantic) e JSON Schemas |
-| `pasta.py` | layout da pasta, nomes de arquivo, escrita atômica |
-| `pacote.py` | pacote do estádio: validação, amostras das placas, câmera padrão |
-| `video.py`, `cortes.py`, `sorteio.py`, `preprocessamento.py` | do vídeo aos quadros sorteados |
-| `previsores.py` | interface do previsor de câmera (opcional) |
-| `indice.py`, `filas.py` | o que cada pessoa faz a seguir; revisão às cegas |
-| `avaliacao.py`, `gabarito.py`, `placar.py` | resíduos, concordância, liberação e placar |
+| `pasta.py`, `indice.py` | layout da pasta, escrita atômica, índice |
+| `pacote.py` | validação do pacote e o estádio sintético |
+| `gabarito.py`, `previsores.py` | importar o gabarito; previsões do modelo para o molde |
 | `unificar.py` | conjuntos de treino em Parquet |
-| `servidor.py`, `cli.py` | API local e linha de comando |
-| `web/` | páginas (HTML, CSS e JavaScript sem build) |
+| `geracao.py` | arquivos que as páginas leem e saem do Python (esquemas, exemplo, convenções) |
+| `cli.py` | linha de comando |
 
-O JavaScript tem espelhos de `camera.py` e de `campo.py` (`web/js/camera.js`, `web/js/campo.js`),
-testados contra o laboratório com a mesma fixture dos testes em Python.
+## Segurança e privacidade
 
-## Segurança
-
-- O servidor escuta só em 127.0.0.1, recusa pedidos com outro `Host` (DNS rebinding) e exige o
-  cabeçalho `X-Anotacao` em todo pedido que grava (um site de fora não consegue mandar sem o
-  navegador pedir permissão, e o CORS não é liberado).
-- A página não recebe a partida, o quadro nem o autor do que está anotando ou revisando: cada item
-  vem com uma ficha opaca. Assim o gabarito escondido e a revisão às cegas continuam escondidos na
-  interface.
-- Todos os caminhos passam pela validação dos IDs (nada de `../`).
+- A página só fala com o próprio site: a CSP (`connect-src 'self'`) impede que ela mande dados para
+  outro endereço, e o service worker só guarda os arquivos do site.
+- O acesso à pasta é o que o navegador concede: só a pasta escolhida, com permissão confirmada pela
+  pessoa. Todos os caminhos passam pela validação dos IDs (nada de `../`).
+- A página não mostra a partida, o quadro nem o autor do que está anotando ou revisando, para o
+  gabarito escondido e a revisão às cegas continuarem escondidos na interface. Como os arquivos estão
+  na pasta de cada um, isso é um combinado de uso, não um segredo técnico.

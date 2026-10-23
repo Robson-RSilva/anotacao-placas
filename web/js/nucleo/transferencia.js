@@ -1,0 +1,111 @@
+// Levar arquivos de uma pasta de trabalho para outra em .zip: para quem guarda no navegador (sem
+// pasta sincronizada) mandar o que fez, e para quem coordena trazer de volta. Nada é sobrescrito.
+
+import { RE_ARQUIVO, RE_ESTADIO, RE_GABARITO, RE_PARTIDA, RE_PESSOA, RE_QUADRO, RE_VERSAO_PACOTE } from "./convencoes.js";
+import { validar } from "./formatos.js";
+import { ArquivoExiste } from "./pasta.js";
+import { criarZip, lerZip } from "./zip.js";
+
+const TOPO = new Set(["equipe.json", "divisao.json", "projeto.json", "estadios", "partidas", "gabarito"]);
+
+/** Tipo de arquivo (formatos.js) pelo caminho; "jpg" para imagens; null quando não é da pasta de trabalho. */
+export function tipoDoCaminho(caminho) {
+  const p = caminho.split("/");
+  if (p.length === 1) return { "equipe.json": "equipe", "divisao.json": "divisao", "projeto.json": "projeto" }[p[0]] ?? null;
+  if (p[0] === "estadios") {
+    return p.length === 4 && RE_ESTADIO.test(p[1]) && /^pacote-/.test(p[2]) && RE_VERSAO_PACOTE.test(p[2].slice(7)) && p[3] === "pacote.json"
+      ? "pacote"
+      : null;
+  }
+  if (p[0] === "gabarito") {
+    if (p.length === 3 && p[1] === "itens") {
+      const m = /^(g\d{4})\.(json|jpg)$/.exec(p[2]);
+      if (m && RE_GABARITO.test(m[1])) return m[2] === "json" ? "gabarito" : "jpg";
+      return null;
+    }
+    if (p.length === 4 && p[1] === "rotulos" && p[2] === "camera" && RE_ARQUIVO.test(p[3]) && p[3].startsWith("g")) return "rotulo";
+    return null;
+  }
+  if (p[0] === "partidas" && p.length >= 3 && RE_PARTIDA.test(p[1])) {
+    if (p.length === 3) return { "manifesto.json": "manifesto", "fila.json": "fila", "tomadas.json": "tomadas" }[p[2]] ?? null;
+    if (p.length === 4 && p[2] === "quadros") return /^t\d{10}\.jpg$/.test(p[3]) ? "jpg" : null;
+    if (p.length === 4 && p[2] === "previsoes") return /^t\d{10}\.json$/.test(p[3]) && RE_QUADRO.test(p[3].slice(0, -5)) ? "previsao" : null;
+    if (p.length === 5 && p[3] === "camera" && RE_ARQUIVO.test(p[4]) && p[4].startsWith("t")) {
+      return { rotulos: "rotulo", revisoes: "revisao" }[p[2]] ?? null;
+    }
+  }
+  return null;
+}
+
+/** Todos os arquivos da pasta de trabalho (caminhos relativos), recursivamente. */
+export async function listarTudo(pasta, base = "") {
+  const out = [];
+  for (const item of await pasta.listar(base)) {
+    if (item.nome.startsWith(".") || item.nome.endsWith(".crswap")) continue;
+    const caminho = base ? `${base}/${item.nome}` : item.nome;
+    if (item.tipo === "pasta") out.push(...(await listarTudo(pasta, caminho)));
+    else out.push({ caminho, alca: item.alca });
+  }
+  return out;
+}
+
+/**
+ * .zip com os arquivos da pasta de trabalho (os de `conjuntos/` ficam de fora). `filtro(caminho)`
+ * escolhe quais (por exemplo, só os rótulos e revisões de uma pessoa).
+ */
+export async function exportarZip(pasta, filtro = () => true, aoProgresso = () => {}) {
+  const todos = (await listarTudo(pasta)).filter((a) => tipoDoCaminho(a.caminho) && filtro(a.caminho));
+  const entradas = [];
+  for (const [k, a] of todos.entries()) {
+    const f = await a.alca.getFile();
+    entradas.push({ caminho: a.caminho, dados: f, data: new Date(f.lastModified) });
+    aoProgresso((k + 1) / todos.length);
+  }
+  return { blob: await criarZip(entradas), n: entradas.length };
+}
+
+/** Os arquivos de uma pessoa: rótulos e revisões com o código dela no nome. */
+export function soDaPessoa(pessoa) {
+  if (!RE_PESSOA.test(pessoa)) throw new Error(`código de pessoa inválido: ${pessoa}`);
+  const re = new RegExp(`__${pessoa}__v\\d+\\.json$`);
+  return (caminho) => re.test(caminho);
+}
+
+/**
+ * Traz para a pasta os arquivos de um .zip. Aceita só arquivos da pasta de trabalho, valida os
+ * JSON e nunca sobrescreve. Uma pasta-mãe única no .zip (ex.: "trabalho/") é ignorada.
+ * Devolve {gravados, existentes, recusados: [{caminho, motivo}]}.
+ */
+export async function importarZip(pasta, blob, aoProgresso = () => {}) {
+  const entradas = [];
+  for await (const e of lerZip(blob)) {
+    const p = e.caminho.split("/");
+    if (p[0] === "__MACOSX" || p.some((s) => s.startsWith(".")) || e.caminho.endsWith(".crswap")) continue;
+    entradas.push(e);
+  }
+  const primeiros = new Set(entradas.map((e) => e.caminho.split("/")[0]));
+  const prefixo = primeiros.size === 1 && !TOPO.has([...primeiros][0]) && entradas.every((e) => e.caminho.includes("/"))
+    ? `${[...primeiros][0]}/`
+    : "";
+  const out = { gravados: 0, existentes: 0, recusados: [] };
+  const decodificador = new TextDecoder();
+  for (const [k, e] of entradas.entries()) {
+    const caminho = e.caminho.slice(prefixo.length);
+    const tipo = tipoDoCaminho(caminho);
+    aoProgresso((k + 1) / entradas.length);
+    if (!tipo) {
+      out.recusados.push({ caminho, motivo: "não é um arquivo da pasta de trabalho" });
+      continue;
+    }
+    try {
+      if (tipo !== "jpg") validar(tipo, JSON.parse(decodificador.decode(e.dados)));
+      else if (!(e.dados[0] === 0xff && e.dados[1] === 0xd8)) throw new Error("não é um JPEG");
+      await pasta.escrever(caminho, e.dados);
+      out.gravados += 1;
+    } catch (erro) {
+      if (erro instanceof ArquivoExiste) out.existentes += 1;
+      else out.recusados.push({ caminho, motivo: erro.message });
+    }
+  }
+  return out;
+}

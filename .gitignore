@@ -15,11 +15,16 @@ htmlcov/
 # Node
 node_modules/
 
+# Site montado para o GitHub Pages (scripts/montar_site.py) e capturas dos testes
+_site/
+capturas/
+
 # Dados: nunca no Git (ficam na pasta de trabalho do Drive)
 trabalho/
 conjuntos/
 videos/
 *.mp4
+!tests/fixtures/video/*.mp4
 *.mov
 *.mkv
 *.avi

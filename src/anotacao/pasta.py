@@ -6,13 +6,14 @@ Regras que evitam conflito na sincronização:
   arquivo novo (`<quadro>__<pessoa>__v<n>.json`);
 * escrita atômica: o conteúdo vai para um temporário na mesma pasta e só então troca de nome, para o
   Drive nunca sincronizar um arquivo pela metade;
-* um arquivo que já existe nunca é sobrescrito, a não ser os gerados pela própria ferramenta
-  (cache do placar).
+* um arquivo que já existe nunca é sobrescrito, a não ser os da coordenação (equipe, divisão,
+  projeto), as tomadas e a fila de uma importação, e as previsões.
+
+O mesmo layout existe nas páginas (`web/js/nucleo/pasta.js`).
 
     trabalho/
-      equipe.json, divisao.json
+      equipe.json, divisao.json, projeto.json (opcional: nome e link do Manual)
       estadios/<estadio>/pacote-<versao>/pacote.json
-      emissoras/<emissora>/vinheta.png              opcional: detecta replays dessa emissora
       partidas/<partida>/
         manifesto.json, tomadas.json, fila.json
         quadros/<quadro>.jpg
@@ -21,7 +22,6 @@ Regras que evitam conflito na sincronização:
         revisoes/<tarefa>/<quadro>__<revisor>__v<n>.json
       gabarito/itens/<g0001>.json|.jpg, gabarito/rotulos/<tarefa>/...
       conjuntos/<data-hora>/                        saída do unificar
-      metricas/                                     cache do placar; pode ser apagado
 """
 
 from __future__ import annotations
@@ -43,9 +43,8 @@ from .convencoes import (
     RE_PESSOA,
     RE_QUADRO,
     RE_VERSAO_PACOTE,
-    slug,
 )
-from .formatos import Divisao, Equipe, Fila, Manifesto, PacoteEstadio, Tomadas
+from .formatos import Divisao, Equipe, Fila, Manifesto, PacoteEstadio, Projeto, Tomadas
 
 TAREFAS = ("camera",)
 RE_ARQUIVO = re.compile(r"^(?P<quadro>t\d{10}|g\d{4})__(?P<pessoa>[A-Z]\d{2})__v(?P<versao>\d+)\.json$")
@@ -126,6 +125,10 @@ class Pasta:
         return self.raiz / "divisao.json"
 
     @property
+    def projeto_path(self) -> Path:
+        return self.raiz / "projeto.json"
+
+    @property
     def estadios(self) -> Path:
         return self.raiz / "estadios"
 
@@ -141,17 +144,10 @@ class Pasta:
     def conjuntos(self) -> Path:
         return self.raiz / "conjuntos"
 
-    @property
-    def metricas(self) -> Path:
-        return self.raiz / "metricas"
-
     def pacote_path(self, estadio: str, versao: str) -> Path:
         _checar(RE_ESTADIO, estadio, "estádio")
         _checar(RE_VERSAO_PACOTE, versao, "versão do pacote")
         return self.estadios / estadio / f"pacote-{versao}" / "pacote.json"
-
-    def vinheta_path(self, emissora: str) -> Path:
-        return self.raiz / "emissoras" / slug(emissora) / "vinheta.png"
 
     def partida(self, partida: str) -> Path:
         if partida == PARTIDA_GABARITO:
@@ -191,7 +187,7 @@ class Pasta:
 
     # ------------------------------------------------------------------ criação
     def criar(self) -> None:
-        for p in (self.estadios, self.partidas, self.gabarito / "itens", self.conjuntos, self.metricas):
+        for p in (self.estadios, self.partidas, self.gabarito / "itens", self.conjuntos):
             p.mkdir(parents=True, exist_ok=True)
         if not self.equipe_path.exists():
             escrever_json(self.equipe_path, Equipe(membros=[]))
@@ -201,6 +197,9 @@ class Pasta:
     # ------------------------------------------------------------------ leitura
     def ler_equipe(self) -> Equipe:
         return ler_json(self.equipe_path, Equipe) if self.equipe_path.exists() else Equipe(membros=[])
+
+    def ler_projeto(self) -> Projeto:
+        return ler_json(self.projeto_path, Projeto) if self.projeto_path.exists() else Projeto()
 
     def ler_divisao(self) -> Divisao:
         return ler_json(self.divisao_path, Divisao) if self.divisao_path.exists() else Divisao()

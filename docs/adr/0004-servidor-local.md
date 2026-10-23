@@ -1,6 +1,6 @@
 # ADR-0004 — Servidor local com páginas sem build
 
-**Situação:** aceita (23/10/2026)
+**Situação:** substituída pela [ADR-0005](0005-paginas-estaticas-no-github-pages.md) (23/10/2026)
 
 ## Contexto
 

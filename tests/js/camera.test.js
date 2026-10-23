@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
-import { Camera, ladoCanonico, ptrDeRot, rotDePtr } from "../../src/anotacao/web/js/camera.js";
+import { Camera, ladoCanonico, ptrDeRot, rotDePtr } from "../../web/js/nucleo/camera.js";
 
 const lab = JSON.parse(readFileSync(new URL("../fixtures/camera_laboratorio.json", import.meta.url), "utf-8"));
 const camera = (c) => Camera.dePtr(c.f, c.pan, c.tilt, c.roll, c.C, c.w, c.h, c.k1);

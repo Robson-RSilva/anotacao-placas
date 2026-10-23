@@ -1,14 +1,14 @@
 """Pacote do estádio: medidas do campo, placas (polígonos 3D) e posição das câmeras.
 
 É o que a página de câmera usa para desenhar o molde com as medidas certas e as placas com o
-nome, para o anotador conferir o lado. Vem do levantamento no estádio; aqui só se lê e valida.
+nome, para o anotador conferir o lado. Vem do levantamento no estádio; aqui só se valida e se gera
+o estádio sintético do laboratório (o espelho em JavaScript está em `web/js/nucleo/pacote.js`).
 """
 
 from __future__ import annotations
 
 import numpy as np
 
-from .camera import Camera
 from .campo import Campo
 from .formatos import CameraRegistro, CampoPacote, PacoteEstadio, PlacaPacote
 
@@ -37,33 +37,6 @@ def validar_geometria(p: PacoteEstadio) -> list[str]:
         if n @ para_o_campo <= 0:
             erros.append(f"{placa.id}: vértices fora de ordem (a frente da placa não olha para o campo)")
     return erros
-
-
-def amostras_placas(p: PacoteEstadio, passo: float = 0.5) -> np.ndarray:
-    """Pontos 3D ao longo do contorno de todas as placas (para comparar duas câmeras)."""
-    pts = []
-    for placa in p.placas:
-        V = np.asarray(placa.vertices, float)
-        for a, b in zip(V, np.roll(V, -1, axis=0), strict=True):
-            n = max(int(np.ceil(np.linalg.norm(b - a) / passo)), 1)
-            t = np.linspace(0, 1, n, endpoint=False)[:, None]
-            pts.append(a + t * (b - a))
-    return np.vstack(pts) if pts else np.zeros((0, 3))
-
-
-def camera_padrao(p: PacoteEstadio, w: int, h: int, nome: str | None = None) -> Camera:
-    """Câmera inicial quando não há previsão nem quadro anotado: a do registro olhando o centro."""
-    regs = {c.nome: c for c in p.cameras}
-    escolha = regs.get(nome) if nome else None
-    if escolha is None:
-        escolha = next((c for c in p.cameras if c.tipo == "principal"), p.cameras[0])
-    T = np.asarray(escolha.T, float)
-    alvo = (
-        np.array([0.0, 0.0, 0.0])
-        if escolha.tipo != "fundo"
-        else np.array([np.sign(T[0]) * p.campo.comprimento / 3, 0, 0])
-    )
-    return Camera.look_at(T, alvo, 40.0, w, h)
 
 
 def _placa(

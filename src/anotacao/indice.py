@@ -1,7 +1,7 @@
 """Índice dos rótulos e revisões da pasta, com cache pela data de modificação dos arquivos.
 
-Não há banco de dados: a verdade são os arquivos na pasta sincronizada. O índice só evita reler o
-mesmo JSON a cada pedido da página.
+Não há banco de dados: a verdade são os arquivos na pasta sincronizada. O mesmo índice existe nas
+páginas (`web/js/nucleo/indice.js`); aqui ele serve ao `validar` e ao `unificar`.
 """
 
 from __future__ import annotations
@@ -108,7 +108,9 @@ class Indice:
         rot = []
         for p, q, pe, v in self.pasta.listar(self.pasta.rotulos(partida, tarefa)):
             try:
-                self.cache.ler(p, RotuloCamera)
+                r = self.cache.ler(p, RotuloCamera)
+                if (r.partida, r.quadro, r.anotador, r.versao) != (partida, q, pe, v):
+                    raise ValueError("o conteúdo não bate com o nome do arquivo")
             except (ValidationError, ValueError, OSError) as e:
                 invalidos.append((p, str(e).splitlines()[0]))
                 continue
@@ -119,6 +121,8 @@ class Indice:
         for p, q, pe, v in self.pasta.listar(self.pasta.revisoes(partida, tarefa)):
             try:
                 r = self.cache.ler(p, RevisaoCamera)
+                if (r.partida, r.quadro, r.revisor, r.versao) != (partida, q, pe, v):
+                    raise ValueError("o conteúdo não bate com o nome do arquivo")
             except (ValidationError, ValueError, OSError) as e:
                 invalidos.append((p, str(e).splitlines()[0]))
                 continue

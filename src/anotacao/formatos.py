@@ -1,7 +1,8 @@
 """Formatos dos arquivos (versionados). Cada arquivo diz o próprio formato no campo `formato`.
 
-Os modelos validam ao salvar (servidor) e de novo ao unificar. Os JSON Schemas em `esquemas/` são
-gerados daqui (`anotacao esquemas`) e documentados em `docs/formatos.md`.
+As páginas validam pelos JSON Schemas gerados daqui (`web/esquemas/`, via
+`scripts/gerar_arquivos_web.py`) antes de gravar, e o Python valida de novo ao unificar. Os
+formatos estão documentados em `docs/formatos.md`.
 """
 
 from __future__ import annotations
@@ -85,7 +86,15 @@ class PacoteEstadio(Modelo):
         return f"{self.estadio}/pacote-{self.versao}"
 
 
-# ----------------------------------------------------------------------------- equipe e divisão
+# ----------------------------------------------------------------------------- projeto, equipe e divisão
+class Projeto(Modelo):
+    """Dados da pasta de trabalho que as páginas mostram (opcional)."""
+
+    formato: Literal["projeto/1"] = "projeto/1"
+    nome: str = ""
+    manual_url: Annotated[str, Field(pattern=r"^(https://\S+)?$", description="link do Manual de anotação")] = ""
+
+
 class Membro(Modelo):
     codigo: Pessoa
     nome: str
@@ -180,7 +189,7 @@ class Tomada(Modelo):
     i1: int = Field(ge=0, description="um depois do último quadro (índice)")
     inicio_ms: int = Field(ge=0)
     fim_ms: int = Field(ge=0)
-    replay: bool | None = Field(None, description="None quando a emissora não tem vinheta cadastrada")
+    replay: bool | None = Field(None, description="None: replays são conferidos na solução assistida")
     zoom: Literal["aberto", "medio", "fechado"] = Field(description="aproximado; só para equilibrar o sorteio")
     grupo: int = Field(ge=0, description="agrupamento por aparência; só para equilibrar o sorteio")
 
@@ -357,6 +366,7 @@ class GabaritoCamera(Modelo):
 
 # ----------------------------------------------------------------------------- esquemas
 ESQUEMAS: dict[str, type[Modelo]] = {
+    "projeto.json": Projeto,
     "pacote.estadio.json": PacoteEstadio,
     "equipe.json": Equipe,
     "divisao.json": Divisao,

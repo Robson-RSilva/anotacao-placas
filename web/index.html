@@ -1,0 +1,396 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:; media-src 'self' blob:; worker-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'">
+  <meta name="description" content="Anotação de dados de treino do detector de marcações: tudo roda no navegador e os arquivos ficam na pasta de cada pessoa.">
+  <title>Anotação de dados para treino</title>
+  <link rel="icon" href="icone.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="css/estilo.css">
+  <script type="module" src="js/ui/app.js"></script>
+</head>
+<body class="pagina-central">
+  <div id="app"><p class="carregando">Carregando…</p></div>
+
+  <noscript><p class="erro">Esta página precisa de JavaScript.</p></noscript>
+
+  <!-- ================================================================== boas-vindas -->
+  <template id="tpl-inicio">
+    <header class="barra">
+      <h1>Anotação de dados para treino</h1>
+      <span class="sutil" data-versao></span>
+    </header>
+    <main class="central estreito">
+      <section class="cartao destaque">
+        <h2>Onde ficam os arquivos</h2>
+        <p>Tudo roda neste navegador, nesta máquina. Os quadros, rótulos e revisões ficam numa pasta de trabalho no seu computador — de preferência a pasta da equipe no Google Drive, sincronizada pelo Google Drive para computador. Esta página não envia nada para a internet.</p>
+        <div id="continuar" class="bloco" hidden>
+          <p>Da última vez você usou <b id="nome-anterior"></b>.</p>
+          <button type="button" class="primario" id="btn-continuar">Continuar nessa pasta</button>
+        </div>
+        <div class="botoes">
+          <button type="button" class="primario" id="btn-escolher">Escolher a pasta de trabalho</button>
+          <button type="button" id="btn-navegador">Guardar neste navegador</button>
+        </div>
+        <p class="sutil" id="aviso-pasta" hidden>Este navegador não deixa escolher uma pasta. Use o Chrome ou o Edge no computador, ou guarde neste navegador e leve os arquivos em .zip.</p>
+        <p class="erro" id="erro-inicio" role="alert"></p>
+      </section>
+      <details class="cartao ajuda">
+        <summary>Qual escolher?</summary>
+        <ul>
+          <li><b>Pasta de trabalho</b> (Chrome ou Edge): escolha a pasta da equipe no Drive. Cada pessoa grava só os próprios arquivos, então a sincronização nunca entra em conflito.</li>
+          <li><b>Neste navegador</b>: sem pasta sincronizada. Traga os arquivos num .zip pela página central e, ao terminar, baixe os seus num .zip para quem coordena.</li>
+        </ul>
+      </details>
+    </main>
+  </template>
+
+  <!-- ================================================================== central -->
+  <template id="tpl-central">
+    <header class="barra">
+      <h1>Anotação de dados para treino</h1>
+      <span class="sutil" data-versao></span>
+      <span class="espaco"></span>
+      <label class="quem">Você é
+        <select id="pessoa" aria-label="Seu código"></select>
+      </label>
+    </header>
+
+    <main class="central">
+      <section id="aviso-vazia" class="cartao destaque" hidden>
+        <h2>Esta pasta ainda não é uma pasta de trabalho</h2>
+        <p class="sutil" id="nome-vazia"></p>
+        <div class="botoes">
+          <button type="button" class="primario" id="criar-vazia">Criar pasta de trabalho</button>
+          <button type="button" id="criar-exemplo">Criar com o exemplo (estádio sintético, equipe A01 e A02)</button>
+          <button type="button" id="trocar-vazia">Escolher outra pasta</button>
+        </div>
+      </section>
+
+      <div id="conteudo-central">
+        <section class="cartoes">
+          <article class="cartao">
+            <h2>Câmera do quadro</h2>
+            <p id="st-camera" class="sutil">—</p>
+            <a class="botao primario" href="#/camera" id="ir-camera">Anotar</a>
+          </article>
+          <article class="cartao">
+            <h2>Revisão cruzada</h2>
+            <p id="st-revisao" class="sutil">—</p>
+            <a class="botao" href="#/revisao" id="ir-revisao">Revisar</a>
+          </article>
+          <article class="cartao">
+            <h2>Oclusão nas placas</h2>
+            <p class="sutil">Chega numa próxima versão: primeiro câmera e revisão cruzada.</p>
+          </article>
+        </section>
+
+        <section>
+          <div class="titulo-secao">
+            <h2>Partidas</h2>
+            <a class="botao" href="#/importar" id="ir-importar">Importar partida</a>
+          </div>
+          <table class="tabela" id="partidas">
+            <thead><tr><th>Partida</th><th>Emissora</th><th>Condições</th><th>Sorteados</th><th>Anotados</th><th>Aprovados</th><th>Revisão pendente</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </section>
+
+        <section>
+          <h2>Placar</h2>
+          <p class="sutil">Ponto só conta depois de aprovado na revisão cruzada.</p>
+          <div class="rolavel">
+            <table class="tabela" id="placar">
+              <thead><tr><th>Pessoa</th><th>Aprovados na semana</th><th>Aprovados</th><th>Taxa de aprovação</th><th>Tempo mediano</th><th>Concordância (cegos)</th><th>Gabarito</th><th>Dias seguidos</th><th>Marcos</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="cartao">
+          <h2>Pasta de trabalho</h2>
+          <p><span id="pasta-nome"></span> <span class="sutil" id="pasta-modo"></span></p>
+          <div class="botoes">
+            <button type="button" id="trocar-pasta">Trocar de pasta</button>
+            <button type="button" id="baixar-meus">Baixar os meus arquivos (.zip)</button>
+            <button type="button" id="baixar-tudo">Baixar cópia da pasta (.zip)</button>
+            <label class="botao">Trazer arquivos de um .zip<input type="file" id="trazer-zip" accept=".zip,application/zip" hidden></label>
+            <a class="botao" href="#/coordenacao">Coordenação</a>
+          </div>
+          <p class="sutil" id="res-pasta" role="status"></p>
+        </section>
+      </div>
+    </main>
+
+    <footer class="rodape">
+      <span>Os dados ficam no seu computador; esta página não envia nada para a internet.</span>
+      <a id="manual" href="#" target="_blank" rel="noopener noreferrer" hidden>Manual de anotação</a>
+    </footer>
+  </template>
+
+  <!-- ================================================================== câmera -->
+  <template id="tpl-camera">
+    <header class="barra">
+      <a href="#/" class="voltar">← Central</a>
+      <h1>Câmera do quadro</h1>
+      <span id="dica" class="dica"></span>
+      <span class="tempo" title="Tempo ativo neste quadro">⏱ <span id="tempo">0:00</span></span>
+    </header>
+
+    <main class="editor">
+      <div class="tela" id="area"><canvas id="tela" aria-label="Quadro com o molde do campo"></canvas>
+        <div id="vazio" class="vazio" hidden></div>
+      </div>
+
+      <aside class="painel" id="painel" hidden>
+        <section id="treino" class="faixa treino" hidden>
+          Treino com gabarito: ao salvar, aparece a diferença para a câmera verdadeira.
+        </section>
+        <section id="devolvido" class="faixa devolvido" hidden></section>
+
+        <section>
+          <h2>Começar de</h2>
+          <div class="linha-campos">
+            <select id="registro" aria-label="Câmera do registro do estádio"></select>
+            <button id="recomecar" type="button" title="Volta para a câmera escolhida e destrava tudo">Recomeçar</button>
+          </div>
+          <div class="botoes">
+            <button id="virar" type="button">Virar o lado <kbd>F</kbd></button>
+            <button id="desfazer" type="button">Desfazer <kbd>Ctrl Z</kbd></button>
+          </div>
+        </section>
+
+        <section>
+          <h2>Travados <span id="n-pinos" class="contagem"></span></h2>
+          <ul id="pinos" class="pinos"><li class="sutil">Arraste ou clique num ponto do molde para travar.</li></ul>
+        </section>
+
+        <section>
+          <h2>Pronto quando</h2>
+          <ul class="checagem">
+            <li id="ck-pontos">3 pontos espalhados, ou 2 pontos e 1 linha</li>
+            <li id="ck-residuo">molde a até 2 px dos travados</li>
+            <li><label><input type="checkbox" id="ck-lado"> conferi o lado numa placa estática</label></li>
+          </ul>
+        </section>
+
+        <section>
+          <h2>Situação</h2>
+          <div class="situacoes" id="situacoes">
+            <label><input type="radio" name="situacao" value="ok" checked> Câmera certa</label>
+            <label><input type="radio" name="situacao" value="sem_marcacoes"> Sem marcações suficientes</label>
+            <label><input type="radio" name="situacao" value="impossivel_transicao"> Impossível: transição ou grafismo</label>
+            <label><input type="radio" name="situacao" value="impossivel_borrao"> Impossível: borrão</label>
+            <label><input type="radio" name="situacao" value="duvida"> Dúvida (com comentário)</label>
+          </div>
+          <textarea id="comentario" rows="2" placeholder="Comentário (obrigatório em dúvida)"></textarea>
+        </section>
+
+        <button id="salvar" class="primario" type="button">Salvar <kbd>S</kbd></button>
+        <p id="erro" class="erro" role="alert"></p>
+
+        <details class="ajuda">
+          <summary>Como usar</summary>
+          <ul>
+            <li><b>Arrastar um ponto</b>: o molde inteiro acompanha; ao soltar, ele fica travado.</li>
+            <li><b>Clicar num ponto</b>: trava onde está.</li>
+            <li><b>Arrastar uma linha</b> (lateral, fundo): leva a linha até a pintada.</li>
+            <li><b>Botão direito</b> num travado: destrava.</li>
+            <li><b>Roda do mouse</b>: aproxima. Arrastar o vazio move a vista. <kbd>0</kbd> volta a vista.</li>
+            <li><kbd>L</kbd> nomes · <kbd>P</kbd> placas · <kbd>F</kbd> virar o lado · <kbd>S</kbd> salvar</li>
+          </ul>
+        </details>
+      </aside>
+    </main>
+
+    <div id="modal" class="modal" hidden>
+      <div class="caixa" role="dialog" aria-modal="true" aria-labelledby="modal-titulo">
+        <h2 id="modal-titulo"></h2>
+        <p id="modal-texto"></p>
+        <button id="modal-ok" class="primario" type="button">Próximo</button>
+      </div>
+    </div>
+  </template>
+
+  <!-- ================================================================== revisão -->
+  <template id="tpl-revisao">
+    <header class="barra">
+      <a href="#/" class="voltar">← Central</a>
+      <h1>Revisão cruzada</h1>
+      <span id="dica" class="dica"></span>
+      <span class="contagem-barra" id="pendentes"></span>
+      <span class="tempo" title="Tempo ativo nesta revisão">⏱ <span id="tempo">0:00</span></span>
+    </header>
+
+    <main class="editor">
+      <div class="tela" id="area"><canvas id="tela" aria-label="Quadro com o molde do rótulo em revisão"></canvas>
+        <div id="vazio" class="vazio" hidden></div>
+      </div>
+
+      <aside class="painel" id="painel" hidden>
+        <section class="faixa">Você não vê quem anotou. Confira as placas da borda, os arcos e o lado.</section>
+
+        <section>
+          <h2>O rótulo</h2>
+          <dl class="ficha">
+            <dt>Situação</dt><dd id="r-situacao"></dd>
+            <dt>Resíduo mediano</dt><dd id="r-residuo"></dd>
+            <dt>Partiu de</dt><dd id="r-partiu"></dd>
+            <dt>Comentário</dt><dd id="r-comentario"></dd>
+          </dl>
+          <ul id="pinos" class="pinos"></ul>
+        </section>
+
+        <section id="decidir">
+          <h2>Decisão</h2>
+          <div class="botoes">
+            <button id="aprovar" class="primario" type="button">Aprovar <kbd>A</kbd></button>
+            <button id="corrigir" type="button">Corrigir <kbd>C</kbd></button>
+            <button id="devolver" type="button">Devolver <kbd>D</kbd></button>
+          </div>
+          <p class="sutil">Diferença dentro da tolerância não se corrige: aprove.</p>
+        </section>
+
+        <section id="secao-devolver" hidden>
+          <h2>Devolver</h2>
+          <select id="motivo" aria-label="Motivo da devolução">
+            <option value="lado_trocado">Lado trocado</option>
+            <option value="molde_fora_da_tolerancia">Molde fora da tolerância</option>
+            <option value="ponto_em_marca_coberta">Ponto travado em marca coberta</option>
+            <option value="deveria_ser_sem_marcacoes">Deveria ser "sem marcações suficientes"</option>
+            <option value="outro">Outro (com comentário)</option>
+          </select>
+          <textarea id="comentario-dev" rows="2" placeholder="Comentário"></textarea>
+          <div class="botoes">
+            <button id="confirmar-devolver" type="button" class="primario">Confirmar devolução</button>
+            <button type="button" data-voltar>Voltar</button>
+          </div>
+        </section>
+
+        <section id="secao-corrigir" hidden>
+          <h2>Corrigir</h2>
+          <p class="sutil">Ajuste o molde como na página de câmera. A correção vira uma versão nova, com a sua autoria.</p>
+          <div class="botoes">
+            <button id="virar" type="button">Virar o lado <kbd>F</kbd></button>
+            <button id="desfazer" type="button">Desfazer</button>
+          </div>
+          <select id="situacao-corr" aria-label="Situação da correção">
+            <option value="ok">Câmera certa</option>
+            <option value="sem_marcacoes">Sem marcações suficientes</option>
+            <option value="impossivel_transicao">Impossível: transição ou grafismo</option>
+            <option value="impossivel_borrao">Impossível: borrão</option>
+          </select>
+          <textarea id="comentario-corr" rows="2" placeholder="Comentário"></textarea>
+          <div class="botoes">
+            <button id="salvar-correcao" class="primario" type="button">Salvar correção</button>
+            <button type="button" data-voltar>Voltar</button>
+          </div>
+        </section>
+        <p id="erro" class="erro" role="alert"></p>
+      </aside>
+    </main>
+  </template>
+
+  <!-- ================================================================== importar -->
+  <template id="tpl-importar">
+    <header class="barra">
+      <a href="#/" class="voltar">← Central</a>
+      <h1>Importar partida</h1>
+    </header>
+    <main class="central estreito">
+      <section class="cartao">
+        <p class="sutil">O vídeo é lido e processado neste navegador; só os quadros sorteados vão para a pasta de trabalho. Funciona com MP4 ou MOV (H.264, H.265, VP9 ou AV1). Para MKV ou TS, converta antes para MP4 (no OBS: Arquivo → Remuxar gravações).</p>
+        <form id="form-importar" class="grade-form">
+          <label>Pacote do estádio <select name="pacote" required></select></label>
+          <label>Emissora <input name="emissora" required autocomplete="off"></label>
+          <label>Competição <input name="competicao" required autocomplete="off"></label>
+          <label>Data e hora <input name="data_hora" type="datetime-local" required></label>
+          <label>Mandante <input name="mandante" required autocomplete="off"></label>
+          <label>Visitante <input name="visitante" required autocomplete="off"></label>
+          <label>Iluminação
+            <select name="iluminacao"><option value="dia">dia</option><option value="noite">noite</option><option value="transicao">transição</option></select>
+          </label>
+          <label class="caixa-marcar"><input type="checkbox" name="chuva"> chuva</label>
+          <label>Quadros a sortear <input name="alvo" type="number" min="1" max="5000" value="100"></label>
+          <label class="largo">Observações <input name="observacoes" autocomplete="off"></label>
+          <label class="largo">Vídeo <input name="video" type="file" accept="video/mp4,video/quicktime,.mp4,.mov,.m4v" required></label>
+          <div class="largo botoes">
+            <button type="submit" class="primario" id="processar">Processar</button>
+            <button type="button" id="cancelar" hidden>Cancelar</button>
+          </div>
+        </form>
+        <div id="progresso" class="progresso" hidden><div class="barra-progresso"><div id="barra"></div></div><span id="etapa"></span></div>
+        <p id="res-importar" class="sutil" role="status"></p>
+        <p id="erro-importar" class="erro" role="alert"></p>
+      </section>
+    </main>
+  </template>
+
+  <!-- ================================================================== coordenação -->
+  <template id="tpl-coordenacao">
+    <header class="barra">
+      <a href="#/" class="voltar">← Central</a>
+      <h1>Coordenação</h1>
+    </header>
+    <main class="central">
+      <p class="sutil">Para quem coordena. Cada arquivo daqui tem um dono só: edite numa máquina de cada vez para o Drive não criar cópias em conflito.</p>
+
+      <section class="cartao">
+        <h2>Equipe</h2>
+        <table class="tabela" id="equipe">
+          <thead><tr><th>Código</th><th>Nome</th><th>Anota</th><th>Revisa</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+        <div class="botoes">
+          <button type="button" id="mais-membro">Acrescentar pessoa</button>
+          <button type="button" class="primario" id="salvar-equipe">Salvar a equipe</button>
+        </div>
+        <p class="sutil">Código: uma letra maiúscula e dois números (A01). Quem sai da equipe continua nos arquivos antigos.</p>
+        <p class="erro" id="erro-equipe" role="alert"></p>
+      </section>
+
+      <section class="cartao">
+        <h2>Projeto</h2>
+        <form id="form-projeto" class="grade-form">
+          <label>Nome <input name="nome" autocomplete="off"></label>
+          <label class="largo">Link do Manual de anotação <input name="manual_url" type="url" placeholder="https://…" autocomplete="off"></label>
+          <div class="largo botoes"><button type="submit" class="primario">Salvar</button></div>
+        </form>
+        <p class="erro" id="erro-projeto" role="alert"></p>
+      </section>
+
+      <section class="cartao">
+        <h2>Pacotes de estádio</h2>
+        <ul id="pacotes" class="lista"></ul>
+        <label class="botao">Acrescentar pacote (pacote.json)<input type="file" id="arquivo-pacote" accept=".json,application/json" hidden></label>
+        <p class="sutil">Pacote publicado não muda: medida nova é versão nova (pacote-1.1).</p>
+        <p class="erro" id="erro-pacote" role="alert"></p>
+      </section>
+
+      <section class="cartao">
+        <h2>Gabarito</h2>
+        <p id="st-gabarito" class="sutil"></p>
+        <label class="botao">Importar itens (g0001.json + imagem)<input type="file" id="arquivos-gabarito" accept=".json,.jpg,.jpeg,.png" multiple hidden></label>
+        <p class="erro" id="erro-gabarito" role="alert"></p>
+      </section>
+
+      <section class="cartao">
+        <h2>Divisão por partida</h2>
+        <p class="sutil">O que não está em validação ou teste é treino. Uma partida nunca se divide entre conjuntos.</p>
+        <table class="tabela" id="divisao">
+          <thead><tr><th>Partida</th><th>Conjunto</th></tr></thead>
+          <tbody></tbody>
+        </table>
+        <div class="botoes"><button type="button" class="primario" id="salvar-divisao">Salvar a divisão</button></div>
+        <p class="erro" id="erro-divisao" role="alert"></p>
+      </section>
+
+      <section class="cartao">
+        <h2>Conjunto de treino</h2>
+        <p class="sutil">O conjunto (Parquet com manifesto) é gerado em Python por quem treina: <code>anotacao unificar --pasta "&lt;pasta de trabalho&gt;"</code>. Previsões do modelo para o molde abrir mais perto: <code>anotacao prever</code>.</p>
+      </section>
+    </main>
+  </template>
+</body>
+</html>

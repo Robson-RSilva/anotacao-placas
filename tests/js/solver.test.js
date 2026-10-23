@@ -3,9 +3,9 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
-import { Camera } from "../../src/anotacao/web/js/camera.js";
-import { amostrar } from "../../src/anotacao/web/js/campo.js";
-import { ajustar, distanciaPolilinha, sigmasPadrao } from "../../src/anotacao/web/js/solver.js";
+import { Camera } from "../../web/js/nucleo/camera.js";
+import { amostrar } from "../../web/js/nucleo/campo.js";
+import { ajustar, distanciaPolilinha, sigmasPadrao } from "../../web/js/nucleo/solver.js";
 
 const lab = JSON.parse(readFileSync(new URL("../fixtures/camera_laboratorio.json", import.meta.url), "utf-8"));
 const campo = lab.campos[0];

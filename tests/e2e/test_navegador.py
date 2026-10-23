@@ -1,57 +1,99 @@
-"""Ponta a ponta no navegador: anotar um quadro arrastando o molde e aprovar na revisão cruzada.
+"""Ponta a ponta no navegador: importar um vídeo, anotar arrastando o molde, revisar às cegas e
+unificar em Python os arquivos que a página gravou.
 
-Roda só com `pytest -m e2e` e precisa do Playwright com o Chromium instalado.
+Roda só com `pytest -m e2e`; precisa do Playwright com o Chromium e do ffmpeg (para o vídeo de
+teste em AV1 ou VP9 — o Chromium do Playwright não decodifica H.264). A página usa o armazenamento
+do navegador; a escolha de pasta é simulada com uma pasta dentro dele.
 """
 
 from __future__ import annotations
 
+import base64
+import functools
+import hashlib
+import json
 import os
-import socket
 import threading
-import time
+import zipfile
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+import cv2
 import numpy as np
+import pandas as pd
 import pytest
 
+from anotacao.camera import Camera
 from anotacao.campo import Campo
-from anotacao.formatos import RevisaoCamera, RotuloCamera
-from anotacao.pasta import ler_json
-from anotacao.preprocessamento import preprocessar
-from anotacao.servidor import Configuracao, criar_app
-from anotacao.sorteio import ParametrosSorteio
+from anotacao.cli import main
+from anotacao.formatos import Fila, GabaritoCamera, Manifesto, RevisaoCamera, RotuloCamera, Tomadas
+from anotacao.pacote import pacote_sintetico
+
+from sintetico import REGISTRO_DA_TOMADA, codificadores_ffmpeg, codificar, gravar_quadros, renderizar
 
 pytestmark = pytest.mark.e2e
 playwright = pytest.importorskip("playwright.sync_api")
 
+WEB = Path(__file__).resolve().parents[2] / "web"
 CAMPO = Campo()
-NOME_REGISTRO = {0: "principal", 1: "16m_dir", 2: "reversa"}  # câmeras das tomadas do vídeo sintético
+PARTIDA = "2026-11-02_estadio-sintetico_time-a-time-b"
+
+
+class _Silencioso(SimpleHTTPRequestHandler):
+    def log_message(self, *args):
+        pass
+
+
+@pytest.fixture(scope="module")
+def site():
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), functools.partial(_Silencioso, directory=str(WEB)))
+    t = threading.Thread(target=srv.serve_forever, daemon=True)
+    t.start()
+    yield f"http://127.0.0.1:{srv.server_port}/"
+    srv.shutdown()
+
+
+@pytest.fixture(scope="module")
+def video(tmp_path_factory):
+    if not codificadores_ffmpeg() & {"libsvtav1", "libvpx-vp9", "libaom-av1"}:
+        pytest.skip("precisa do ffmpeg com AV1 ou VP9")
+    pasta = tmp_path_factory.mktemp("video")
+    verdade = gravar_quadros(pasta / "quadros", pacote_sintetico())
+    return codificar(pasta / "quadros", pasta / "jogo.mp4"), verdade
 
 
 @pytest.fixture
-def servidor(pasta, video, cadastro, tmp_path):
-    import uvicorn
+def navegador():
+    with playwright.sync_playwright() as p:
+        exe = os.environ.get("ANOTACAO_CHROMIUM")  # navegador já instalado, se houver
+        nav = p.chromium.launch(executable_path=exe) if exe else p.chromium.launch()
+        yield nav
+        nav.close()
 
-    caminho, verdade = video
-    r = preprocessar(pasta, caminho, cadastro, params=ParametrosSorteio(alvo=10, frac_dupla=0, frac_sem_previsao=0))
-    cfg = Configuracao(pasta=pasta.raiz, pasta_videos=tmp_path / "v", config_local=tmp_path / "c" / "c.json")
-    with socket.socket() as s:
-        s.bind(("127.0.0.1", 0))
-        porta = s.getsockname()[1]
-    srv = uvicorn.Server(uvicorn.Config(criar_app(cfg), host="127.0.0.1", port=porta, log_level="warning"))
-    t = threading.Thread(target=srv.run, daemon=True)
-    t.start()
-    for _ in range(100):
-        if srv.started:
-            break
-        time.sleep(0.05)
-    yield f"http://127.0.0.1:{porta}", pasta, verdade, r.partida
-    srv.should_exit = True
-    t.join(timeout=5)
+
+@pytest.fixture
+def capturas(tmp_path) -> Path:
+    return Path(os.environ.get("ANOTACAO_CAPTURAS", tmp_path))
+
+
+def _pagina(nav, erros: list[str]):
+    contexto = nav.new_context(viewport={"width": 1400, "height": 860}, bypass_csp=True, accept_downloads=True)
+    pagina = contexto.new_page()
+    pagina.on("dialog", lambda d: d.accept())
+    pagina.on("pageerror", lambda e: erros.append(str(e)))
+    return pagina
+
+
+def _ler(pagina, caminho: str) -> str:
+    return pagina.evaluate("async (c) => await (await anotacao.pasta.arquivo(c)).text()", caminho)
+
+
+def _listar(pagina, diretorio: str) -> list[str]:
+    return pagina.evaluate("async (d) => (await anotacao.pasta.listar(d)).map((x) => x.nome)", diretorio)
 
 
 def _tela(pagina, X):
-    """Posição na tela (px da janela) de um ponto 3D pela câmera atual do editor, ou None."""
+    """Posição na janela de um ponto 3D pela câmera atual do editor, ou None."""
     return pagina.evaluate(
         """(X) => { const px = editor.cam.projetar(X); if (!px) return null;
             const [sx, sy] = editor.paraTela(px[0], px[1]); const r = editor.cv.getBoundingClientRect();
@@ -77,74 +119,273 @@ def _espalhados(pontos: dict, n: int) -> list[str]:
     return escolhidos
 
 
-def test_anotar_arrastando_e_aprovar(servidor, tmp_path):
-    url, pasta, verdade, pid = servidor
-    shots = Path(os.environ.get("ANOTACAO_CAPTURAS", tmp_path))  # capturas de tela, para olhar depois
-    with playwright.sync_playwright() as p:
-        exe = os.environ.get("ANOTACAO_CHROMIUM")  # navegador já instalado, se houver
-        nav = p.chromium.launch(executable_path=exe) if exe else p.chromium.launch()
-        pagina = nav.new_page(viewport={"width": 1400, "height": 860})
-        pagina.on("dialog", lambda d: d.accept())
-        erros = []
-        pagina.on("pageerror", lambda e: erros.append(str(e)))
+def _ajustar_molde(pagina, cam_v: Camera, registro: str) -> None:
+    """Recomeça pela câmera do registro, abre o molde um pouco fora da verdade (como uma previsão
+    imprecisa) e arrasta 5 pontos espalhados até onde a câmera verdadeira os põe."""
+    pagina.wait_for_function("window.editor !== undefined && window.editor !== null")
+    pagina.select_option("#registro", registro)
+    pagina.click("#recomecar")
+    assert pagina.evaluate("editor.pinos.length") == 0
+    pan, tilt, roll = cam_v.ptr
+    pagina.evaluate(
+        """async ([hfov, pan, tilt, roll, C]) => {
+            const { Camera } = await import("./js/nucleo/camera.js");
+            editor.recomecar(Camera.deHfov(hfov, pan, tilt, roll, C, editor.w, editor.h)); }""",
+        [cam_v.hfov * 1.08, pan + 2.5, tilt + 1.5, roll, [float(v) for v in cam_v.C]],
+    )
+    alvos = {}
+    for nome in CAMPO.nomes_pontos:
+        px, _ = cam_v.project(CAMPO.ponto(nome))
+        ini = _tela(pagina, CAMPO.ponto(nome))
+        if cam_v.in_image(px, margem=-30)[0] and ini and 0 < ini[2] < cam_v.w and 0 < ini[3] < cam_v.h:
+            alvos[nome] = px[0]
+    escolhidos = _espalhados(alvos, 5)
+    assert len(escolhidos) >= 4, escolhidos
+    for nome in escolhidos:
+        ini = _tela(pagina, CAMPO.ponto(nome))
+        fim = _imagem_para_janela(pagina, *map(float, alvos[nome]))
+        pagina.mouse.move(ini[0], ini[1])
+        pagina.mouse.down()
+        pagina.mouse.move(fim[0], fim[1], steps=12)
+        pagina.mouse.up()
+    residuos = pagina.evaluate("editor.residuos().map((r) => r.px)")
+    assert max(residuos) < 2.0, residuos
 
-        pagina.goto(url + "/")
-        pagina.select_option("#pessoa", "A01")
-        pagina.wait_for_function("document.querySelector('#st-camera').textContent.startsWith('Liberado')")
-        pagina.click("#ir-camera")
-        pagina.wait_for_function("window.editor !== undefined && window.editor !== null")
 
-        item = next(it for it in pasta.ler_fila(pid).itens if "A01" in it.atribuido_a)
-        cam_v = verdade[item.i]
-        pagina.select_option("#registro", NOME_REGISTRO[item.tomada])
-        pagina.click("#recomecar")
-        pagina.screenshot(path=str(shots / "e2e_1_inicio.png"))
+def _escolher_pessoa(pagina, url: str, codigo: str) -> None:
+    pagina.goto(url + "#/")
+    pagina.wait_for_selector("#pessoa:not([disabled])")
+    pagina.select_option("#pessoa", codigo)
+    pagina.wait_for_function(f"localStorage.getItem('anotacao.pessoa') === '{codigo}'")
+    pagina.wait_for_selector("#st-camera")
 
-        # pontos visíveis na câmera verdadeira e na de partida
-        alvos = {}
-        for nome in CAMPO.nomes_pontos:
-            px, _ = cam_v.project(CAMPO.ponto(nome))
-            ini = _tela(pagina, CAMPO.ponto(nome))
-            if cam_v.in_image(px, margem=-30)[0] and ini and 0 < ini[2] < cam_v.w and 0 < ini[3] < cam_v.h:
-                alvos[nome] = px[0]
-        escolhidos = _espalhados(alvos, 5)
-        assert len(escolhidos) >= 4, escolhidos
-        for nome in escolhidos:
-            ini = _tela(pagina, CAMPO.ponto(nome))
-            fim = _imagem_para_janela(pagina, *map(float, alvos[nome]))
-            pagina.mouse.move(ini[0], ini[1])
-            pagina.mouse.down()
-            pagina.mouse.move(fim[0], fim[1], steps=12)
-            pagina.mouse.up()
-        pagina.screenshot(path=str(shots / "e2e_2_ajustado.png"))
-        residuos = pagina.evaluate("editor.residuos().map((r) => r.px)")
-        assert max(residuos) < 2.0, residuos
 
-        pagina.check("#ck-lado")
-        pagina.click("#salvar")
-        pagina.wait_for_function(
-            "document.querySelector('#erro').textContent === '' && "
-            "(window.editor === null || editor.pinos.length === 0)"
+def test_importar_anotar_revisar_e_unificar(site, video, navegador, capturas, tmp_path):
+    caminho, verdade = video
+    erros: list[str] = []
+    pagina = _pagina(navegador, erros)
+
+    # 1) guardar no navegador e criar a pasta de exemplo
+    pagina.goto(site)
+    pagina.click("#btn-navegador")
+    pagina.click("#criar-exemplo")
+    _escolher_pessoa(pagina, site, "A01")
+    pagina.wait_for_function("document.querySelector('#st-camera').textContent.startsWith('Liberado')")
+    pagina.screenshot(path=str(capturas / "e2e_1_central.png"), full_page=True)
+
+    # 2) importar o vídeo no navegador
+    pagina.click("#ir-importar")
+    pagina.wait_for_selector("#form-importar")
+    pagina.fill("input[name=emissora]", "Emissora X")
+    pagina.fill("input[name=competicao]", "Estadual")
+    pagina.fill("input[name=data_hora]", "2026-11-02T21:30")
+    pagina.fill("input[name=mandante]", "Time A")
+    pagina.fill("input[name=visitante]", "Time B")
+    pagina.check("input[name=chuva]")
+    pagina.fill("input[name=alvo]", "10")
+    pagina.set_input_files("input[name=video]", str(caminho))
+    pagina.click("#processar")
+    pagina.wait_for_function(
+        "document.querySelector('#res-importar').textContent.startsWith('Pronto')", timeout=120_000
+    )
+    pagina.screenshot(path=str(capturas / "e2e_2_importado.png"))
+    man = Manifesto.model_validate_json(_ler(pagina, f"partidas/{PARTIDA}/manifesto.json"))
+    tomadas = Tomadas.model_validate_json(_ler(pagina, f"partidas/{PARTIDA}/tomadas.json"))
+    fila = Fila.model_validate_json(_ler(pagina, f"partidas/{PARTIDA}/fila.json"))
+    assert man.cadastro.chuva is True and man.cadastro.data_hora.isoformat().startswith("2026-11-02T21:30")
+    assert man.video.n_quadros == 150 and (man.video.largura, man.video.altura) == (640, 360)
+    assert man.video.sha256 == hashlib.sha256(caminho.read_bytes()).hexdigest()
+    assert tomadas.cortes == [50, 100]
+    assert len(fila.itens) == 3 and {i.tomada for i in fila.itens} == {0, 1, 2}
+    jpgs = _listar(pagina, f"partidas/{PARTIDA}/quadros")
+    assert sorted(jpgs) == sorted(f"{i.quadro}.jpg" for i in fila.itens)
+    for it in fila.itens:
+        assert it.quadro == f"t{round(it.i * 40):010d}"  # 25 fps: PTS = 40 ms por quadro
+
+    # 3) anotar arrastando o molde (o primeiro quadro de A01 na fila)
+    item = next(it for it in fila.itens if "A01" in it.atribuido_a)
+    pagina.goto(site + "#/camera")
+    _ajustar_molde(pagina, verdade[item.i], REGISTRO_DA_TOMADA[item.tomada])
+    pagina.screenshot(path=str(capturas / "e2e_3_ajustado.png"))
+    pagina.check("#ck-lado")
+    pagina.click("#salvar")
+    pagina.wait_for_function(
+        "document.querySelector('#erro').textContent === '' && (window.editor === null || editor.pinos.length === 0)"
+    )
+    rotulos = _listar(pagina, f"partidas/{PARTIDA}/rotulos/camera")
+    assert rotulos == [f"{item.quadro}__A01__v1.json"]
+    r = RotuloCamera.model_validate_json(_ler(pagina, f"partidas/{PARTIDA}/rotulos/camera/{rotulos[0]}"))
+    cam_v = verdade[item.i]
+    assert r.situacao == "ok" and r.residuo_mediano_px < 2.0 and r.segundos_ativos >= 0
+    assert abs(r.camera.pan - cam_v.ptr[0]) < 0.3 and abs(r.camera.tilt - cam_v.ptr[1]) < 0.3
+    assert abs(r.camera.hfov_graus - cam_v.hfov) < 0.5
+
+    # 4) revisão cruzada às cegas por outra pessoa
+    _escolher_pessoa(pagina, site, "A02")
+    pagina.wait_for_function("document.querySelector('#st-revisao').textContent.includes('esperando')")
+    pagina.click("#ir-revisao")
+    pagina.wait_for_selector("#aprovar", state="visible")
+    pagina.screenshot(path=str(capturas / "e2e_4_revisao.png"))
+    assert "A01" not in pagina.inner_text("main")
+    pagina.click("#aprovar")
+    pagina.wait_for_selector("#vazio", state="visible")
+    revisoes = _listar(pagina, f"partidas/{PARTIDA}/revisoes/camera")
+    assert revisoes == [f"{item.quadro}__A02__v1.json"]
+    rev = RevisaoCamera.model_validate_json(_ler(pagina, f"partidas/{PARTIDA}/revisoes/camera/{revisoes[0]}"))
+    assert rev.decisao == "aprovar" and rev.rotulo == rotulos[0]
+
+    # 5) placar e cópia da pasta em .zip
+    pagina.goto(site + "#/")
+    pagina.wait_for_function("document.querySelectorAll('#placar tbody tr td').length > 1")
+    linhas = pagina.eval_on_selector_all(
+        "#placar tbody tr", "trs => trs.map(tr => [...tr.children].map(td => td.textContent))"
+    )
+    a01 = next((x for x in linhas if x[0].startswith("A01")), None)
+    assert a01 is not None and a01[2] == "1", linhas
+    pagina.screenshot(path=str(capturas / "e2e_5_placar.png"), full_page=True)
+    with pagina.expect_download() as baixado:
+        pagina.click("#baixar-tudo")
+    zip_path = tmp_path / "pasta.zip"
+    baixado.value.save_as(zip_path)
+
+    # 6) o Python lê, valida e unifica o que o navegador gravou
+    destino = tmp_path / "trabalho"
+    with zipfile.ZipFile(zip_path) as z:
+        assert z.testzip() is None
+        z.extractall(destino)
+    assert main(["validar", "--pasta", str(destino)]) == 0
+    assert main(["unificar", "--pasta", str(destino)]) == 0
+    conjunto = next((destino / "conjuntos").iterdir())
+    df = pd.read_parquet(conjunto / "camera.parquet")
+    assert len(df) == 1
+    assert (df.loc[0, "anotador"], df.loc[0, "revisor"], df.loc[0, "decisao"]) == ("A01", "A02", "aprovar")
+    assert json.loads((conjunto / "manifesto.json").read_text(encoding="utf-8"))["por_conjunto"] == {"treino": 1}
+
+    # 7) trazer o mesmo .zip de volta não sobrescreve nada
+    pagina.set_input_files("#trazer-zip", str(zip_path))
+    pagina.wait_for_function("document.querySelector('#res-pasta').textContent.includes('já existiam')")
+    assert pagina.inner_text("#res-pasta").startswith("0 arquivo(s) novo(s)")
+    assert not erros, erros
+
+
+def test_treino_com_gabarito(site, navegador, capturas, tmp_path):
+    """Quem começa anota o gabarito e vê na hora a diferença para a câmera verdadeira."""
+    pacote = pacote_sintetico()
+    origem = tmp_path / "gabarito"
+    origem.mkdir()
+    cams = {}
+    for k in range(2):
+        cam = Camera.look_at(np.asarray(pacote.cameras[0].T, float), [-20 + 10 * k, 4.0, 0], 32, 640, 360)
+        gid = f"g{k + 1:04d}"
+        cv2.imwrite(str(origem / f"{gid}.jpg"), renderizar(cam, CAMPO, pacote, k))
+        g = GabaritoCamera(
+            id=gid,
+            pacote=pacote.ref,
+            imagem=f"{gid}.jpg",
+            largura=640,
+            altura=360,
+            camera=cam.para_rotulo(),
+            origem="simulador",
         )
-        arquivos = list(pasta.rotulos(pid, "camera").glob("*__A01__v1.json"))
-        assert len(arquivos) == 1
-        r = ler_json(arquivos[0], RotuloCamera)
-        assert r.situacao == "ok" and r.residuo_mediano_px < 2.0 and r.segundos_ativos >= 0
-        cam_r = r.camera
-        assert abs(cam_r.pan - cam_v.ptr[0]) < 0.3 and abs(cam_r.tilt - cam_v.ptr[1]) < 0.3
-        assert abs(cam_r.hfov_graus - cam_v.hfov) < 0.5
+        (origem / f"{gid}.json").write_text(g.model_dump_json(), encoding="utf-8")
+        cams[gid] = cam
+    erros: list[str] = []
+    pagina = _pagina(navegador, erros)
+    pagina.goto(site)
+    pagina.click("#btn-navegador")
+    pagina.click("#criar-exemplo")
+    pagina.wait_for_selector("#pessoa:not([disabled])")
+    pagina.goto(site + "#/coordenacao")
+    pagina.wait_for_selector("#st-gabarito")
+    pagina.set_input_files("#arquivos-gabarito", sorted(str(p) for p in origem.iterdir()))
+    pagina.wait_for_function("document.querySelector('#erro-gabarito').textContent.startsWith('2 item')")
+    _escolher_pessoa(pagina, site, "A01")
+    pagina.wait_for_function("document.querySelector('#st-camera').textContent.startsWith('Em treino')")
+    pagina.click("#ir-camera")
+    pagina.wait_for_selector("#treino", state="visible")
+    gid = pagina.evaluate("anotacao.indice.itensGabarito().then((g) => g.map((x) => x.id))")
+    ids = _listar(pagina, "gabarito/itens")
+    assert sorted(ids) == ["g0001.jpg", "g0001.json", "g0002.jpg", "g0002.json"]
+    # qual item abriu: o que tem a imagem igual à do editor
+    tamanho = pagina.evaluate("[editor.w, editor.h]")
+    assert tamanho == [640, 360]
+    atual = None
+    for g in gid:
+        ref = cv2.imread(str(origem / f"{g}.jpg"))
+        b64 = pagina.evaluate(
+            "() => { const c = document.createElement('canvas'); c.width = editor.w; c.height = editor.h;"
+            " c.getContext('2d').drawImage(editor.img, 0, 0); return c.toDataURL('image/png').split(',')[1]; }"
+        )
+        mostrado = cv2.imdecode(np.frombuffer(base64.b64decode(b64), np.uint8), cv2.IMREAD_COLOR)
+        if cv2.PSNR(mostrado, ref) > 35:
+            atual = g
+    assert atual in cams
+    _ajustar_molde(pagina, cams[atual], "principal")
+    pagina.check("#ck-lado")
+    pagina.click("#salvar")
+    pagina.wait_for_selector("#modal", state="visible")
+    assert pagina.inner_text("#modal-titulo") == "Dentro da tolerância"
+    assert "Faltam acertos no gabarito (1/10" in pagina.inner_text("#modal-texto")
+    pagina.screenshot(path=str(capturas / "e2e_6_treino.png"))
+    rot = _listar(pagina, "gabarito/rotulos/camera")
+    assert rot == [f"{atual}__A01__v1.json"]
+    assert not erros, erros
 
-        # revisão cruzada às cegas por outra pessoa
-        pagina.goto(url + "/")
-        pagina.select_option("#pessoa", "A02")
-        pagina.wait_for_function("document.querySelector('#st-revisao').textContent.includes('esperando')")
-        pagina.click("#ir-revisao")
-        pagina.wait_for_selector("#aprovar", state="visible")
-        pagina.screenshot(path=str(shots / "e2e_3_revisao.png"))
-        assert "A01" not in pagina.inner_text("body")
-        pagina.click("#aprovar")
-        pagina.wait_for_selector("#vazio", state="visible")
-        revs = list(pasta.revisoes(pid, "camera").glob("*__A02__v1.json"))
-        assert len(revs) == 1 and ler_json(revs[0], RevisaoCamera).decisao == "aprovar"
-        assert not erros, erros
-        nav.close()
+
+def test_pasta_escolhida_e_lembrada(site, navegador):
+    """A pasta escolhida fica lembrada: ao voltar, a página abre direto nela."""
+    erros: list[str] = []
+    pagina = _pagina(navegador, erros)
+    pagina.add_init_script(
+        "window.showDirectoryPicker = async () =>"
+        " (await navigator.storage.getDirectory()).getDirectoryHandle('pasta-da-equipe', { create: true });"
+    )
+    pagina.goto(site)
+    pagina.click("#btn-escolher")
+    pagina.wait_for_selector("#aviso-vazia", state="visible")
+    assert "pasta-da-equipe" in pagina.inner_text("#nome-vazia")
+    pagina.click("#criar-exemplo")
+    pagina.wait_for_selector("#pessoa:not([disabled])")
+    pagina.reload()
+    pagina.wait_for_selector("#pessoa:not([disabled])")
+    assert "pasta-da-equipe" in pagina.inner_text("#pasta-nome")
+    pagina.click("#trocar-pasta")
+    pagina.wait_for_selector("#btn-escolher")
+    assert not erros, erros
+
+
+@pytest.fixture(scope="module")
+def site_montado(tmp_path_factory):
+    """O site como o GitHub Pages publica (com a lista de arquivos para o trabalho offline)."""
+    import subprocess
+    import sys
+
+    destino = tmp_path_factory.mktemp("site") / "_site"
+    subprocess.run([sys.executable, str(WEB.parent / "scripts" / "montar_site.py"), str(destino)], check=True)
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), functools.partial(_Silencioso, directory=str(destino)))
+    t = threading.Thread(target=srv.serve_forever, daemon=True)
+    t.start()
+    yield f"http://127.0.0.1:{srv.server_port}/"
+    srv.shutdown()
+
+
+def test_funciona_sem_internet(site_montado, navegador):
+    """Depois da primeira visita, o site abre e importa sem rede (o service worker guardou tudo)."""
+    erros: list[str] = []
+    pagina = _pagina(navegador, erros)
+    pagina.goto(site_montado)
+    pagina.wait_for_selector("#btn-navegador")
+    pagina.wait_for_function("navigator.serviceWorker.ready.then(() => true)")
+    pagina.wait_for_function(
+        "caches.open('anotacao-site').then((c) => c.keys())"
+        ".then((k) => k.some((r) => r.url.endsWith('trabalhador.js')))"
+    )
+    pagina.context.set_offline(True)
+    pagina.reload()
+    pagina.wait_for_selector("#btn-navegador")
+    pagina.click("#btn-navegador")
+    pagina.click("#criar-exemplo")
+    pagina.wait_for_selector("#pessoa:not([disabled])")
+    assert pagina.evaluate("anotacao.pasta.listarPacotes()") == ["estadio-sintetico/pacote-1.0"]
+    pagina.context.set_offline(False)
+    assert not erros, erros

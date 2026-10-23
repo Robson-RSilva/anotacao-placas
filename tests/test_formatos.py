@@ -1,13 +1,12 @@
-"""Os formatos recusam arquivo incoerente, e os JSON Schemas versionados estão em dia."""
+"""Os formatos recusam arquivo incoerente."""
 
 from datetime import UTC, datetime
-from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
 
 from anotacao.camera import Camera
-from anotacao.formatos import ESQUEMAS, Divisao, RevisaoCamera, RotuloCamera, esquema_json
+from anotacao.formatos import Divisao, Projeto, RevisaoCamera, RotuloCamera
 
 CAM = Camera.look_at([0.0, -58.0, 14.0], [5.0, 0.0, 0.0], 35.0, 1280, 720).para_rotulo()
 
@@ -93,9 +92,10 @@ def test_divisao_sem_sobreposicao():
         Divisao(validacao=[p], teste_congelado=[p])
 
 
-def test_esquemas_versionados_em_dia():
-    pasta = Path(__file__).parents[1] / "src" / "anotacao" / "esquemas"
-    for nome, modelo in ESQUEMAS.items():
-        assert (pasta / nome).read_text(encoding="utf-8") == esquema_json(modelo), (
-            f"{nome} desatualizado: rode `anotacao esquemas src/anotacao/esquemas`"
-        )
+def test_projeto_so_aceita_link_https():
+    assert Projeto().manual_url == ""
+    assert Projeto(manual_url="https://claude.ai/artifact/abc").manual_url.startswith("https://")
+    with pytest.raises(ValidationError):
+        Projeto(manual_url="javascript:alert(1)")
+    with pytest.raises(ValidationError):
+        Projeto(manual_url="http://exemplo.com")

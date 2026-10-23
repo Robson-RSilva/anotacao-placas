@@ -1,8 +1,8 @@
 """Previsor: de onde vem a câmera prevista que já aparece desenhada na página de câmera.
 
-A ferramenta não depende de nenhum modelo para funcionar. Sem previsor, o molde abre pela câmera
-de um quadro já anotado da mesma tomada ou pela câmera do registro do estádio. Com previsor, cada
-quadro sorteado ganha `previsoes/<quadro>.json` no pré-processamento.
+As páginas não dependem de nenhum modelo. Sem previsão, o molde abre pela câmera de um quadro já
+anotado da mesma tomada ou pela câmera do registro do estádio. Com um previsor, `anotacao prever`
+grava `previsoes/<quadro>.json` para os quadros sorteados, e a página usa essa câmera para começar.
 
 Um previsor é qualquer objeto chamável com `nome` e `versao`:
 
@@ -18,11 +18,14 @@ função que devolve a instância).
 from __future__ import annotations
 
 import importlib
+from collections.abc import Callable
 from typing import Protocol
 
+import cv2
 import numpy as np
 
-from .formatos import CameraRotulo, PacoteEstadio
+from .formatos import CameraRotulo, PacoteEstadio, Previsao
+from .pasta import Pasta, escrever_json
 
 
 class Previsor(Protocol):
@@ -47,3 +50,47 @@ def carregar_previsor(especificacao: str | None) -> Previsor | None:
     if not callable(obj):
         raise TypeError("o previsor precisa ser chamável")
     return obj
+
+
+def prever(
+    pasta: Pasta,
+    previsor: Previsor,
+    partidas: list[str] | None = None,
+    *,
+    refazer: bool = False,
+    progresso: Callable[[str, int, int], None] | None = None,
+) -> int:
+    """Grava a previsão de cada quadro da fila (menos os "sem previsão"). Devolve quantas gravou.
+
+    Rodar de novo só faz as que faltam (quadros que ainda não chegaram pela sincronização ficam para
+    a próxima vez), a não ser com `refazer`.
+    """
+    n = 0
+    for pid in partidas or pasta.listar_partidas():
+        man = pasta.ler_manifesto(pid)
+        pacote = pasta.ler_pacote_ref(man.pacote)
+        itens = [it for it in pasta.ler_fila(pid).itens if not it.sem_previsao]
+        for k, item in enumerate(itens):
+            destino = pasta.previsao(pid, item.quadro)
+            if destino.exists() and not refazer:
+                continue
+            img = cv2.imread(str(pasta.quadro(pid, item.quadro)))
+            if img is None:
+                continue
+            cam, confianca = previsor(img, pacote)
+            escrever_json(
+                destino,
+                Previsao(
+                    partida=pid,
+                    quadro=item.quadro,
+                    fonte=previsor.nome,
+                    versao=previsor.versao,
+                    camera=cam,
+                    confianca=confianca,
+                ),
+                sobrescrever=True,
+            )
+            n += 1
+            if progresso:
+                progresso(pid, k + 1, len(itens))
+    return n

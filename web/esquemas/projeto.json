@@ -1,0 +1,26 @@
+{
+  "additionalProperties": false,
+  "description": "Dados da pasta de trabalho que as páginas mostram (opcional).",
+  "properties": {
+    "formato": {
+      "const": "projeto/1",
+      "default": "projeto/1",
+      "title": "Formato",
+      "type": "string"
+    },
+    "manual_url": {
+      "default": "",
+      "description": "link do Manual de anotação",
+      "pattern": "^(https://\\S+)?$",
+      "title": "Manual Url",
+      "type": "string"
+    },
+    "nome": {
+      "default": "",
+      "title": "Nome",
+      "type": "string"
+    }
+  },
+  "title": "Projeto",
+  "type": "object"
+}
