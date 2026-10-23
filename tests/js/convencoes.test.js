@@ -12,6 +12,7 @@ test("versão, referência, manual e regex iguais aos do Python", () => {
   assert.deepEqual([c.REF_W, c.REF_H], ref.ref);
   assert.deepEqual({ ...c.MANUAL }, ref.manual);
   assert.equal(c.PARTIDA_GABARITO, ref.partida_gabarito);
+  assert.equal(c.REF_PACOTE_GENERICO, ref.ref_pacote_generico);
   for (const [nome, padrao] of Object.entries(ref.regex)) assert.equal(c[nome].source, padrao.replaceAll("/", "\\/"), nome);
 });
 
@@ -34,6 +35,17 @@ test("nomes de arquivo por pessoa e versão", () => {
   assert.throws(() => c.nomeArquivo("t0000001000", "a01", 1));
   assert.throws(() => c.nomeArquivo("t0000001000", "A01", 0));
   assert.deepEqual(c.partesPacote("arena-x/pacote-1.10"), ["arena-x", "1.10"]);
+});
+
+test("código da pessoa: o que ela digitar, em maiúsculas, sem acento nem espaço", () => {
+  assert.equal(c.codigoPessoa("rs"), "RS");
+  assert.equal(c.codigoPessoa(" Ana Clara "), "ANACLARA");
+  assert.equal(c.codigoPessoa("joão-2"), "JOAO2");
+  assert.equal(c.codigoPessoa("A01"), "A01");
+  assert.equal(c.codigoPessoa("Maximiliano Souza"), "MAXIMILIAN"); // até 10 caracteres
+  for (const ruim of ["", "a", "1AB", "ç", "  ", null, undefined]) assert.equal(c.codigoPessoa(ruim), null, String(ruim));
+  assert.equal(c.lerNome("t0000001000__ANACLARA__v1.json").pessoa, "ANACLARA");
+  assert.equal(c.nomeArquivo("g0001", "RS", 1), "g0001__RS__v1.json");
 });
 
 test("data e hora do formulário guardam o fuso local (o dia da partida não muda)", () => {

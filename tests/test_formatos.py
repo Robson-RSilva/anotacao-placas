@@ -56,6 +56,14 @@ def test_rotulo_incoerente(mudanca, trecho):
         rotulo(**mudanca)
 
 
+def test_medidas_do_campo_no_rotulo():
+    assert rotulo().campo is None  # rótulo da 0.2: valem as do pacote
+    r = rotulo(campo={"comprimento": 100.5, "largura": 64})
+    assert (r.campo.comprimento, r.campo.largura) == (100.5, 64.0)
+    with pytest.raises(ValidationError, match="greater than 40"):
+        rotulo(campo={"comprimento": 100, "largura": 30})
+
+
 def test_sem_marcacoes_sem_camera():
     r = rotulo(situacao="sem_marcacoes", camera=None, lado=None, pontos_travados=[])
     assert r.camera is None

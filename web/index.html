@@ -52,9 +52,12 @@
       <h1>Anotação de dados para treino</h1>
       <span class="sutil" data-versao></span>
       <span class="espaco"></span>
-      <label class="quem">Você é
-        <select id="pessoa" aria-label="Seu código"></select>
-      </label>
+      <form class="quem" id="form-pessoa">
+        <label for="pessoa">Seu código</label>
+        <input id="pessoa" list="pessoas" autocomplete="off" spellcheck="false" maxlength="10" placeholder="ex.: RS" aria-describedby="dica-pessoa">
+        <datalist id="pessoas"></datalist>
+        <span class="sutil" id="dica-pessoa" role="status"></span>
+      </form>
     </header>
 
     <main class="central">
@@ -63,7 +66,7 @@
         <p class="sutil" id="nome-vazia"></p>
         <div class="botoes">
           <button type="button" class="primario" id="criar-vazia">Criar pasta de trabalho</button>
-          <button type="button" id="criar-exemplo">Criar com o exemplo (estádio sintético, equipe A01 e A02)</button>
+          <button type="button" id="criar-exemplo">Criar com o exemplo (estádio sintético)</button>
           <button type="button" id="trocar-vazia">Escolher outra pasta</button>
         </div>
       </section>
@@ -116,7 +119,7 @@
             <button type="button" id="baixar-meus">Baixar os meus arquivos (.zip)</button>
             <button type="button" id="baixar-tudo">Baixar cópia da pasta (.zip)</button>
             <label class="botao">Trazer arquivos de um .zip<input type="file" id="trazer-zip" accept=".zip,application/zip" hidden></label>
-            <a class="botao" href="#/coordenacao">Coordenação</a>
+            <a class="botao" href="#/coordenacao">Coordenação (opcional)</a>
           </div>
           <p class="sutil" id="res-pasta" role="status"></p>
         </section>
@@ -162,6 +165,17 @@
         </section>
 
         <section>
+          <h2>Medidas do campo</h2>
+          <div class="medidas">
+            <input id="comprimento" type="number" min="90" max="120" step="0.5" inputmode="decimal" aria-label="Comprimento do campo, em metros" title="Comprimento: de uma linha de fundo à outra">
+            <span>×</span>
+            <input id="largura" type="number" min="45" max="90" step="0.5" inputmode="decimal" aria-label="Largura do campo, em metros" title="Largura: de uma lateral à outra">
+            <span>m</span>
+          </div>
+          <p class="sutil">Comprimento × largura. As áreas, o círculo e os gols têm a medida da regra; o tamanho do campo muda de um estádio para outro. Se o molde não fecha com as linhas, ajuste aqui (o que está travado continua).</p>
+        </section>
+
+        <section>
           <h2>Travados <span id="n-pinos" class="contagem"></span></h2>
           <ul id="pinos" class="pinos"><li class="sutil">Arraste ou clique num ponto do molde para travar.</li></ul>
         </section>
@@ -171,7 +185,7 @@
           <ul class="checagem">
             <li id="ck-pontos">3 pontos espalhados, ou 2 pontos e 1 linha</li>
             <li id="ck-residuo">molde a até 2 px dos travados</li>
-            <li><label><input type="checkbox" id="ck-lado"> conferi o lado numa placa estática</label></li>
+            <li id="ck-lado-item"><label><input type="checkbox" id="ck-lado"> conferi o lado numa placa estática</label></li>
           </ul>
         </section>
 
@@ -196,6 +210,7 @@
             <li><b>Arrastar um ponto</b>: o molde inteiro acompanha; ao soltar, ele fica travado.</li>
             <li><b>Clicar num ponto</b>: trava onde está.</li>
             <li><b>Arrastar uma linha</b> (lateral, fundo): leva a linha até a pintada.</li>
+            <li><b>Medidas do campo</b>: quando o campo é maior ou menor que 105 × 68 m, mude o comprimento e a largura; o que está travado continua.</li>
             <li><b>Botão direito</b> num travado: destrava.</li>
             <li><b>Roda do mouse</b>: aproxima. Arrastar o vazio move a vista. <kbd>0</kbd> volta a vista.</li>
             <li><kbd>L</kbd> nomes · <kbd>P</kbd> placas · <kbd>F</kbd> virar o lado · <kbd>S</kbd> salvar</li>
@@ -229,7 +244,7 @@
       </div>
 
       <aside class="painel" id="painel" hidden>
-        <section class="faixa">Você não vê quem anotou. Confira as placas da borda, os arcos e o lado.</section>
+        <section class="faixa">Você não vê quem anotou. Confira as linhas, os arcos, as medidas do campo e o lado.</section>
 
         <section>
           <h2>O rótulo</h2>
@@ -237,6 +252,7 @@
             <dt>Situação</dt><dd id="r-situacao"></dd>
             <dt>Resíduo mediano</dt><dd id="r-residuo"></dd>
             <dt>Partiu de</dt><dd id="r-partiu"></dd>
+            <dt>Medidas do campo</dt><dd id="r-campo"></dd>
             <dt>Comentário</dt><dd id="r-comentario"></dd>
           </dl>
           <ul id="pinos" class="pinos"></ul>
@@ -275,6 +291,12 @@
             <button id="virar" type="button">Virar o lado <kbd>F</kbd></button>
             <button id="desfazer" type="button">Desfazer</button>
           </div>
+          <div class="medidas">
+            <input id="comprimento" type="number" min="90" max="120" step="0.5" inputmode="decimal" aria-label="Comprimento do campo, em metros" title="Comprimento: de uma linha de fundo à outra">
+            <span>×</span>
+            <input id="largura" type="number" min="45" max="90" step="0.5" inputmode="decimal" aria-label="Largura do campo, em metros" title="Largura: de uma lateral à outra">
+            <span>m</span>
+          </div>
           <select id="situacao-corr" aria-label="Situação da correção">
             <option value="ok">Câmera certa</option>
             <option value="sem_marcacoes">Sem marcações suficientes</option>
@@ -302,7 +324,8 @@
       <section class="cartao">
         <p class="sutil">O vídeo é lido e processado neste navegador; só os quadros sorteados vão para a pasta de trabalho. Funciona com MP4 ou MOV (H.264, H.265, VP9 ou AV1). Para MKV ou TS, converta antes para MP4 (no OBS: Arquivo → Remuxar gravações).</p>
         <form id="form-importar" class="grade-form">
-          <label>Pacote do estádio <select name="pacote" required></select></label>
+          <label>Estádio <input name="estadio" required autocomplete="off" placeholder="ex.: Arena da Baixada"></label>
+          <label id="rotulo-pacote" hidden>Molde do campo <select name="pacote"></select></label>
           <label>Emissora <input name="emissora" required autocomplete="off"></label>
           <label>Competição <input name="competicao" required autocomplete="off"></label>
           <label>Data e hora <input name="data_hora" type="datetime-local" required></label>
@@ -313,6 +336,9 @@
           </label>
           <label class="caixa-marcar"><input type="checkbox" name="chuva"> chuva</label>
           <label>Quadros a sortear <input name="alvo" type="number" min="1" max="5000" value="100"></label>
+          <label class="largo">Trechos do vídeo (opcional)
+            <input name="trechos" autocomplete="off" placeholder="ex.: 0:05:00-0:50:00, 1:05:00-1:50:00 (vazio: o vídeo inteiro)">
+          </label>
           <label class="largo">Observações <input name="observacoes" autocomplete="off"></label>
           <label class="largo">Vídeo <input name="video" type="file" accept="video/mp4,video/quicktime,.mp4,.mov,.m4v" required></label>
           <div class="largo botoes">
@@ -334,19 +360,19 @@
       <h1>Coordenação</h1>
     </header>
     <main class="central">
-      <p class="sutil">Para quem coordena. Cada arquivo daqui tem um dono só: edite numa máquina de cada vez para o Drive não criar cópias em conflito.</p>
+      <p class="sutil">Tudo aqui é opcional: para anotar basta importar a partida e cada pessoa digitar o próprio código. Cada arquivo daqui tem um dono só: edite numa máquina de cada vez para o Drive não criar cópias em conflito.</p>
 
       <section class="cartao">
-        <h2>Equipe</h2>
+        <h2>Nomes</h2>
         <table class="tabela" id="equipe">
-          <thead><tr><th>Código</th><th>Nome</th><th>Anota</th><th>Revisa</th><th></th></tr></thead>
+          <thead><tr><th>Código</th><th>Nome</th><th></th></tr></thead>
           <tbody></tbody>
         </table>
         <div class="botoes">
-          <button type="button" id="mais-membro">Acrescentar pessoa</button>
-          <button type="button" class="primario" id="salvar-equipe">Salvar a equipe</button>
+          <button type="button" id="mais-membro">Acrescentar</button>
+          <button type="button" class="primario" id="salvar-equipe">Salvar os nomes</button>
         </div>
-        <p class="sutil">Código: uma letra maiúscula e dois números (A01). Quem sai da equipe continua nos arquivos antigos.</p>
+        <p class="sutil">Só para o placar mostrar o nome de cada código e a página central sugerir os códigos.</p>
         <p class="erro" id="erro-equipe" role="alert"></p>
       </section>
 
@@ -362,6 +388,7 @@
 
       <section class="cartao">
         <h2>Pacotes de estádio</h2>
+        <p class="sutil">Sem pacote, o molde é o campo genérico (105 × 68 m, ajustável na página de câmera). O pacote do levantamento de um estádio traz as medidas, as placas (para conferir o lado) e a posição das câmeras.</p>
         <ul id="pacotes" class="lista"></ul>
         <label class="botao">Acrescentar pacote (pacote.json)<input type="file" id="arquivo-pacote" accept=".json,application/json" hidden></label>
         <p class="sutil">Pacote publicado não muda: medida nova é versão nova (pacote-1.1).</p>

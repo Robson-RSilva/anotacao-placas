@@ -133,19 +133,19 @@ export async function pastaExemplo({ membros = null } = {}) {
   return { pasta, indice: new Indice(pasta) };
 }
 
-/** Uma partida importada (manifesto, tomadas e fila), sem imagens: `itens` são {quadro, tomada, atribuido_a, ...}. */
+/** Uma partida importada (manifesto, tomadas e fila aberta), sem imagens: `itens` são {quadro, tomada, dupla, ...}. */
 export async function criarPartida(pasta, itens, { partida = PARTIDA, largura = 640, altura = 360 } = {}) {
   const fila = {
     formato: "fila.partida/1",
     partida,
     criado_em: AGORA.toISOString(),
-    equipe: ["A01", "A02"],
+    equipe: [],
     itens: itens.map((it, k) => ({
       quadro: it.quadro ?? `t${String(1000 * (k + 1)).padStart(10, "0")}`,
       tomada: it.tomada ?? 0,
       i: it.i ?? k,
       pts_ms: it.pts_ms ?? 1000 * (k + 1),
-      atribuido_a: it.atribuido_a ?? ["A01"],
+      atribuido_a: it.atribuido_a ?? [], // fila aberta (as da 0.2 atribuíam a pessoas)
       dupla: it.dupla ?? false,
       sem_previsao: it.sem_previsao ?? false,
     })),

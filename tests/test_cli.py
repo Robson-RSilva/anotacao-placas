@@ -21,7 +21,7 @@ def test_exemplo_validar_e_unificar(tmp_path, capsys):
     destino = tmp_path / "trabalho"
     assert main(["exemplo", str(destino)]) == 0
     pasta = Pasta(destino)
-    assert pasta.listar_pacotes() == ["estadio-sintetico/pacote-1.0"]
+    assert pasta.listar_pacotes() == ["estadio-sintetico/pacote-1.0", "generico/pacote-1.0"]
     assert [m.codigo for m in pasta.ler_equipe().membros] == ["A01", "A02"]
     assert main(["exemplo", str(destino)]) == 0  # de novo não estraga nada
     fila = criar_partida(pasta, [{}, {}])

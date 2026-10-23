@@ -186,6 +186,18 @@ function perm180(elementos, pontos) {
 
 const MOLDES = new Map();
 
+/**
+ * Medidas que a regra aceita para o campo: comprimento de 90 a 120 m, largura de 45 a 90 m, e mais
+ * comprido que largo. Devolve o problema, ou null.
+ */
+export function erroNasMedidas(comprimento, largura) {
+  if (!(comprimento >= 90 && comprimento <= 120 && largura >= 45 && largura <= 90)) {
+    return "medidas fora da regra: comprimento de 90 a 120 m e largura de 45 a 90 m";
+  }
+  if (comprimento <= largura) return "o comprimento precisa ser maior que a largura";
+  return null;
+}
+
 export class Molde {
   constructor(geo) {
     this.L = geo.L;
@@ -198,11 +210,21 @@ export class Molde {
     this._amostras = new Map();
   }
 
-  /** Molde do campo com as dimensões do pacote do estádio (um por dimensão, reaproveitado). */
-  static doPacote(pacote) {
-    const chave = `${pacote.campo.comprimento}|${pacote.campo.largura}`;
-    if (!MOLDES.has(chave)) MOLDES.set(chave, new Molde(construirCampo(pacote.campo.comprimento, pacote.campo.largura)));
+  /** Molde do campo com estas medidas, em metros (um por medida, reaproveitado). */
+  static doCampo(comprimento, largura) {
+    const chave = `${comprimento}|${largura}`;
+    if (!MOLDES.has(chave)) MOLDES.set(chave, new Molde(construirCampo(comprimento, largura)));
     return MOLDES.get(chave);
+  }
+
+  /** Molde do campo com as medidas do pacote do estádio. */
+  static doPacote(pacote) {
+    return Molde.doCampo(pacote.campo.comprimento, pacote.campo.largura);
+  }
+
+  /** Molde de um rótulo: as medidas que ele usou, ou as do pacote. */
+  static doRotulo(rotulo, pacote) {
+    return rotulo.campo ? Molde.doCampo(rotulo.campo.comprimento, rotulo.campo.largura) : Molde.doPacote(pacote);
   }
 
   ponto(nome) {

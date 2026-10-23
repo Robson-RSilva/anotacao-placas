@@ -2,22 +2,24 @@
 // sorteados vão para a pasta de trabalho.
 //
 // 1. leitura do vídeo (uma passada): hash do arquivo, relógio de cada quadro (PTS) e descritores
-//    de quadros reduzidos, com o decodificador do navegador (WebCodecs);
+//    de quadros reduzidos, com o decodificador do navegador (WebCodecs) — só nos trechos
+//    escolhidos, quando há;
 // 2. cortes e transições (regras do laboratório), só para organizar o sorteio;
 // 3. agrupamento das tomadas por aparência e zoom;
-// 4. sorteio de 1 ou 2 quadros por tomada e distribuição na equipe;
+// 4. sorteio de 1 ou 2 quadros por tomada (a fila é aberta: quem anota pega o próximo);
 // 5. extração dos quadros sorteados em JPEG, na resolução original;
 // 6. tomadas, fila e manifesto — o manifesto por último: partida sem manifesto não existe.
 
 import { Aleatorio } from "../nucleo/aleatorio.js";
-import { VERSAO, arredondarPar, idPartida, refPacote } from "../nucleo/convencoes.js";
+import { REF_PACOTE_GENERICO, VERSAO, arredondarPar, idPartida, partesPacote } from "../nucleo/convencoes.js";
 import { arredondar, mediana } from "../nucleo/estatistica.js";
-import { comPapel, validar } from "../nucleo/formatos.js";
+import { validar } from "../nucleo/formatos.js";
 import { Sha256 } from "../nucleo/hash.js";
+import { formatarTempo } from "../nucleo/trechos.js";
 import { agrupar, corrigirPts, detectarCortes, detectarGraduais, montarTomadas } from "./cortes.js";
 import { ALTURA, LARGURA, descrever, distanciaEstrutura, qui2 } from "./descritores.js";
 import { ErroVideo, abrirMp4, apresentacao, leitorDeArquivo } from "./mp4.js";
-import { PARAMETROS, atribuir, sortear } from "./sorteio.js";
+import { PARAMETROS, sortear } from "./sorteio.js";
 
 export class PartidaJaExiste extends Error {
   constructor(mensagem) {
@@ -91,6 +93,8 @@ export class MarcaDeImportacao {
 const BLOCO = 8 << 20;
 const FILA_MAX = 12;
 const DICA = "converta o vídeo para MP4 com H.264 (no HandBrake ou no ffmpeg) e tente de novo";
+const VOLTAS_MAX = 600; // quadros-chave para trás, procurando um começo aceito para o trecho
+const PERTO_US = 30e6; // grupos a menos de 30 s um do outro vão na mesma passada, depois de voltar
 const pausa = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function checarCancelamento(sinal) {
@@ -159,6 +163,7 @@ class Decodificador {
     if (this.erro) throw this.erro;
     await this.d.flush();
     if (this.erro) throw this.erro;
+    this.precisaChave = true; // depois do flush(), o próximo trecho tem de ser um quadro-chave de novo
   }
 
   fechar() {
@@ -174,10 +179,50 @@ function estimarFps(ptsMs) {
 }
 
 /**
- * 1ª passada: lê o arquivo em ordem, faz o hash e decodifica todos os quadros, guardando só os
- * descritores dos quadros reduzidos.
+ * Trechos do vídeo (segundos desde o primeiro quadro; o início entra, o fim não) -> os quadros que
+ * entram (`dentro`, na ordem de apresentação), as amostras a decodificar (`precisa`, na ordem do
+ * arquivo: do quadro-chave antes de cada trecho até o seguinte ao fim dele) e os limites dos trechos
+ * (índices de quadro, para nenhuma tomada atravessar um pedaço pulado).
  */
-async function analisar(leitor, faixa, ap, config, fps, { aoProgresso, sinal }) {
+export function planejarTrechos(trechos, faixa, ap) {
+  const n = ap.ordem.length;
+  const amostras = faixa.amostras;
+  const dentro = new Uint8Array(n);
+  const precisa = new Uint8Array(amostras.length);
+  const sincronos = [];
+  amostras.forEach((a, i) => a.sync && sincronos.push(i));
+  const limites = [];
+  for (const [ini, fim] of trechos) {
+    const iniMs = Math.round(ini * 1000); // em ms inteiros: 3,8 s é 3800 ms, sem erro de arredondamento
+    const fimMs = Math.round(fim * 1000);
+    let k0 = -1;
+    let k1 = -1;
+    for (let k = 0; k < n; k++) {
+      if (ap.ptsMs[k] < iniMs || ap.ptsMs[k] >= fimMs) continue;
+      dentro[k] = 1;
+      if (k0 < 0) k0 = k;
+      k1 = k;
+    }
+    if (k0 < 0) continue;
+    let siMin = Infinity;
+    let siMax = -1;
+    for (let k = k0; k <= k1; k++) {
+      siMin = Math.min(siMin, ap.ordem[k]);
+      siMax = Math.max(siMax, ap.ordem[k]);
+    }
+    const de = sincronos.length ? sincronos[inicioDoGrupo(amostras, sincronos, siMin)] : 0;
+    const proximo = sincronos.find((x) => x > siMax);
+    precisa.fill(1, Math.min(de, siMin), proximo === undefined ? amostras.length : proximo);
+    limites.push(k0, k1 + 1);
+  }
+  return { dentro, precisa, limites, n_dentro: dentro.reduce((a, b) => a + b, 0) };
+}
+
+/**
+ * 1ª passada: lê o arquivo em ordem, faz o hash e decodifica os quadros (só os dos trechos, quando
+ * há `plano`), guardando só os descritores dos quadros reduzidos.
+ */
+async function analisar(leitor, faixa, ap, config, fps, { aoProgresso, sinal, plano = null }) {
   const n = ap.ordem.length;
   const indiceDoTs = new Map();
   ap.ordem.forEach((i, k) => indiceDoTs.set(ap.tsUs[i], k));
@@ -193,9 +238,11 @@ async function analisar(leitor, faixa, ap, config, fps, { aoProgresso, sinal }) 
   ctx.imageSmoothingQuality = "high";
   let anterior = null;
   let tamanho = null;
+  const dentro = plano?.dentro ?? null;
+  const precisa = plano?.precisa ?? null;
   const dec = new Decodificador(config, (quadro) => {
     const k = indiceDoTs.get(quadro.timestamp);
-    if (k === undefined) return; // pré-rolagem
+    if (k === undefined || (dentro && !dentro[k])) return; // pré-rolagem, ou fora dos trechos
     tamanho ??= [quadro.displayWidth, quadro.displayHeight];
     ctx.drawImage(quadro, 0, 0, LARGURA, ALTURA);
     const d = descrever(ctx.getImageData(0, 0, LARGURA, ALTURA).data);
@@ -211,15 +258,62 @@ async function analisar(leitor, faixa, ap, config, fps, { aoProgresso, sinal }) 
   });
   const hash = new Sha256();
   const amostras = faixa.amostras;
+  const sincronos = [];
+  amostras.forEach((a, i) => a.sync && sincronos.push(i));
   let esperandoChave = true; // até o navegador aceitar o primeiro quadro-chave
+  let emTrecho = false;
+  let voltou = false; // já tentou voltar a um começo aceito neste trecho
+
+  // Começo de trecho que o navegador recusa (um quadro I que não é IDR, marcado como chave): volta de
+  // quadro-chave em quadro-chave até um que ele aceite e decodifica dali até o trecho. Os quadros de
+  // antes do trecho só servem de base e não são descritos.
+  const voltarAteUmComeco = async (j) => {
+    let p = sincronos.indexOf(j);
+    const limite = Math.max(0, p - VOLTAS_MAX);
+    while (p > limite) {
+      p -= 1;
+      const s = sincronos[p];
+      checarCancelamento(sinal);
+      try {
+        await dec.enviar(amostras[s], ap.tsUs[s], await leitor.ler(amostras[s].offset, amostras[s].tamanho));
+      } catch (e) {
+        if (e instanceof ChaveRecusada) continue;
+        throw e;
+      }
+      const ler = leituraEmBlocos(leitor);
+      for (let i = s + 1; i < j; i++) {
+        if (i % 200 === 0) checarCancelamento(sinal);
+        await dec.enviar(amostras[i], ap.tsUs[i], await ler(amostras[i].offset, amostras[i].tamanho));
+      }
+      return true;
+    }
+    return false;
+  };
   const alimentar = async (a, j, dados) => {
     if (esperandoChave && !a.sync) return; // antes de um quadro-chave não há como decodificar
     try {
       await dec.enviar(a, ap.tsUs[j], dados);
-      esperandoChave = false;
     } catch (e) {
-      if (!(e instanceof ChaveRecusada)) throw e; // não serve de começo: tenta o próximo quadro-chave
+      if (!(e instanceof ChaveRecusada)) throw e;
+      // não serve de começo. Sem trechos, os quadros-chave de antes já foram tentados: vale o próximo.
+      // Num trecho, volta uma vez até um começo aceito; se não houver, também vale o próximo.
+      if (!plano || voltou) return;
+      voltou = true;
+      if (!(await voltarAteUmComeco(j))) return;
+      await dec.enviar(a, ap.tsUs[j], dados); // agora no meio da decodificação, que o navegador aceita
     }
+    esperandoChave = false;
+    emTrecho = true;
+  };
+  // fim de um trecho: entrega os quadros dele; o próximo recomeça num quadro-chave, e a diferença
+  // entre quadros não atravessa o pedaço pulado
+  const fecharTrecho = async () => {
+    if (!emTrecho) return;
+    emTrecho = false;
+    await dec.esvaziar();
+    anterior = null;
+    esperandoChave = true;
+    voltou = false;
   };
   let j = 0;
   let cauda = new Uint8Array(0);
@@ -240,6 +334,11 @@ async function analisar(leitor, faixa, ap, config, fps, { aoProgresso, sinal }) 
       const janelaFim = pos + bloco.length;
       while (j < amostras.length) {
         const a = amostras[j];
+        if (precisa && !precisa[j]) {
+          await fecharTrecho(); // fora dos trechos: nem lê a amostra
+          j += 1;
+          continue;
+        }
         let dados;
         if (a.offset < janelaInicio) dados = await leitor.ler(a.offset, a.tamanho); // fora de ordem no arquivo
         else if (a.offset + a.tamanho <= janelaFim) dados = janela.subarray(a.offset - janelaInicio, a.offset - janelaInicio + a.tamanho);
@@ -258,18 +357,28 @@ async function analisar(leitor, faixa, ap, config, fps, { aoProgresso, sinal }) 
     }
     for (; j < amostras.length; j++) {
       const a = amostras[j];
-      await alimentar(a, j, await leitor.ler(a.offset, a.tamanho));
+      if (precisa && !precisa[j]) await fecharTrecho();
+      else await alimentar(a, j, await leitor.ler(a.offset, a.tamanho));
     }
     await dec.esvaziar();
   } finally {
     dec.fechar();
   }
   // Quadros que o decodificador não entregou. Os do começo, antes do primeiro quadro-chave aceito,
-  // não têm como ser decodificados; os do meio repetem o anterior (diferença zero). Nenhum é sorteado.
+  // não têm como ser decodificados; os do meio repetem o anterior (diferença zero). Os de fora dos
+  // trechos nem foram lidos. Nenhum deles é sorteado.
+  const conta = (k) => !dentro || dentro[k] === 1;
   let inicio = 0;
   while (inicio < n && !visto[inicio]) inicio += 1;
   if (inicio === n || !tamanho) throw new ErroVideo(`nenhum quadro pôde ser decodificado; ${DICA}`);
-  if (inicio > n / 2) throw new ErroVideo(`o navegador só conseguiu decodificar a partir do quadro ${inicio} de ${n}; ${DICA}`);
+  let considerados = 0;
+  let antes = 0;
+  for (let k = 0; k < n; k++) {
+    if (!conta(k)) continue;
+    considerados += 1;
+    if (k < inicio) antes += 1;
+  }
+  if (antes > considerados / 2) throw new ErroVideo(`o navegador só conseguiu decodificar a partir do quadro ${inicio} de ${n}; ${DICA}`);
   for (let k = 0; k < inicio; k++) {
     gramado[k] = gramado[inicio];
     bordas[k] = bordas[inicio];
@@ -277,12 +386,15 @@ async function analisar(leitor, faixa, ap, config, fps, { aoProgresso, sinal }) 
   let perdidos = 0;
   for (let k = inicio + 1; k < n; k++) {
     if (visto[k]) continue;
-    perdidos += 1;
+    if (conta(k)) perdidos += 1;
     gramado[k] = gramado[k - 1];
     bordas[k] = bordas[k - 1];
   }
-  if (perdidos > Math.max(10, 0.02 * n)) throw new ErroVideo(`${perdidos} de ${n} quadros não puderam ser decodificados; ${DICA}`);
-  return { sha256: hash.hex(), dHist, dEstr, gramado, bordas, curtos, tamanho, visto, inicio, perdidos };
+  if (perdidos > Math.max(10, 0.02 * considerados)) {
+    throw new ErroVideo(`${perdidos} de ${considerados} quadros não puderam ser decodificados; ${DICA}`);
+  }
+  // sem chave no início: só os quadros que contam (com trechos, os do começo do primeiro trecho)
+  return { sha256: hash.hex(), dHist, dEstr, gramado, bordas, curtos, tamanho, visto, inicio, semChave: antes, perdidos };
 }
 
 /** Lê amostras em sequência aproveitando blocos grandes do arquivo, em vez de uma leitura por amostra. */
@@ -306,6 +418,23 @@ function inicioDoGrupo(amostras, sincronos, si) {
   // quadros B do começo do grupo podem depender do grupo anterior: começa um grupo antes
   if (p > 0 && amostras[si].cts < amostras[sincronos[p]].cts) p -= 1;
   return p;
+}
+
+/**
+ * Depois de voltar a um quadro-chave aceito, quantos grupos com alvos vão na mesma passada: os
+ * seguintes enquanto cada um começa a até `pertoUs` do último alvo do anterior (voltar de novo
+ * custaria mais que decodificar o meio); os de longe, como os de outro trecho, recomeçam no
+ * quadro-chave deles. `grupos`: [{p, ultimo}] em ordem — `p` indexa `sincronos`, e `ultimo` é a
+ * última amostra com alvo.
+ */
+export function gruposDaPassada(grupos, sincronos, tsUs, pertoUs = PERTO_US) {
+  let fim = tsUs[grupos[0].ultimo];
+  let n = 1;
+  while (n < grupos.length && tsUs[sincronos[grupos[n].p]] - fim <= pertoUs) {
+    fim = Math.max(fim, tsUs[grupos[n].ultimo]);
+    n += 1;
+  }
+  return n;
 }
 
 /** 2ª passada: decodifica só os grupos que têm quadros sorteados e grava cada um em JPEG. */
@@ -359,6 +488,7 @@ async function extrair(leitor, faixa, ap, config, alvos, gravar, { aoProgresso, 
   }
 
   const ordem = [...porGrupo.keys()].sort((a, b) => a - b);
+  const lista = ordem.map((p) => ({ p, ultimo: porGrupo.get(p).ultimo }));
   for (let gi = 0; gi < ordem.length; ) {
     let p = ordem[gi];
     let grupos = [porGrupo.get(p)];
@@ -370,9 +500,11 @@ async function extrair(leitor, faixa, ap, config, alvos, gravar, { aoProgresso, 
         if (!(e instanceof ChaveRecusada)) throw e;
         if (p === 0) break; // nem o começo do vídeo serve: esses alvos ficam de fora
         // o navegador não aceita começar aqui: começa um grupo antes e, para não voltar de novo a cada
-        // grupo seguinte, segue direto até o último alvo, numa passada só
+        // grupo seguinte, segue na mesma passada pelos grupos próximos (os de longe, como os do outro
+        // trecho, recomeçam no quadro-chave deles)
         p -= 1;
-        grupos = ordem.slice(gi).map((q) => porGrupo.get(q));
+        const n = gruposDaPassada(lista.slice(gi), sincronos, ap.tsUs);
+        grupos = ordem.slice(gi, gi + n).map((q) => porGrupo.get(q));
       }
     }
     gi += grupos.length;
@@ -381,26 +513,36 @@ async function extrair(leitor, faixa, ap, config, alvos, gravar, { aoProgresso, 
 }
 
 /**
- * Importa um vídeo (File) para a pasta. `cadastro`: estádio, versão do pacote, emissora, competição,
- * data e hora (ISO com fuso), mandante, visitante, iluminação, chuva e observações.
+ * Importa um vídeo (File) para a pasta. `cadastro`: estádio (o nome, que entra no ID da partida),
+ * emissora, competição, data e hora (ISO com fuso), mandante, visitante, iluminação, chuva e
+ * observações. `pacote`: o molde do campo — o genérico, ou o de um estádio levantado. `trechos`:
+ * [[início, fim], ...] em segundos, ou null para o vídeo inteiro.
  */
-export async function importarVideo({ pasta, arquivo, cadastro, alvo = PARAMETROS.alvo, aoProgresso = () => {}, sinal = null }) {
+export async function importarVideo({
+  pasta,
+  arquivo,
+  cadastro: dados,
+  pacote = REF_PACOTE_GENERICO,
+  trechos = null,
+  alvo = PARAMETROS.alvo,
+  aoProgresso = () => {},
+  sinal = null,
+}) {
   const t0 = performance.now();
-  const ref = refPacote(cadastro.estadio, cadastro.pacote_versao);
-  if (!(await pasta.existe(pasta.pacoteRef(ref)))) throw new Error(`não há o pacote ${ref} na pasta de trabalho`);
+  const ref = pacote;
+  if (ref === REF_PACOTE_GENERICO) await pasta.garantirPacoteGenerico();
+  else if (!(await pasta.existe(pasta.pacoteRef(ref)))) throw new Error(`não há o pacote ${ref} na pasta de trabalho`);
   await pasta.lerPacote(ref);
+  const cadastro = { ...dados, pacote_versao: ref === REF_PACOTE_GENERICO ? null : partesPacote(ref)[1] };
   const pid = idPartida(cadastro.data_hora, cadastro.estadio, cadastro.mandante, cadastro.visitante);
   if (await pasta.existe(pasta.manifesto(pid))) throw new PartidaJaExiste(`a partida ${pid} já foi importada`);
-  const equipe = await pasta.lerEquipe();
-  const anotadores = comPapel(equipe, "anotador");
-  if (!anotadores.length) throw new Error("a equipe não tem ninguém com o papel de anotador");
 
   // confere o cadastro antes de ler o vídeo inteiro
   const provisorio = {
     formato: "manifesto.partida/1",
     partida: pid,
     pacote: ref,
-    cadastro: { ...cadastro },
+    cadastro,
     video: { nome_original: arquivo.name, sha256: "0".repeat(64), bytes: arquivo.size, duracao_s: 0, fps: 1, largura: 1, altura: 1, n_quadros: 0 },
     pre_processamento: { ferramenta: VERSAO, criado_em: new Date().toISOString(), segundos: 0, parametros: {}, previsor: null },
   };
@@ -410,13 +552,13 @@ export async function importarVideo({ pasta, arquivo, cadastro, alvo = PARAMETRO
   await marca.conferir();
   await marca.renovar(true);
   try {
-    return await importarComMarca({ pasta, arquivo, cadastro, alvo, aoProgresso, sinal, t0, ref, pid, anotadores, marca });
+    return await importarComMarca({ pasta, arquivo, cadastro, trechos, alvo, aoProgresso, sinal, t0, ref, pid, marca });
   } finally {
     await marca.tirar();
   }
 }
 
-async function importarComMarca({ pasta, arquivo, cadastro, alvo, aoProgresso: avisar, sinal, t0, ref, pid, anotadores, marca }) {
+async function importarComMarca({ pasta, arquivo, cadastro, trechos, alvo, aoProgresso: avisar, sinal, t0, ref, pid, marca }) {
   const aoProgresso = (etapa, frac) => {
     avisar(etapa, frac);
     marca.renovar().catch(() => {}); // no máximo uma vez por minuto; se falhar, tenta na próxima
@@ -429,8 +571,12 @@ async function importarComMarca({ pasta, arquivo, cadastro, alvo, aoProgresso: a
   const config = await configuracaoDecodificador(faixa);
   const fps = estimarFps(ap.ptsMs);
   const params = { ...PARAMETROS, alvo: Math.max(1, Math.min(Math.round(alvo), 5000)) };
+  const plano = trechos?.length ? planejarTrechos(trechos, faixa, ap) : null;
+  if (plano && !plano.n_dentro) {
+    throw new ErroVideo(`nenhum trecho cai dentro do vídeo, que tem ${formatarTempo(ap.ptsMs[n - 1] / 1000)}`);
+  }
 
-  const lido = await analisar(leitor, faixa, ap, config, fps, { aoProgresso, sinal });
+  const lido = await analisar(leitor, faixa, ap, config, fps, { aoProgresso, sinal, plano });
   // a leitura demora: outra pessoa pode ter importado a mesma partida enquanto isso
   const conferirQueNinguemImportou = async () => {
     if (await pasta.existe(pasta.manifesto(pid))) throw new PartidaJaExiste(`a partida ${pid} foi importada por outra pessoa enquanto este vídeo era lido`);
@@ -449,8 +595,11 @@ async function importarComMarca({ pasta, arquivo, cadastro, alvo, aoProgresso: a
 
   aoProgresso("achando cortes e sorteando", 0);
   const { pts, fonte } = corrigirPts(ap.ptsMs, fps);
-  const cortes = detectarCortes(lido.dHist, lido.dEstr);
-  const graduais = detectarGraduais(lido.dHist, cortes);
+  const detectados = detectarCortes(lido.dHist, lido.dEstr);
+  const graduais = detectarGraduais(lido.dHist, detectados);
+  // os limites dos trechos também cortam: nenhuma tomada atravessa um pedaço que não foi lido
+  const limites = (plano?.limites ?? []).filter((k) => k > 0 && k < n);
+  const cortes = [...new Set([...detectados, ...limites])].sort((a, b) => a - b);
   const transicao = new Uint8Array(n);
   for (const [a, b] of graduais) transicao.fill(1, a, b);
   for (let k = 0; k < n; k++) if (!lido.visto[k]) transicao[k] = 1; // o que não foi decodificado não é sorteado
@@ -458,7 +607,6 @@ async function importarComMarca({ pasta, arquivo, cadastro, alvo, aoProgresso: a
   const aleatorio = new Aleatorio(pid);
   agrupar(tomadas, lido.curtos, lido.gramado, lido.bordas, aleatorio);
   const sorteados = sortear(tomadas, pts, transicao, params, aleatorio);
-  const atribuicoes = atribuir(sorteados, anotadores, new Aleatorio(`${pid}:equipe`));
   aoProgresso("achando cortes e sorteando", 1);
 
   const tamanhos = await extrair(
@@ -474,7 +622,7 @@ async function importarComMarca({ pasta, arquivo, cadastro, alvo, aoProgresso: a
     { aoProgresso, sinal },
   );
   // um quadro que não deu para extrair (o navegador recusou todos os começos possíveis) fica de fora
-  const itens = sorteados.map((s, k) => ({ s, atribuido_a: atribuicoes[k] })).filter(({ s }) => tamanhos.has(s.quadro));
+  const itens = sorteados.filter((s) => tamanhos.has(s.quadro));
   const naoExtraidos = sorteados.length - itens.length;
   if (naoExtraidos > Math.max(2, 0.05 * sorteados.length) || (sorteados.length && !itens.length)) {
     throw new ErroVideo(`${naoExtraidos} de ${sorteados.length} quadros sorteados não puderam ser extraídos; ${DICA}`);
@@ -512,13 +660,13 @@ async function importarComMarca({ pasta, arquivo, cadastro, alvo, aoProgresso: a
       formato: "fila.partida/1",
       partida: pid,
       criado_em: agora,
-      equipe: anotadores,
-      itens: itens.map(({ s, atribuido_a }) => ({
+      equipe: [],
+      itens: itens.map((s) => ({
         quadro: s.quadro,
         tomada: s.tomada,
         i: s.i,
         pts_ms: s.pts_ms,
-        atribuido_a,
+        atribuido_a: [], // fila aberta: quem anota pega o próximo
         dupla: s.dupla,
         sem_previsao: s.sem_previsao,
       })),
@@ -536,15 +684,19 @@ async function importarComMarca({ pasta, arquivo, cadastro, alvo, aoProgresso: a
     codec: faixa.codec,
     decodificador: "webcodecs",
     quadros_perdidos: lido.perdidos,
-    quadros_sem_chave_no_inicio: lido.inicio,
+    quadros_sem_chave_no_inicio: lido.semChave,
     quadros_nao_extraidos: naoExtraidos,
     amostras_alem_do_fim: faixa.cortadas,
   });
+  if (plano) {
+    parametros.trechos = trechos.map(([a, b]) => `${arredondar(a, 1)}-${arredondar(b, 1)}`).join(";");
+    parametros.quadros_nos_trechos = plano.n_dentro;
+  }
   await pasta.gravar("manifesto", pasta.manifesto(pid), {
     formato: "manifesto.partida/1",
     partida: pid,
     pacote: ref,
-    cadastro: { ...cadastro },
+    cadastro,
     video: {
       nome_original: arquivo.name,
       sha256: lido.sha256,
@@ -558,5 +710,14 @@ async function importarComMarca({ pasta, arquivo, cadastro, alvo, aoProgresso: a
     pre_processamento: { ferramenta: VERSAO, criado_em: agora, segundos: arredondar(segundos, 2), parametros, previsor: null },
   });
   aoProgresso("pronto", 1);
-  return { partida: pid, n_quadros_video: n, n_tomadas: tomadas.length, n_sorteados: itens.length, segundos };
+  return {
+    partida: pid,
+    n_quadros_video: n,
+    n_tomadas: tomadas.length,
+    n_sorteados: itens.length,
+    segundos,
+    // com trechos: só o que foi lido
+    n_nos_trechos: plano ? plano.n_dentro : null,
+    n_tomadas_nos_trechos: plano ? tomadas.filter((t) => lido.visto.subarray(t.i0, t.i1).some(Boolean)).length : null,
+  };
 }

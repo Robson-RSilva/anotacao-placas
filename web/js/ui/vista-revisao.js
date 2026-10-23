@@ -6,6 +6,7 @@ import { pendentesRevisao } from "../nucleo/filas.js";
 import { cameraPadrao } from "../nucleo/pacote.js";
 import { ForaDaFila, salvarRevisao } from "../nucleo/rotulos.js";
 import { Editor } from "./editor.js";
+import { ligarMedidas } from "./medidas.js";
 import { TempoAtivo } from "./tempo.js";
 import { el, formatarTempo, imagemDoArquivo, mensagemDeErro, numero } from "./util.js";
 
@@ -35,6 +36,7 @@ export async function montar(raiz, ctx) {
   let urlImagem = null;
   let enviando = false;
   const tempo = new TempoAtivo({ aoTique: (s) => { $("tempo").textContent = formatarTempo(s); } });
+  const mostrarMedidas = ligarMedidas($, () => editor);
 
   function soltarImagem() {
     if (urlImagem) URL.revokeObjectURL(urlImagem);
@@ -85,12 +87,10 @@ export async function montar(raiz, ctx) {
     // a decisão não pode ir para outro rótulo, nem se o próximo falhar ao abrir
     atual = null;
     const pessoa = ctx.pessoa();
-    const membro = (await indice.equipe()).membros.find((m) => m.codigo === pessoa);
-    if (!membro) return mostrarVazio("Escolha o seu código na página central.");
-    if (!membro.papeis.includes("revisor")) return mostrarVazio("Você não está como revisor na equipe.");
+    if (!pessoa) return mostrarVazio("Digite o seu código na página central.");
     const pend = await pendentesRevisao(indice, pessoa);
     $("pendentes").textContent = pend.length ? `${pend.length} na fila` : "";
-    if (!pend.length) return mostrarVazio("Nenhum rótulo esperando a sua revisão.");
+    if (!pend.length) return mostrarVazio("Nenhum rótulo de outra pessoa esperando revisão.");
     const proximo = pend[0];
     const rot = proximo.rotulo;
     const man = await indice.manifesto(proximo.arquivo.partida);
@@ -106,13 +106,17 @@ export async function montar(raiz, ctx) {
     if (editor) editor.destruir();
     editor = null;
     window.editor = null;
+    const molde = Molde.doRotulo(rot, pacote); // as medidas do campo que quem anotou usou
     editor = new Editor($("tela"), {
       imagem: img,
-      molde: Molde.doPacote(pacote),
+      molde,
       placas: pacote.placas,
       camera: cam,
       somenteLeitura: true,
-      aoMudar: listarPinos,
+      aoMudar: () => {
+        listarPinos();
+        mostrarMedidas();
+      },
       aoPassar: (n) => { $("dica").textContent = n || ""; },
     });
     window.editor = editor;
@@ -121,6 +125,7 @@ export async function montar(raiz, ctx) {
     $("r-residuo").textContent = rot.residuo_mediano_px === null ? "—" : `${numero(rot.residuo_mediano_px, 2)} px`;
     $("r-partiu").textContent = FONTES[rot.partiu_de.fonte] || rot.partiu_de.fonte;
     $("r-comentario").textContent = rot.comentario || "—";
+    $("r-campo").textContent = `${numero(molde.L, 1)} × ${numero(molde.W, 1)} m`;
     $("comentario-dev").value = "";
     $("comentario-corr").value = "";
     $("situacao-corr").value = rot.situacao === "duvida" ? "ok" : rot.situacao;
@@ -128,7 +133,7 @@ export async function montar(raiz, ctx) {
     $("vazio").hidden = true;
     modo("ver");
     tempo.zerar();
-    atual = { ...proximo, pessoa }; // só agora: a decisão vale para este rótulo, em nome de quem o abriu
+    atual = { ...proximo, pessoa, molde }; // só agora: a decisão vale para este rótulo, em nome de quem o abriu
   }
 
   const abrirProximo = () => carregar().catch((e) => mostrarVazio(mensagemDeErro(e)));
@@ -152,7 +157,7 @@ export async function montar(raiz, ctx) {
       if (e instanceof ForaDaFila) {
         // outra pessoa revisou antes, ou a fila mudou: tentar de novo não adianta, vai para o próximo
         await abrirProximo();
-        $("erro").textContent = "Aquele rótulo saiu da sua fila (já foi revisado ou mudou de revisor); este é o próximo.";
+        $("erro").textContent = "Aquele rótulo saiu da sua fila (outra pessoa revisou antes); este é o próximo.";
       } else if (atual) {
         $("erro").textContent = mensagemDeErro(e); // não gravou: dá para tentar de novo
       } else {
@@ -174,7 +179,11 @@ export async function montar(raiz, ctx) {
   $("corrigir").onclick = () => modo("corrigir");
   for (const b of raiz.querySelectorAll("[data-voltar]")) {
     b.onclick = () => {
-      if (editor && atual) editor.definir(atual.rotulo.camera ? Camera.deRotulo(atual.rotulo.camera, editor.w, editor.h) : editor.camInicial, editor.pinosDoRotulo(atual.rotulo));
+      if (editor && atual) {
+        // volta o rótulo como estava, inclusive as medidas do campo
+        const cam = atual.rotulo.camera ? Camera.deRotulo(atual.rotulo.camera, editor.w, editor.h) : editor.camInicial;
+        editor.definir(cam, editor.pinosDoRotulo(atual.rotulo), atual.molde);
+      }
       modo("ver");
     };
   }
@@ -199,6 +208,7 @@ export async function montar(raiz, ctx) {
       decisao: "corrigir",
       comentario,
       correcao: {
+        campo: { comprimento: editor.molde.L, largura: editor.molde.W },
         camera: comCamera ? est.camera : null,
         pontos_travados: comCamera ? est.pontos_travados : [],
         linhas_travadas: comCamera ? est.linhas_travadas : [],

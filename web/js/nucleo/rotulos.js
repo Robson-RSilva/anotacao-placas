@@ -31,10 +31,12 @@ function partiuDe(p) {
   return { fonte: p.fonte, versao: p.versao ?? null, referencia: p.referencia ?? null };
 }
 
+const campoDoRotulo = (c) => (c ? { comprimento: arredondar(Number(c.comprimento), 1), largura: arredondar(Number(c.largura), 1) } : null);
+
 /**
  * Monta e valida um rótulo de câmera (sem gravar). `dados` traz partida, quadro, pacote, largura,
- * altura, partiu_de, camera, pontos_travados, linhas_travadas, situacao, comentario e
- * segundos_ativos; `versao` e `corrige` são opcionais.
+ * altura, partiu_de, campo (as medidas do molde), camera, pontos_travados, linhas_travadas,
+ * situacao, comentario e segundos_ativos; `versao` e `corrige` são opcionais.
  */
 export async function montarRotulo(indice, pessoa, dados, { versao, agora = new Date() } = {}) {
   const camera = dados.camera ? cameraDoRotulo(dados.camera) : null;
@@ -50,6 +52,7 @@ export async function montarRotulo(indice, pessoa, dados, { versao, agora = new 
     criado_em: agora.toISOString(),
     segundos_ativos: arredondar(Math.max(0, dados.segundos_ativos || 0), 1),
     partiu_de: partiuDe(dados.partiu_de),
+    campo: campoDoRotulo(dados.campo),
     camera,
     lado: camera ? (ladoCanonico(camera.C) ? "canonico" : "espelhado") : null,
     pontos_travados: camera ? (dados.pontos_travados || []).map((p) => ({ ponto: p.ponto, x: p.x, y: p.y })) : [],
@@ -61,7 +64,7 @@ export async function montarRotulo(indice, pessoa, dados, { versao, agora = new 
   };
   if (camera) {
     const pacote = await indice.pacote(dados.pacote);
-    const res = residuoMediano(r, Molde.doPacote(pacote), dados.largura, dados.altura);
+    const res = residuoMediano(r, Molde.doRotulo(r, pacote), dados.largura, dados.altura);
     r.residuo_mediano_px = res === null ? null : arredondar(res, 3);
   }
   return validar("rotulo", r);

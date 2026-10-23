@@ -1,4 +1,4 @@
-// Sorteio dos quadros para anotar e distribuição na equipe.
+// Sorteio dos quadros para anotar.
 //
 // Variedade vem da amostragem, não do volume: no máximo 1 ou 2 quadros por tomada (quadros vizinhos
 // são quase iguais), longe dos cortes e fora das transições, com a cota dividida entre os grupos de
@@ -119,14 +119,4 @@ export function sortear(tomadas, pts, transicao, params, aleatorio) {
     if (m) for (const j of aleatorio.amostra(n, Math.min(m, n))) out[j][campo] = true;
   }
   return out;
-}
-
-/** Quem anota cada quadro: rodízio embaralhado; quadro em dupla vai para duas pessoas diferentes. */
-export function atribuir(sorteados, anotadores, aleatorio) {
-  if (!anotadores.length) return sorteados.map(() => []);
-  const ordem = aleatorio.permutacao(anotadores.length).map((j) => anotadores[j]);
-  return sorteados.map((s, k) => {
-    const a = ordem[k % ordem.length];
-    return s.dupla && ordem.length > 1 ? [a, ordem[(k + 1) % ordem.length]] : [a];
-  });
 }

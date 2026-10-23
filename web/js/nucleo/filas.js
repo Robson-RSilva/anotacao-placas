@@ -1,18 +1,25 @@
 // Filas: o que cada pessoa faz a seguir. Tudo sai dos arquivos e dá o mesmo em qualquer máquina.
+// Não há equipe cadastrada: quem anota se identifica por um código (as iniciais, por exemplo).
 //
-// Câmera
+// Câmera (fila aberta)
 //   1. quem ainda não foi liberado anota o gabarito, com o resultado na hora (treino);
-//   2. depois, os quadros atribuídos a ela, na ordem das partidas; um rótulo devolvido volta
-//      primeiro, como versão nova;
-//   3. a cada 15 rótulos, um item do gabarito entra escondido na fila.
+//   2. depois, um rótulo devolvido na revisão volta primeiro, como versão nova;
+//   3. depois, o próximo quadro sorteado que ainda não tem rótulo — ou, nos quadros em dupla às
+//      cegas, que ainda não tem rótulos de duas pessoas. Cada pessoa percorre cada partida a partir
+//      de um ponto próprio, para duas pessoas trabalhando ao mesmo tempo raramente pegarem o mesmo
+//      quadro (se pegarem, o quadro fica com dois rótulos, o que não estraga nada);
+//   4. a cada 15 rótulos, um item do gabarito entra escondido na fila.
 //
-// Revisão cruzada
-//   Cada rótulo novo tem um revisor sorteado pelo nome do arquivo, entre os revisores que não são o
-//   autor. O revisor não vê quem anotou. Correções feitas na revisão não voltam para a fila.
+// Revisão cruzada (fila aberta)
+//   Qualquer pessoa revisa os rótulos das outras, sem saber de quem são. Um quadro em dupla só vai
+//   para a revisão depois dos dois rótulos: quem revisasse antes poderia ser a segunda pessoa a
+//   anotá-lo e veria a resposta. Correções feitas na revisão não voltam para a fila.
+//
+// Filas de partidas importadas pela 0.2 têm quadros atribuídos a pessoas (`atribuido_a`): esses
+// continuam só com quem os recebeu.
 
 import { Aleatorio } from "./aleatorio.js";
 import { PARTIDA_GABARITO } from "./convencoes.js";
-import { comPapel } from "./formatos.js";
 import { liberacao, nTreino, resultados } from "./gabarito.js";
 import { sha256Hex } from "./hash.js";
 import { cameraPadrao } from "./pacote.js";
@@ -20,6 +27,22 @@ import { cameraPadrao } from "./pacote.js";
 export const INTERVALO_GABARITO = 15;
 
 const refDoPacote = (p) => `${p.estadio}/pacote-${p.versao}`;
+const ms = (iso) => Date.parse(iso);
+
+/**
+ * Medidas do campo para começar: as do rótulo de onde veio a câmera, as mais recentes da partida
+ * (nunca de um rótulo do próprio quadro, que na dupla às cegas é a resposta da outra pessoa), ou as
+ * do pacote.
+ */
+function campoInicial(ip, fonte, pacote, quadro) {
+  if (fonte?.dados.campo) return fonte.dados.campo;
+  let recente = null;
+  for (const a of ip?.rotulos ?? []) {
+    if (a.quadro === quadro || !a.dados.campo) continue;
+    if (!recente || ms(a.dados.criado_em) > ms(recente.dados.criado_em)) recente = a;
+  }
+  return recente ? recente.dados.campo : pacote.campo;
+}
 
 function doRegistro(pacote, w, h) {
   return {
@@ -28,13 +51,20 @@ function doRegistro(pacote, w, h) {
   };
 }
 
-/** De onde o molde abre: a versão devolvida, a previsão, um quadro anotado da mesma tomada ou o registro. */
+/**
+ * De onde o molde abre: a versão devolvida, a previsão, um quadro anotado da mesma tomada ou o
+ * registro. Devolve {camera, partiu_de, campo}.
+ */
 export async function cameraInicial(indice, ip, item, w, h, pacoteRef, anterior = null) {
-  if (anterior && anterior.dados.camera) {
-    return { camera: anterior.dados.camera, partiu_de: { fonte: "rotulo_anterior", versao: null, referencia: anterior.nome } };
-  }
   const pacote = await indice.pacote(pacoteRef);
-  if (item.sem_previsao) return doRegistro(pacote, w, h);
+  if (anterior && anterior.dados.camera) {
+    return {
+      camera: anterior.dados.camera,
+      partiu_de: { fonte: "rotulo_anterior", versao: null, referencia: anterior.nome },
+      campo: campoInicial(ip, anterior, pacote, item.quadro),
+    };
+  }
+  if (item.sem_previsao) return { ...doRegistro(pacote, w, h), campo: campoInicial(ip, null, pacote, item.quadro) };
   let prev = null;
   try {
     prev = await indice.previsao(ip.partida, item.quadro);
@@ -42,7 +72,11 @@ export async function cameraInicial(indice, ip, item, w, h, pacoteRef, anterior 
     prev = null; // previsão inválida não impede de anotar
   }
   if (prev && prev.camera) {
-    return { camera: prev.camera, partiu_de: { fonte: "modelo", versao: `${prev.fonte}@${prev.versao}`, referencia: null } };
+    return {
+      camera: prev.camera,
+      partiu_de: { fonte: "modelo", versao: `${prev.fonte}@${prev.versao}`, referencia: null },
+      campo: campoInicial(ip, null, pacote, item.quadro),
+    };
   }
   // quadro já anotado da mesma tomada (o mais próximo no tempo; nunca o mesmo quadro)
   const fila = await indice.fila(ip.partida);
@@ -55,9 +89,13 @@ export async function cameraInicial(indice, ip, item, w, h, pacoteRef, anterior 
     if (!melhor || d < melhor.d) melhor = { d, a };
   }
   if (melhor) {
-    return { camera: melhor.a.dados.camera, partiu_de: { fonte: "quadro_anotado", versao: null, referencia: melhor.a.nome } };
+    return {
+      camera: melhor.a.dados.camera,
+      partiu_de: { fonte: "quadro_anotado", versao: null, referencia: melhor.a.nome },
+      campo: campoInicial(ip, melhor.a, pacote, item.quadro),
+    };
   }
-  return doRegistro(pacote, w, h);
+  return { ...doRegistro(pacote, w, h), campo: campoInicial(ip, null, pacote, item.quadro) };
 }
 
 /** Liberação para dados reais e resultado no gabarito. */
@@ -69,7 +107,8 @@ export async function situacaoAnotador(indice, pessoa) {
 
 async function itemGabarito(indice, pessoa, g, treino) {
   const versao = await indice.pasta.proximaVersao(indice.pasta.rotulos(PARTIDA_GABARITO), g.id, pessoa);
-  const { camera, partiu_de } = doRegistro(await indice.pacote(g.pacote), g.largura, g.altura);
+  const pacote = await indice.pacote(g.pacote);
+  const { camera, partiu_de } = doRegistro(pacote, g.largura, g.altura);
   return {
     partida: PARTIDA_GABARITO,
     quadro: g.id,
@@ -79,6 +118,7 @@ async function itemGabarito(indice, pessoa, g, treino) {
     pacote: g.pacote,
     camera_inicial: camera,
     partiu_de,
+    campo: pacote.campo,
     dupla: false,
     sem_previsao: false,
     devolvido: null,
@@ -86,9 +126,24 @@ async function itemGabarito(indice, pessoa, g, treino) {
   };
 }
 
+/** Os itens a partir de um ponto próprio da pessoa (o mesmo sempre, diferente entre as pessoas). */
+export function emOrdemDaPessoa(itens, pessoa, partida) {
+  if (itens.length < 2) return itens;
+  const k = Number(BigInt(`0x${sha256Hex(`${pessoa}|${partida}`).slice(0, 12)}`) % BigInt(itens.length));
+  return [...itens.slice(k), ...itens.slice(0, k)];
+}
+
+/** Pessoas com rótulo próprio no quadro (sem contar as correções feitas na revisão). */
+function quemAnotou(ip, quadro) {
+  return new Set(ip.rotulos.filter((a) => a.quadro === quadro && a.dados.corrige === null).map((a) => a.pessoa));
+}
+
+/** Quantas pessoas precisam anotar o quadro: duas na dupla às cegas, uma nos outros. */
+const precisam = (item) => (item.dupla ? 2 : 1);
+
 /**
  * O próximo item da pessoa na tarefa de câmera, ou null. O item diz a partida, o quadro, a versão a
- * gravar, o tamanho da imagem, o pacote, a câmera de partida e se é treino com gabarito.
+ * gravar, o tamanho da imagem, o pacote, a câmera e as medidas do campo de partida e se é treino.
  */
 export async function proximoCamera(indice, pessoa) {
   const itensGab = await indice.itensGabarito();
@@ -102,48 +157,64 @@ export async function proximoCamera(indice, pessoa) {
   // os itens escondidos contam a partir da liberação: rótulos reais de antes (feitos quando ainda
   // não havia gabarito) não viram uma rajada de itens do gabarito em seguida
   const treino = nTreino(res);
-  const liberadoEm = treino > 0 ? Date.parse(res[treino - 1].criado_em) : -Infinity;
+  const liberadoEm = treino > 0 ? ms(res[treino - 1].criado_em) : -Infinity;
+  const { prontas } = await indice.partidasProntas();
   let nReais = 0;
-  let candidato = null;
-  for (const { partida: pid, manifesto: man, fila, ip } of (await indice.partidasProntas()).prontas) {
+  for (const { ip } of prontas) {
     nReais += ip.rotulos.filter(
-      (a) => a.pessoa === pessoa && a.versao === 1 && a.dados.corrige === null && Date.parse(a.dados.criado_em) > liberadoEm,
+      (a) => a.pessoa === pessoa && a.versao === 1 && a.dados.corrige === null && ms(a.dados.criado_em) > liberadoEm,
     ).length;
-    if (candidato) continue;
-    for (const item of fila.itens) {
-      if (!item.atribuido_a.includes(pessoa)) continue;
-      // uma correção feita na revisão não conta como o rótulo da pessoa para este quadro
-      const versoes = ip.versoes(item.quadro, pessoa).filter((a) => a.dados.corrige === null);
-      let devolvido = null;
-      let anterior = null;
-      if (versoes.length) {
-        const ultima = versoes[versoes.length - 1];
-        const rev = ip.ultimaRevisao(ultima.nome);
-        if (!rev || rev.decisao !== "devolver") continue;
-        devolvido = { motivo: rev.motivo, comentario: rev.comentario };
-        anterior = ultima;
-      }
-      const w = man.video.largura;
-      const h = man.video.altura;
-      const { camera, partiu_de } = await cameraInicial(indice, ip, item, w, h, man.pacote, anterior);
-      const todasAsVersoes = ip.versoes(item.quadro, pessoa);
-      candidato = {
-        partida: pid,
-        quadro: item.quadro,
-        versao: todasAsVersoes.length ? todasAsVersoes[todasAsVersoes.length - 1].versao + 1 : 1,
-        largura: w,
-        altura: h,
-        pacote: man.pacote,
-        camera_inicial: camera,
-        partiu_de,
-        dupla: item.dupla,
-        sem_previsao: item.sem_previsao,
-        devolvido,
-        treino: false,
-      };
+  }
+
+  const montar = async ({ partida, manifesto: man, ip }, item, anterior, devolvido) => {
+    const w = man.video.largura;
+    const h = man.video.altura;
+    const { camera, partiu_de, campo } = await cameraInicial(indice, ip, item, w, h, man.pacote, anterior);
+    const versoes = ip.versoes(item.quadro, pessoa); // inclui as correções: o nome do arquivo novo não pode repetir
+    return {
+      partida,
+      quadro: item.quadro,
+      versao: versoes.length ? versoes[versoes.length - 1].versao + 1 : 1,
+      largura: w,
+      altura: h,
+      pacote: man.pacote,
+      camera_inicial: camera,
+      partiu_de,
+      campo,
+      dupla: item.dupla,
+      sem_previsao: item.sem_previsao,
+      devolvido,
+      treino: false,
+    };
+  };
+
+  let candidato = null;
+  // 1) devolvidos primeiro: a última versão da pessoa no quadro voltou da revisão
+  for (const p of prontas) {
+    for (const item of p.fila.itens) {
+      const minhas = p.ip.versoes(item.quadro, pessoa).filter((a) => a.dados.corrige === null);
+      if (!minhas.length) continue;
+      const ultima = minhas[minhas.length - 1];
+      const rev = p.ip.ultimaRevisao(ultima.nome);
+      if (rev?.decisao !== "devolver") continue;
+      candidato = await montar(p, item, ultima, { motivo: rev.motivo, comentario: rev.comentario });
       break;
     }
+    if (candidato) break;
   }
+  // 2) o próximo quadro que ainda precisa de rótulo (e que a pessoa ainda não anotou)
+  for (const p of candidato ? [] : prontas) {
+    for (const item of emOrdemDaPessoa(p.fila.itens, pessoa, p.partida)) {
+      if (item.atribuido_a.length && !item.atribuido_a.includes(pessoa)) continue; // fila da 0.2
+      const anotaram = quemAnotou(p.ip, item.quadro);
+      if (anotaram.has(pessoa)) continue;
+      if (!item.atribuido_a.length && anotaram.size >= precisam(item)) continue;
+      candidato = await montar(p, item, null, null);
+      break;
+    }
+    if (candidato) break;
+  }
+
   const escondidosFeitos = treino < 0 ? 0 : res.length - treino;
   if (candidato && pendentesGab.length && nReais >= INTERVALO_GABARITO * (escondidosFeitos + 1)) {
     return itemGabarito(indice, pessoa, pendentesGab[0], false);
@@ -151,51 +222,20 @@ export async function proximoCamera(indice, pessoa) {
   return candidato;
 }
 
-/**
- * Revisor de um rótulo: sorteado pelo nome do arquivo (SHA-256) entre os revisores que não são o
- * autor nem estão `impedidos`.
- */
-export function revisorDesignado(nomeRotulo, autor, revisores, todos, impedidos = new Set()) {
-  const pode = (r) => r !== autor && !impedidos.has(r);
-  let candidatos = revisores.filter(pode);
-  if (!candidatos.length) candidatos = todos.filter(pode);
-  if (!candidatos.length) return null;
-  const k = Number(BigInt(`0x${sha256Hex(nomeRotulo)}`) % BigInt(candidatos.length));
-  return candidatos[k];
-}
-
-/** O rótulo da própria pessoa para o quadro (não uma correção feita na revisão) já existe? */
-const anotou = (ip, quadro, pessoa) => ip.rotulos.some((a) => a.quadro === quadro && a.pessoa === pessoa && a.dados.corrige === null);
-
-/**
- * Revisor de um rótulo de quadro em dupla às cegas: nunca o outro anotador do quadro — assim a
- * escolha não muda quando ele termina o dele. Só quando não há mais ninguém o outro anotador
- * revisa, e só depois de fazer o próprio rótulo (para não ver a resposta antes).
- */
-function revisorDaDupla(ip, a, item, revisores, todos) {
-  const outros = item.atribuido_a.filter((p) => p !== a.pessoa);
-  const r = revisorDesignado(a.nome, a.pessoa, revisores, todos, new Set(outros));
-  if (r !== null) return r;
-  return revisorDesignado(a.nome, a.pessoa, revisores, todos, new Set(outros.filter((p) => !anotou(ip, a.quadro, p))));
-}
-
-/** Rótulos esperando a revisão da pessoa: [{arquivo, rotulo}], na ordem das partidas. */
+/** Rótulos esperando revisão que a pessoa pode revisar: [{arquivo, rotulo}], na ordem das partidas. */
 export async function pendentesRevisao(indice, pessoa) {
-  const equipe = await indice.equipe();
-  const revisores = comPapel(equipe, "revisor");
-  const todos = equipe.membros.map((m) => m.codigo).sort();
   const out = [];
-  for (const { fila, ip } of (await indice.partidasProntas()).prontas) {
+  for (const { partida, fila, ip } of (await indice.partidasProntas()).prontas) {
     const itemDe = new Map(fila.itens.map((it) => [it.quadro, it]));
     // as correções não são revisadas, e uma correção não esconde o rótulo da própria pessoa no quadro
-    for (const a of ip.ultimosProprios().values()) {
-      if (a.pessoa === pessoa || (ip.revisoesDe.get(a.nome) || []).length) continue;
+    const aRevisar = [...ip.ultimosProprios().values()].filter((a) => {
+      if (a.pessoa === pessoa || (ip.revisoesDe.get(a.nome) || []).length) return false;
       const item = itemDe.get(a.quadro);
-      const designado = item?.dupla && item.atribuido_a.length > 1
-        ? revisorDaDupla(ip, a, item, revisores, todos)
-        : revisorDesignado(a.nome, a.pessoa, revisores, todos);
-      if (designado === pessoa) out.push({ arquivo: a, rotulo: a.dados });
-    }
+      // dupla às cegas: só depois dos dois rótulos (antes, quem revisasse poderia ser a segunda pessoa)
+      return !item?.dupla || quemAnotou(ip, a.quadro).size >= 2;
+    });
+    aRevisar.sort((x, y) => (x.quadro < y.quadro ? -1 : x.quadro > y.quadro ? 1 : x.pessoa < y.pessoa ? -1 : 1));
+    for (const a of emOrdemDaPessoa(aRevisar, pessoa, partida)) out.push({ arquivo: a, rotulo: a.dados });
   }
   return out;
 }

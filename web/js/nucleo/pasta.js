@@ -7,8 +7,8 @@
 // * um arquivo que já existe nunca é sobrescrito, a não ser quando quem chama pede.
 //
 //   trabalho/
-//     equipe.json, divisao.json, projeto.json (opcional: nome e link do Manual)
-//     estadios/<estadio>/pacote-<versao>/pacote.json
+//     equipe.json (opcional: nomes), divisao.json, projeto.json (opcional: nome e link do Manual)
+//     estadios/<estadio>/pacote-<versao>/pacote.json      generico/pacote-1.0: o campo genérico
 //     partidas/<partida>/
 //       manifesto.json, tomadas.json, fila.json
 //       quadros/<quadro>.jpg
@@ -20,6 +20,7 @@
 
 import {
   PARTIDA_GABARITO,
+  REF_PACOTE_GENERICO,
   RE_ESTADIO,
   RE_GABARITO,
   RE_PARTIDA,
@@ -30,6 +31,7 @@ import {
   partesPacote,
 } from "./convencoes.js";
 import { validar } from "./formatos.js";
+import { pacoteGenerico } from "./pacote.js";
 
 export class ArquivoExiste extends Error {
   constructor(caminho) {
@@ -264,6 +266,13 @@ export class Pasta {
     if (!(await this.existe(Pasta.DIVISAO))) {
       await this.gravar("divisao", Pasta.DIVISAO, { formato: "divisao/1", validacao: [], teste_congelado: [], teste_externo: [] });
     }
+    await this.garantirPacoteGenerico();
+  }
+
+  /** O campo genérico na pasta (para o Python e para quem abrir a pasta saber o molde usado). */
+  async garantirPacoteGenerico() {
+    const caminho = this.pacoteRef(REF_PACOTE_GENERICO);
+    if (!(await this.existe(caminho))) await this.gravar("pacote", caminho, pacoteGenerico(), { sobrescrever: true });
   }
 
   /** É uma pasta de trabalho? (tem equipe.json) */
@@ -336,6 +345,7 @@ export class Pasta {
   }
 
   async lerPacote(ref) {
+    if (ref === REF_PACOTE_GENERICO && !(await this.existe(this.pacoteRef(ref)))) return validar("pacote", pacoteGenerico());
     return this.ler("pacote", this.pacoteRef(ref));
   }
 

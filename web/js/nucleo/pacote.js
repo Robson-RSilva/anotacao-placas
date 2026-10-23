@@ -9,6 +9,35 @@ const prod = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 const cruz = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
 const norma = (a) => Math.hypot(a[0], a[1], a[2]);
 
+/**
+ * Campo genérico para anotar sem o levantamento do estádio: 105 x 68 m, sem placas, e câmeras em
+ * posições típicas de uma transmissão (só para o molde começar perto). Espelho de
+ * `pacote_generico()` em src/anotacao/pacote.py.
+ */
+export function pacoteGenerico() {
+  const hl = 105 / 2;
+  const hw = 68 / 2;
+  const cam = (nome, tipo, T) => ({ nome, tipo, T });
+  return {
+    formato: "pacote.estadio/1",
+    estadio: "generico",
+    versao: "1.0",
+    nome: "Campo genérico (sem o levantamento do estádio)",
+    campo: { comprimento: 105, largura: 68 },
+    placas: [],
+    cameras: [
+      cam("principal", "principal", [0, -hw - 24, 18]),
+      cam("16m_esq", "16m", [-(hl - 16.5), -hw - 24, 18]),
+      cam("16m_dir", "16m", [hl - 16.5, -hw - 24, 18]),
+      cam("fundo_esq", "fundo", [-hl - 15, 0, 10]),
+      cam("fundo_dir", "fundo", [hl + 15, 0, 10]),
+      cam("reversa", "reversa", [0, hw + 16, 10]),
+      cam("baixa", "baixa", [0, -hw - 6, 2]),
+      cam("tatica", "tatica", [0, -hw - 30, 35]),
+    ],
+  };
+}
+
 /** Pontos 3D ao longo do contorno de todas as placas (para comparar duas câmeras). */
 export function amostrasPlacas(pacote, passo = 0.5) {
   const pts = [];

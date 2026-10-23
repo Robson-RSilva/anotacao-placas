@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
-import { Molde, amostrar, construirCampo, distanciaElemento } from "../../web/js/nucleo/campo.js";
+import { Molde, amostrar, construirCampo, distanciaElemento, erroNasMedidas } from "../../web/js/nucleo/campo.js";
+import { pacoteGenerico } from "../../web/js/nucleo/pacote.js";
 
 const lab = JSON.parse(readFileSync(new URL("../fixtures/camera_laboratorio.json", import.meta.url), "utf-8"));
 
@@ -67,4 +68,40 @@ test("molde do pacote é reaproveitado por dimensão", () => {
   assert.equal(a, b);
   assert.equal(a.L, 100);
   assert.throws(() => a.ponto("nao_existe"));
+});
+
+test("molde esticado: as medidas do campo mudam, as marcações da regra não", () => {
+  const padrao = Molde.doCampo(105, 68);
+  const outro = Molde.doCampo(100, 64);
+  assert.equal(Molde.doCampo(100, 64), outro);
+  assert.notEqual(outro, padrao);
+  assert.deepEqual(outro.ponto("centro"), [0, 0, 0]);
+  assert.deepEqual(outro.ponto("canto_esq_cab"), [-50, -32, 0]);
+  // a grande área tem 16,5 m de fundo e 40,32 m de largura em qualquer campo
+  const area = (m) => [m.ponto("ga_esq_frente_cab")[0] - m.ponto("ga_esq_fundo_cab")[0], m.ponto("ga_esq_frente_opo")[1] - m.ponto("ga_esq_frente_cab")[1]];
+  for (const m of [padrao, outro]) {
+    const [fundo, largura] = area(m);
+    assert.ok(Math.abs(fundo - 16.5) < 1e-9 && Math.abs(largura - 40.32) < 1e-9, `${m.L} × ${m.W}`);
+  }
+});
+
+test("molde do rótulo: as medidas que a pessoa usou, ou as do pacote", () => {
+  const pacote = pacoteGenerico();
+  assert.equal(Molde.doRotulo({ campo: null }, pacote), Molde.doCampo(105, 68));
+  assert.equal(Molde.doRotulo({}, pacote), Molde.doPacote(pacote));
+  assert.equal(Molde.doRotulo({ campo: { comprimento: 102.5, largura: 66 } }, pacote), Molde.doCampo(102.5, 66));
+});
+
+test("o campo genérico é o mesmo do Python", () => {
+  const ref = JSON.parse(readFileSync(new URL("../fixtures/pacote_generico.json", import.meta.url), "utf-8"));
+  assert.deepEqual(pacoteGenerico(), ref);
+  assert.notEqual(pacoteGenerico(), pacoteGenerico()); // cada um com o seu (ninguém muda o do outro)
+});
+
+test("medidas do campo que a regra aceita", () => {
+  for (const [L, W] of [[105, 68], [90, 45], [120, 90], [100.5, 64]]) assert.equal(erroNasMedidas(L, W), null, `${L} × ${W}`);
+  for (const [L, W] of [[89.5, 68], [121, 68], [105, 44], [105, 91], [Number.NaN, 68], [0, 0]]) {
+    assert.match(erroNasMedidas(L, W), /fora da regra/, `${L} × ${W}`);
+  }
+  assert.match(erroNasMedidas(90, 90), /maior que a largura/);
 });

@@ -12,8 +12,8 @@ Regras que evitam conflito na sincronização:
 O mesmo layout existe nas páginas (`web/js/nucleo/pasta.js`).
 
     trabalho/
-      equipe.json, divisao.json, projeto.json (opcional: nome e link do Manual)
-      estadios/<estadio>/pacote-<versao>/pacote.json
+      equipe.json (opcional: nomes), divisao.json, projeto.json (opcional: nome e link do Manual)
+      estadios/<estadio>/pacote-<versao>/pacote.json    generico/pacote-1.0: o campo genérico
       partidas/<partida>/
         manifesto.json, tomadas.json, fila.json
         quadros/<quadro>.jpg
@@ -43,11 +43,13 @@ from .convencoes import (
     RE_PESSOA,
     RE_QUADRO,
     RE_VERSAO_PACOTE,
+    REF_PACOTE_GENERICO,
 )
 from .formatos import Divisao, Equipe, Fila, Manifesto, PacoteEstadio, Projeto, Tomadas
+from .pacote import pacote_generico
 
 TAREFAS = ("camera",)
-RE_ARQUIVO = re.compile(r"^(?P<quadro>t\d{10}|g\d{4})__(?P<pessoa>[A-Z]\d{2})__v(?P<versao>\d+)\.json$")
+RE_ARQUIVO = re.compile(r"^(?P<quadro>t\d{10}|g\d{4})__(?P<pessoa>[A-Z][A-Z0-9]{1,9})__v(?P<versao>\d+)\.json$")
 
 M = TypeVar("M", bound=BaseModel)
 
@@ -193,6 +195,9 @@ class Pasta:
             escrever_json(self.equipe_path, Equipe(membros=[]))
         if not self.divisao_path.exists():
             escrever_json(self.divisao_path, Divisao())
+        generico = pacote_generico()
+        if not self.pacote_path(generico.estadio, generico.versao).exists():
+            escrever_json(self.pacote_path(generico.estadio, generico.versao), generico)
 
     # ------------------------------------------------------------------ leitura
     def ler_equipe(self) -> Equipe:
@@ -209,6 +214,8 @@ class Pasta:
 
     def ler_pacote_ref(self, ref: str) -> PacoteEstadio:
         estadio, _, resto = ref.partition("/pacote-")
+        if ref == REF_PACOTE_GENERICO and not self.pacote_path(estadio, resto).exists():
+            return pacote_generico()  # pasta criada antes do campo genérico
         return self.ler_pacote(estadio, resto)
 
     def listar_pacotes(self) -> list[str]:

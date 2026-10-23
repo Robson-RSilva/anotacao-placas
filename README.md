@@ -6,7 +6,7 @@ trabalho de cada pessoa. Só entra aqui o que treina modelo:
 
 | Página | O que grava | Para o treino |
 | --- | --- | --- |
-| Central e importação | cadastro da partida (estádio, emissora, competição, data e hora, iluminação, chuva) e os quadros sorteados | separar treino e teste por jogo e equilibrar a amostra |
+| Central e importação | cadastro da partida (estádio, emissora, competição, data e hora, iluminação, chuva) e os quadros sorteados, do vídeo inteiro ou só dos trechos escolhidos | separar treino e teste por jogo e equilibrar a amostra |
 | Câmera do quadro | a câmera que faz o molde do campo coincidir com as marcações | alvos de pontos-chave e linhas do detector |
 | Revisão cruzada | aprovar, corrigir ou devolver o rótulo de outra pessoa, às cegas | só entra no treino o que foi aprovado |
 | Oclusão nas placas (próxima versão) | máscara por classe dentro de cada placa | alvo da máscara de pessoas do detector |
@@ -21,7 +21,9 @@ ferramenta e documento próprios (ver [ADR-0003](docs/adr/0003-anotacao-separada
 2. Clique em **Escolher a pasta de trabalho** e escolha a pasta da equipe no Google Drive (sincronizada
    pelo Google Drive para computador). O navegador pede permissão para ler e gravar nela; da próxima
    vez, um clique em "Continuar nessa pasta" basta.
-3. Escolha o seu código em **Você é** e comece a anotar.
+3. Digite o seu código em **Seu código**, no alto da página central — as suas iniciais, por
+   exemplo (de 2 a 10 letras e números) — e comece a anotar. Não há cadastro de equipe: o código só
+   separa os arquivos de cada pessoa e conta os pontos do placar.
 
 Nada é instalado e nada vai para a internet: o site são arquivos estáticos (HTML, CSS e JavaScript) e
 todo o processamento — inclusive ler o vídeo — acontece no navegador de cada pessoa. Os vídeos,
@@ -36,30 +38,49 @@ Safari só funcionam assim.
 
 ## O fluxo
 
-1. **Equipe e estádio** (página Coordenação). A equipe diz quem anota e quem revisa; o pacote do
-   estádio traz as medidas do campo, as placas e a posição das câmeras. Para experimentar, a página
-   central cria uma pasta de exemplo (estádio sintético, equipe A01 e A02).
-2. **Importar a partida.** O vídeo (MP4 ou MOV em H.264, H.265, VP9 ou AV1) é lido no navegador com o
-   decodificador do próprio navegador (WebCodecs): hash, relógio de cada quadro (PTS), cortes e
-   transições (regras do laboratório, só para organizar o sorteio), agrupamento das tomadas, sorteio de
-   1 ou 2 quadros por tomada e distribuição na equipe. Só os quadros sorteados vão para a pasta, em
-   JPEG. MKV e TS: converta antes para MP4 (no OBS, Arquivo → Remuxar gravações). A leitura passa
-   por todos os quadros e leva tempo: num teste com 2 núcleos e sem decodificação pela placa de vídeo,
-   2 minutos de vídeo em 1080p levaram 1 minuto. Deixe a aba aberta até terminar; dá para voltar à
-   central enquanto isso.
-3. **Anotar a câmera.** O molde do campo abre pela melhor câmera disponível (versão devolvida,
-   previsão do modelo, um quadro já anotado da mesma tomada ou o registro do estádio). Arrastar um
-   ponto move o molde inteiro, porque o que se ajusta por trás é a câmera; cada ponto solto fica
-   travado. Linhas longas também se arrastam. As placas aparecem com o nome, para conferir o lado.
-4. **Revisão cruzada.** Cada rótulo vai para outra pessoa, sem o nome de quem anotou: aprovar,
-   corrigir (vira versão nova, com a autoria de quem revisou) ou devolver com um motivo da lista.
-5. **Unificar** (Python, por quem treina). `anotacao unificar` lê tudo, valida de novo e gera
-   `conjuntos/<data-hora>/camera.parquet` com manifesto, respeitando a divisão por partida: quadros de
-   um jogo nunca se misturam entre treino e teste.
+Não é preciso cadastrar equipe nem levantar o estádio antes: basta importar a partida e anotar.
 
-Quem começa é treinado e liberado pelo **gabarito** (quadros com a câmera exata, do simulador ou de
-rótulos arbitrados): a mediana dos últimos 10 itens precisa ficar em até 2 px. Depois, a cada 15
-rótulos, um item do gabarito entra escondido na fila. Em ~10% dos quadros duas pessoas anotam do
+1. **Importar a partida.** Escreva o nome do estádio e os dados do jogo e escolha o vídeo (MP4 ou MOV
+   em H.264, H.265, VP9 ou AV1). Em **Trechos do vídeo** dá para escolher só as partes que interessam
+   — por exemplo `0:05:00-0:50:00, 1:05:00-1:50:00` para os dois tempos sem o intervalo; vazio, vale o
+   vídeo inteiro. O vídeo é lido no navegador com o decodificador do próprio navegador (WebCodecs):
+   hash, relógio de cada quadro (PTS), cortes e transições (regras do laboratório, só para organizar o
+   sorteio), agrupamento das tomadas e sorteio de 1 ou 2 quadros por tomada. Fora dos trechos, nada é
+   decodificado, o que poupa a maior parte do tempo. Só os quadros sorteados vão para a pasta, em
+   JPEG, numa **fila aberta**: quem anota pega o próximo, e cada pessoa começa num ponto diferente da
+   fila para duas pessoas não pegarem o mesmo quadro. MKV e TS: converta antes para MP4 (no OBS,
+   Arquivo → Remuxar gravações). A leitura leva tempo: num teste com 2 núcleos e sem decodificação
+   pela placa de vídeo, 2 minutos de vídeo em 1080p levaram 1 minuto. Deixe a aba aberta até terminar;
+   dá para voltar à central enquanto isso.
+2. **Anotar a câmera.** O molde é o **campo genérico**: as marcações da regra (áreas, círculo, marcas
+   do pênalti, gols) num campo de 105 × 68 m. Como o tamanho do campo muda de um estádio para outro,
+   o comprimento e a largura se ajustam em cada quadro, em **Medidas do campo**: o molde estica e o
+   que está travado continua no lugar; os quadros seguintes da mesma partida já abrem com as últimas
+   medidas usadas nela. O molde abre pela melhor câmera disponível (versão devolvida, previsão do modelo, um
+   quadro já anotado da mesma tomada ou uma posição típica de câmera). Arrastar um ponto move o
+   molde inteiro, porque o que se ajusta por trás é a câmera; cada ponto solto fica travado. Linhas
+   longas também se arrastam.
+3. **Revisão cruzada.** Cada rótulo vai para qualquer outra pessoa (nunca para quem anotou), sem o
+   nome de quem anotou: aprovar, corrigir (vira versão nova, com a autoria de quem revisou) ou devolver
+   com um motivo da lista. Nos quadros em dupla às cegas, a revisão só abre depois que as duas
+   pessoas anotaram.
+4. **Unificar** (Python, por quem treina). `anotacao unificar` lê tudo, valida de novo e gera
+   `conjuntos/<data-hora>/camera.parquet` com manifesto, respeitando a divisão por partida: quadros de
+   um jogo nunca se misturam entre treino e teste. Cada linha leva as medidas do campo usadas no
+   molde daquele rótulo.
+
+Para experimentar, a página central cria uma pasta de exemplo (o estádio sintético do laboratório).
+
+A página **Coordenação** é opcional: nomes para o placar mostrar ao lado de cada código, link do
+Manual, divisão das partidas entre treino e teste, itens do gabarito e pacotes de estádios
+levantados. Um pacote de estádio (medidas do campo, placas e posição das câmeras) entra como molde
+na importação, no lugar do campo genérico, e mostra as placas com o nome, para conferir o lado do
+estádio.
+
+Quando a pasta tem **gabarito** (quadros com a câmera exata, do simulador ou de rótulos arbitrados),
+quem começa é treinado e liberado por ele: a mediana dos últimos 10 itens precisa ficar em até 2 px.
+Depois, a cada 15 rótulos, um item do gabarito entra escondido na fila. Sem gabarito, todo mundo
+anota direto. Em ~10% dos quadros duas pessoas anotam do
 zero, às cegas, para medir a concordância; em outros ~10% a página começa sem previsão, para medir o
 viés de ancoragem.
 
@@ -67,14 +88,15 @@ viés de ancoragem.
 
 ```text
 trabalho/                                   a pasta da equipe, sincronizada com o Drive
-  equipe.json, divisao.json, projeto.json
-  estadios/<estadio>/pacote-<versão>/pacote.json
+  equipe.json, divisao.json, projeto.json     nomes (opcionais), divisão e projeto
+  estadios/generico/pacote-1.0/pacote.json   o campo genérico (a página grava ao criar a pasta)
+  estadios/<estadio>/pacote-<versão>/pacote.json   estádios levantados (opcional)
   partidas/<partida>/
     manifesto.json, tomadas.json, fila.json
     quadros/<quadro>.jpg                      só os sorteados
     previsoes/<quadro>.json                   quando há previsor (anotacao prever)
-    rotulos/camera/<quadro>__<anotador>__v<n>.json
-    revisoes/camera/<quadro>__<revisor>__v<n>.json
+    rotulos/camera/<quadro>__<código>__v<n>.json
+    revisoes/camera/<quadro>__<código>__v<n>.json
   gabarito/itens/, gabarito/rotulos/          nunca entram no treino
   conjuntos/<data-hora>/                      saída do unificar
 ```
@@ -89,7 +111,7 @@ formatos estão em [docs/formatos.md](docs/formatos.md), com os JSON Schemas em 
 python -m venv .venv && source .venv/bin/activate     # no Windows: .venv\Scripts\activate
 pip install -e .
 
-anotacao exemplo trabalho                   # pasta de exemplo: estádio sintético e equipe A01/A02
+anotacao exemplo trabalho                   # pasta de exemplo: estádio sintético e os nomes de A01/A02
 anotacao gabarito ORIGEM --pasta P          # importa itens do gabarito (<id>.json + JPEG)
 anotacao prever --pasta P --previsor pacote.modulo:objeto   # câmera prevista para o molde abrir perto
 anotacao validar --pasta P                  # confere todos os arquivos
@@ -128,6 +150,7 @@ em [docs/arquitetura.md](docs/arquitetura.md) e decisões em [docs/adr/](docs/ad
 
 ## Próximos passos
 
+- Baixar o vídeo pela própria página (depende de onde os vídeos vêm).
 - Página de oclusão nas placas (máscara por classe, a fração livre calculada dela).
 - Previsor com o detector do laboratório (`anotacao prever --previsor pacote.modulo:objeto`).
 - Indicador ao vivo da distância entre o molde e as linhas que a rede encontrou.

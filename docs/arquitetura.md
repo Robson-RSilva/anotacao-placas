@@ -23,15 +23,22 @@ GitHub Pages (site estático)          navegador de cada pessoa                 
 - **Sem banco de dados:** a verdade são os arquivos JSON na pasta. Filas, placar e conjuntos são
   sempre recalculados deles (com cache por data de modificação e tamanho), e dão o mesmo resultado em
   qualquer máquina. Nada que várias pessoas escrevam vai para um arquivo só.
+- **Sem cadastro prévio:** ninguém precisa estar numa equipe nem o estádio precisa estar levantado.
+  Cada pessoa digita um código, que só separa os arquivos e conta o placar; as filas são abertas
+  (quem chega pega o próximo, cada código começa num ponto diferente da fila). O molde é o campo
+  genérico — as marcações da regra num campo cujo comprimento e largura se ajustam em cada rótulo —
+  ou, quando houver, o pacote de um estádio levantado.
 - **O molde arrastável:** a página projeta o campo inteiro pela câmera; arrastar um ponto roda um
   Levenberg–Marquardt em 8 parâmetros (pan, tilt, roll, zoom, distorção e posição) que leva aquele
   ponto ao cursor sem tirar do lugar os já travados. Uma âncora em torno da câmera de partida decide
   o que se mexe com poucas pistas: com um ponto só giram pan e tilt; com dois entram zoom e roll; com
   quatro, a posição; com cinco, a distorção.
 - **A importação:** um worker lê o MP4 em blocos (o índice com um leitor próprio de ISO BMFF), faz o
-  SHA-256 por partes, decodifica todos os quadros com o WebCodecs e guarda só os descritores de
-  quadros reduzidos a 160 × 90. Depois acha os cortes, agrupa as tomadas, sorteia e decodifica de
-  novo só os grupos de quadros (GOP) com sorteados, para gravá-los em JPEG na resolução original.
+  SHA-256 por partes, decodifica os quadros com o WebCodecs e guarda só os descritores de quadros
+  reduzidos a 160 × 90. Com trechos escolhidos, decodifica só do quadro-chave anterior a cada trecho
+  até o fim dele; o resto do arquivo só passa pelo hash. Depois acha os cortes (o começo e o fim de
+  cada trecho também cortam), agrupa as tomadas, sorteia e decodifica de novo só os grupos de quadros
+  (GOP) com sorteados, para gravá-los em JPEG na resolução original.
 
 ## Módulos
 
@@ -39,8 +46,10 @@ GitHub Pages (site estático)          navegador de cada pessoa                 
 
 | Módulo | Papel |
 | --- | --- |
-| `nucleo/convencoes.js` | referencial, IDs, versões da ferramenta e do manual |
-| `nucleo/camera.js`, `nucleo/campo.js` | modelo de câmera e molde do campo — idênticos ao laboratório |
+| `nucleo/convencoes.js` | referencial, IDs, código da pessoa, versões da ferramenta e do manual |
+| `nucleo/camera.js`, `nucleo/campo.js` | modelo de câmera e molde do campo em qualquer medida — idênticos ao laboratório |
+| `nucleo/pacote.js` | o campo genérico, a câmera de partida e as placas do pacote |
+| `nucleo/trechos.js` | ler os trechos do vídeo como a pessoa escreve |
 | `nucleo/solver.js` | ajuste da câmera ao que se arrasta e trava |
 | `nucleo/esquema.js`, `nucleo/formatos.js` | validação pelos JSON Schemas do Python e pelas regras entre campos |
 | `nucleo/pasta.js`, `nucleo/indice.js` | layout da pasta, escrita que nunca sobrescreve, índice com cache |
@@ -62,7 +71,7 @@ GitHub Pages (site estático)          navegador de cada pessoa                 
 | `convencoes.py`, `camera.py`, `campo.py` | as mesmas convenções e o mesmo modelo, testados contra o laboratório |
 | `formatos.py` | modelos dos arquivos (pydantic) e JSON Schemas |
 | `pasta.py`, `indice.py` | layout da pasta, escrita atômica, índice |
-| `pacote.py` | validação do pacote e o estádio sintético |
+| `pacote.py` | validação do pacote, o campo genérico e o estádio sintético |
 | `gabarito.py`, `previsores.py` | importar o gabarito; previsões do modelo para o molde |
 | `unificar.py` | conjuntos de treino em Parquet |
 | `geracao.py` | arquivos que as páginas leem e saem do Python (esquemas, exemplo, convenções) |

@@ -1,6 +1,6 @@
-// Vista "Coordenação": equipe, projeto, pacotes de estádio, gabarito e divisão por partida.
+// Vista "Coordenação" (opcional): nomes, projeto, pacotes de estádio, gabarito e divisão por partida.
 
-import { RE_GABARITO } from "../nucleo/convencoes.js";
+import { RE_GABARITO, codigoPessoa } from "../nucleo/convencoes.js";
 import { ErroFormato, conferir, conjuntoDe, validar } from "../nucleo/formatos.js";
 import { validarGeometria } from "../nucleo/pacote.js";
 import { ArquivoExiste } from "../nucleo/pasta.js";
@@ -21,9 +21,11 @@ export async function montar(raiz, ctx) {
   const { pasta, indice } = ctx;
   if (!(await pasta.ehPastaDeTrabalho())) await pasta.criar();
 
-  // ------------------------------------------------------------------ equipe
+  // ------------------------------------------------------------------ nomes (opcional)
+  // não há equipe a cadastrar: quem anota digita o código na página central; aqui só se dá um nome
+  // ao código, para o placar
   const tEquipe = $("equipe").querySelector("tbody");
-  function linhaMembro(m = { codigo: "", nome: "", papeis: ["anotador", "revisor"] }) {
+  function linhaMembro(m = { codigo: "", nome: "" }) {
     const tr = document.createElement("tr");
     const entrada = (valor, attrs, rotulo) => {
       const td = document.createElement("td");
@@ -32,23 +34,13 @@ export async function montar(raiz, ctx) {
       td.append(i);
       return td;
     };
-    const caixa = (marcado, papel) => {
-      const td = document.createElement("td");
-      const i = Object.assign(document.createElement("input"), { type: "checkbox", checked: marcado });
-      i.dataset.papel = papel;
-      i.setAttribute("aria-label", papel);
-      td.append(i);
-      return td;
-    };
     const remover = document.createElement("td");
-    const b = Object.assign(document.createElement("button"), { type: "button", className: "x", textContent: "×", title: "Tirar da equipe" });
+    const b = Object.assign(document.createElement("button"), { type: "button", className: "x", textContent: "×", title: "Tirar" });
     b.onclick = () => tr.remove();
     remover.append(b);
     tr.append(
-      entrada(m.codigo, { placeholder: "A01", maxLength: 3, size: 4, className: "codigo" }, "código"),
+      entrada(m.codigo, { placeholder: "RS", maxLength: 10, size: 8, className: "codigo" }, "código"),
       entrada(m.nome, { placeholder: "Nome" }, "nome"),
-      caixa(m.papeis.includes("anotador"), "anotador"),
-      caixa(m.papeis.includes("revisor"), "revisor"),
       remover,
     );
     tEquipe.append(tr);
@@ -61,15 +53,14 @@ export async function montar(raiz, ctx) {
     $("erro-equipe").textContent = "";
     const membros = [...tEquipe.querySelectorAll("tr")]
       .map((tr) => {
-        const [codigo, nome] = [...tr.querySelectorAll("input:not([type=checkbox])")].map((i) => i.value.trim());
-        const papeis = [...tr.querySelectorAll("input[type=checkbox]")].filter((i) => i.checked).map((i) => i.dataset.papel);
-        return { codigo: codigo.toUpperCase(), nome, papeis };
+        const [codigo, nome] = [...tr.querySelectorAll("input")].map((i) => i.value.trim());
+        return { codigo: codigoPessoa(codigo) ?? codigo.toUpperCase(), nome, papeis: ["anotador", "revisor"] };
       })
       .filter((m) => m.codigo || m.nome);
     try {
       await pasta.gravar("equipe", "equipe.json", { formato: "equipe/1", membros }, { sobrescrever: true });
       $("erro-equipe").className = "sutil";
-      $("erro-equipe").textContent = "Equipe salva.";
+      $("erro-equipe").textContent = "Nomes salvos.";
     } catch (e) {
       $("erro-equipe").className = "erro";
       $("erro-equipe").textContent = e instanceof ErroFormato ? e.erros.join("; ") : mensagemDeErro(e);

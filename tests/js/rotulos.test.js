@@ -48,8 +48,9 @@ test("salvar rótulo: versão, lado, resíduo e validação", async () => {
   await criarPartida(pasta, [{}, {}]);
   const item = await proximoCamera(indice, "A01");
   const cam = cameraExemplo();
-  const { nome, rotulo } = await salvarRotulo(indice, "A01", dadosDoItem(item, cam));
-  assert.equal(nome, `${quadro(0)}__A01__v1.json`);
+  const { nome, rotulo } = await salvarRotulo(indice, "A01", dadosDoItem(item, cam, { campo: item.campo }));
+  assert.equal(nome, `${item.quadro}__A01__v1.json`);
+  assert.deepEqual(rotulo.campo, { comprimento: 105, largura: 68 }); // as medidas do molde vão no rótulo
   assert.equal(rotulo.lado, "canonico"); // câmera principal, do lado das cabines
   assert.equal(rotulo.segundos_ativos, 33.3);
   assert.ok(rotulo.residuo_mediano_px < 1e-6);
@@ -58,7 +59,8 @@ test("salvar rótulo: versão, lado, resíduo e validação", async () => {
   assert.deepEqual(lido, JSON.parse(JSON.stringify(rotulo)));
   // a mesma pessoa no mesmo quadro: versão 2
   const outra = await salvarRotulo(indice, "A01", dadosDoItem(item, cam, { situacao: "sem_marcacoes", camera: null }));
-  assert.equal(outra.nome, `${quadro(0)}__A01__v2.json`);
+  assert.equal(outra.nome, `${item.quadro}__A01__v2.json`);
+  assert.equal(outra.rotulo.campo, null); // sem medidas: valem as do pacote
   assert.deepEqual(outra.rotulo.pontos_travados, []);
   await assert.rejects(salvarRotulo(indice, "A01", dadosDoItem(item, cam, { situacao: "duvida" })), ErroFormato);
 });
@@ -136,7 +138,7 @@ test("exportar e importar a pasta: só arquivos da pasta de trabalho, validados,
   await pasta.escrever(`${pasta.quadros(PARTIDA)}/${quadro(0)}.jpg`, new Uint8Array([0xff, 0xd8, 0xff, 0xd9]));
   await pasta.escrever("conjuntos/x/camera.parquet", "não vai");
   const { blob, n } = await exportarZip(pasta);
-  assert.equal(n, 8); // equipe, divisão, pacote, manifesto, tomadas, fila, rótulo e quadro
+  assert.equal(n, 9); // equipe, divisão, os dois pacotes (o do estádio e o genérico), manifesto, tomadas, fila, rótulo e quadro
   const caminhos = [];
   for await (const e of lerZip(blob)) caminhos.push(e.caminho);
   assert.ok(!caminhos.some((c) => c.startsWith("conjuntos/")));

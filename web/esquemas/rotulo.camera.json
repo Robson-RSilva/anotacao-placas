@@ -54,6 +54,29 @@
       "title": "CameraRotulo",
       "type": "object"
     },
+    "CampoPacote": {
+      "additionalProperties": false,
+      "properties": {
+        "comprimento": {
+          "default": 105.0,
+          "description": "metros, linha de fundo a linha de fundo",
+          "exclusiveMaximum": 130,
+          "exclusiveMinimum": 80,
+          "title": "Comprimento",
+          "type": "number"
+        },
+        "largura": {
+          "default": 68.0,
+          "description": "metros, lateral a lateral",
+          "exclusiveMaximum": 100,
+          "exclusiveMinimum": 40,
+          "title": "Largura",
+          "type": "number"
+        }
+      },
+      "title": "CampoPacote",
+      "type": "object"
+    },
     "LinhaTravada": {
       "additionalProperties": false,
       "properties": {
@@ -152,7 +175,7 @@
   "additionalProperties": false,
   "properties": {
     "anotador": {
-      "pattern": "^[A-Z]\\d{2}$",
+      "pattern": "^[A-Z][A-Z0-9]{1,9}$",
       "title": "Anotador",
       "type": "string"
     },
@@ -166,6 +189,18 @@
         }
       ],
       "default": null
+    },
+    "campo": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/CampoPacote"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "medidas do campo no molde deste rótulo (m); sem elas, as do pacote do estádio"
     },
     "comentario": {
       "default": "",

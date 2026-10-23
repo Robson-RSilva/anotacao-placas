@@ -17,6 +17,34 @@ def campo_do_pacote(p: PacoteEstadio) -> Campo:
     return Campo(L=p.campo.comprimento, W=p.campo.largura)
 
 
+def pacote_generico() -> PacoteEstadio:
+    """Campo genérico para anotar sem o levantamento do estádio: 105 x 68 m, sem placas.
+
+    As marcações têm as medidas da regra; comprimento e largura se ajustam em cada rótulo (o campo
+    real pode ser de outro tamanho). As câmeras são posições típicas de uma transmissão, só para o
+    molde começar perto ("Recomeçar" na página de câmera). Espelho em `web/js/nucleo/pacote.js`.
+    """
+    hl, hw = 105.0 / 2, 68.0 / 2
+    cameras = [
+        CameraRegistro(nome="principal", tipo="principal", T=[0.0, -hw - 24.0, 18.0]),
+        CameraRegistro(nome="16m_esq", tipo="16m", T=[-(hl - 16.5), -hw - 24.0, 18.0]),
+        CameraRegistro(nome="16m_dir", tipo="16m", T=[hl - 16.5, -hw - 24.0, 18.0]),
+        CameraRegistro(nome="fundo_esq", tipo="fundo", T=[-hl - 15.0, 0.0, 10.0]),
+        CameraRegistro(nome="fundo_dir", tipo="fundo", T=[hl + 15.0, 0.0, 10.0]),
+        CameraRegistro(nome="reversa", tipo="reversa", T=[0.0, hw + 16.0, 10.0]),
+        CameraRegistro(nome="baixa", tipo="baixa", T=[0.0, -hw - 6.0, 2.0]),
+        CameraRegistro(nome="tatica", tipo="tatica", T=[0.0, -hw - 30.0, 35.0]),
+    ]
+    return PacoteEstadio(
+        estadio="generico",
+        versao="1.0",
+        nome="Campo genérico (sem o levantamento do estádio)",
+        campo=CampoPacote(comprimento=105.0, largura=68.0),
+        placas=[],
+        cameras=cameras,
+    )
+
+
 def validar_geometria(p: PacoteEstadio) -> list[str]:
     """Placas retangulares, vértices BL, BR, TR, TL vistos de frente e normal apontando para o campo."""
     erros = []

@@ -50,7 +50,7 @@ test("escrita nunca sobrescreve sem pedir, e o índice vê a mudança", async ()
 test("criar, listar partidas e pacotes, próxima versão", async () => {
   const { pasta, indice } = await pastaExemplo();
   assert.ok(await pasta.ehPastaDeTrabalho());
-  assert.deepEqual(await pasta.listarPacotes(), ["estadio-sintetico/pacote-1.0"]);
+  assert.deepEqual(await pasta.listarPacotes(), ["estadio-sintetico/pacote-1.0", "generico/pacote-1.0"]);
   assert.deepEqual(await pasta.listarPartidas(), []);
   await pasta.diretorio(`partidas/${PARTIDA.replace("time-a", "time-c")}`, { criar: true }); // sem manifesto: não conta
   await criarPartida(pasta, [{}, {}]);

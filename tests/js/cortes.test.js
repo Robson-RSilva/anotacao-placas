@@ -14,7 +14,7 @@ import {
   razaoAdaptativa,
 } from "../../web/js/video/cortes.js";
 import { descrever, distanciaEstrutura, qui2 } from "../../web/js/video/descritores.js";
-import { atribuir, elegiveis, repartir, sortear } from "../../web/js/video/sorteio.js";
+import { elegiveis, repartir, sortear } from "../../web/js/video/sorteio.js";
 import { FIXTURES, lerJson } from "./apoio.js";
 
 const ref = lerJson(new URL("cortes_referencia.json", FIXTURES));
@@ -117,15 +117,4 @@ test("tomada curta dá 1 quadro (o do meio), longa até 2", () => {
   assert.deepEqual(elegiveis({ i0: 0, i1: 2 }, pts, new Uint8Array(30), 400), []);
   const cota = repartir(10, new Map([[0, 3], [1, 1]]), new Map([[0, 100], [1, 2]]));
   assert.deepEqual([cota.get(0), cota.get(1)], [8, 2]);
-});
-
-test("distribuição: rodízio, dupla com duas pessoas diferentes", () => {
-  const s = Array.from({ length: 10 }, (_, k) => ({ dupla: k === 3 }));
-  const a = atribuir(s, ["A01", "A02", "A03"], new Aleatorio("x"));
-  assert.equal(a[3].length, 2);
-  assert.notEqual(a[3][0], a[3][1]);
-  const cont = {};
-  for (const lista of a) for (const p of lista) cont[p] = (cont[p] || 0) + 1;
-  assert.ok(Object.values(cont).every((v) => v >= 3));
-  assert.deepEqual(atribuir(s, [], new Aleatorio("x")), s.map(() => []));
 });

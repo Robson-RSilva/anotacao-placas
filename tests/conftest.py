@@ -144,9 +144,9 @@ def criar_partida(pasta: Pasta, itens: list[dict], partida: str = PARTIDA, image
 def gravar_rotulo(
     pasta: Pasta, quadro: str, pessoa: str, cam: Camera | None, versao=1, minutos=0, partida=PARTIDA, **kw
 ) -> str:
+    kw.setdefault("pacote", "estadio-sintetico/pacote-1.0")
     r = RotuloCamera(
         partida=partida,
-        pacote="estadio-sintetico/pacote-1.0",
         quadro=quadro,
         anotador=pessoa,
         versao=versao,

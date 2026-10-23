@@ -7,6 +7,7 @@ import { LIMITE_LIBERACAO_PX, compararComGabarito } from "../nucleo/gabarito.js"
 import { alvoDoRegistro } from "../nucleo/pacote.js";
 import { salvarRotulo } from "../nucleo/rotulos.js";
 import { Editor } from "./editor.js";
+import { ligarMedidas } from "./medidas.js";
 import { TempoAtivo } from "./tempo.js";
 import { el, formatarTempo, imagemDoArquivo, mensagemDeErro, numero } from "./util.js";
 
@@ -37,7 +38,10 @@ export async function montar(raiz, ctx) {
     return Camera.olharPara(reg.T, alvoDoRegistro(pacote, reg), 40, editor.w, editor.h);
   }
 
+  const mostrarMedidas = ligarMedidas($, () => editor);
+
   function atualizarPainel() {
+    mostrarMedidas();
     const res = editor.residuos();
     const nP = editor.pinos.filter((p) => p.tipo === "ponto").length;
     const nL = editor.pinos.filter((p) => p.tipo === "linha").length;
@@ -103,9 +107,7 @@ export async function montar(raiz, ctx) {
     // o que está na tela não pode ser salvo para o próximo quadro, nem se ele falhar ao abrir
     item = null;
     const pessoa = ctx.pessoa();
-    const membro = (await indice.equipe()).membros.find((m) => m.codigo === pessoa);
-    if (!membro) return mostrarVazio("Escolha o seu código na página central.");
-    if (!membro.papeis.includes("anotador")) return mostrarVazio("Você não está como anotador na equipe.");
+    if (!pessoa) return mostrarVazio("Digite o seu código na página central.");
     const proximo = await proximoCamera(indice, pessoa);
     if (!proximo) {
       const sit = await situacaoAnotador(indice, pessoa);
@@ -122,9 +124,10 @@ export async function montar(raiz, ctx) {
     if (editor) editor.destruir();
     editor = null;
     window.editor = null;
+    const campo = proximo.campo ?? pacote.campo;
     editor = new Editor($("tela"), {
       imagem: img,
-      molde: Molde.doPacote(pacote),
+      molde: Molde.doCampo(campo.comprimento, campo.largura),
       placas: pacote.placas,
       camera: cam,
       aoMudar: atualizarPainel,
@@ -145,6 +148,8 @@ export async function montar(raiz, ctx) {
     raiz.querySelector("input[name=situacao][value=ok]").checked = true;
     $("comentario").value = "";
     $("ck-lado").checked = false;
+    $("ck-lado-item").hidden = !pacote.placas.length; // sem placas no molde (campo genérico), não há como conferir
+    mostrarMedidas();
     $("painel").hidden = false;
     $("vazio").hidden = true;
     tempo.zerar();
@@ -172,7 +177,7 @@ export async function montar(raiz, ctx) {
     const est = editor.estado();
     const comCamera = sit === "ok" || (sit === "duvida" && editor.pinos.length > 0);
     if (sit === "ok") {
-      if (!$("ck-lado").checked) {
+      if (pacote.placas.length && !$("ck-lado").checked) {
         $("erro").textContent = "Confira o lado numa placa estática e marque a caixa.";
         return;
       }
@@ -189,6 +194,7 @@ export async function montar(raiz, ctx) {
         largura: editor.w,
         altura: editor.h,
         partiu_de: feito.partiu_de,
+        campo: { comprimento: editor.molde.L, largura: editor.molde.W },
         camera: comCamera ? est.camera : null,
         pontos_travados: comCamera ? est.pontos_travados : [],
         linhas_travadas: comCamera ? est.linhas_travadas : [],
@@ -236,7 +242,7 @@ export async function montar(raiz, ctx) {
   };
 
   const teclas = (e) => {
-    if (!editor || !$("modal").hidden || e.target.matches("textarea, input[type=text], select")) return;
+    if (!editor || !$("modal").hidden || e.target.matches("textarea, input[type=text], input[type=number], select")) return;
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
       e.preventDefault();
       editor.desfazer();

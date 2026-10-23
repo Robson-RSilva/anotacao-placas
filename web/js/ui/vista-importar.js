@@ -1,7 +1,8 @@
 // Vista "Importar partida": cadastro e vídeo; o processamento roda num worker, que continua mesmo
 // quando a pessoa volta para a página central.
 
-import { isoComFuso, partesPacote } from "../nucleo/convencoes.js";
+import { REF_PACOTE_GENERICO, isoComFuso, partesPacote, slug } from "../nucleo/convencoes.js";
+import { ErroTrechos, lerTrechos } from "../nucleo/trechos.js";
 import { el, mensagemDeErro, numero } from "./util.js";
 
 function iniciarImportacao(ctx, mensagem) {
@@ -39,6 +40,8 @@ function iniciarImportacao(ctx, mensagem) {
   return job;
 }
 
+const contar = (n, um, varios) => `${numero(n, 0)} ${n === 1 ? um : varios}`;
+
 /** Quanto falta na etapa atual, pelo ritmo até aqui (só depois de um tempo, para não chutar). */
 function falta(job) {
   const passou = (performance.now() - (job.inicioEtapa ?? performance.now())) / 1000;
@@ -50,19 +53,21 @@ function falta(job) {
 export async function montar(raiz, ctx) {
   const $ = (id) => el(id, raiz);
   const form = $("form-importar");
-  const pacotes = await ctx.pasta.listarPacotes();
-  form.querySelector("select[name=pacote]").replaceChildren(...pacotes.map((p) => new Option(p, p)));
+  // o molde: o campo genérico, ou o pacote de um estádio levantado (quando a pasta tem algum)
+  const outros = (await ctx.pasta.listarPacotes()).filter((r) => r !== REF_PACOTE_GENERICO);
+  form.querySelector("select[name=pacote]").replaceChildren(
+    new Option("Campo genérico", REF_PACOTE_GENERICO),
+    ...outros.map((r) => {
+      const [estadio, versao] = partesPacote(r);
+      return new Option(`${estadio} (v${versao})`, r);
+    }),
+  );
+  $("rotulo-pacote").hidden = !outros.length;
   let ouvinte = null;
 
   const suportado = typeof VideoDecoder !== "undefined" && typeof OffscreenCanvas !== "undefined" && typeof Worker !== "undefined";
   if (!suportado) {
     $("erro-importar").textContent = "Este navegador não processa vídeo aqui: use o Chrome ou o Edge atualizados no computador.";
-    $("processar").disabled = true;
-  } else if (!pacotes.length) {
-    $("erro-importar").textContent = "Não há pacote de estádio na pasta de trabalho: acrescente em Coordenação.";
-    $("processar").disabled = true;
-  } else if (!(await ctx.indice.equipe()).membros.some((m) => m.papeis.includes("anotador"))) {
-    $("erro-importar").textContent = "A equipe não tem anotadores: cadastre em Coordenação antes de importar.";
     $("processar").disabled = true;
   }
 
@@ -78,8 +83,11 @@ export async function montar(raiz, ctx) {
     $("erro-importar").textContent = job.erro || "";
     if (job.resultado) {
       const r = job.resultado;
+      const lido = r.n_nos_trechos === null
+        ? `${contar(r.n_quadros_video, "quadro lido", "quadros lidos")}, ${contar(r.n_tomadas, "tomada", "tomadas")}`
+        : `${contar(r.n_nos_trechos, "quadro lido", "quadros lidos")} nos trechos (o vídeo tem ${numero(r.n_quadros_video, 0)}), ${contar(r.n_tomadas_nos_trechos, "tomada", "tomadas")}`;
       $("res-importar").replaceChildren(
-        `Pronto: ${r.partida} — ${numero(r.n_quadros_video, 0)} quadros lidos, ${r.n_tomadas} tomadas, ${r.n_sorteados} quadros sorteados em ${numero(r.segundos, 0)} s. `,
+        `Pronto: ${r.partida} — ${lido}, ${contar(r.n_sorteados, "quadro sorteado", "quadros sorteados")} em ${numero(r.segundos, 0)} s. `,
         Object.assign(document.createElement("a"), { href: "#/", textContent: "Voltar para a central" }),
       );
     } else {
@@ -104,10 +112,21 @@ export async function montar(raiz, ctx) {
       $("erro-importar").textContent = "Escolha o arquivo de vídeo.";
       return;
     }
-    const [estadio, versao] = partesPacote(String(f.get("pacote")));
+    const estadio = slug(String(f.get("estadio") || ""));
+    if (estadio === "sem-nome") {
+      $("erro-importar").textContent = "Escreva o nome do estádio (ele entra no nome da partida).";
+      return;
+    }
+    let trechos = null;
+    try {
+      trechos = lerTrechos(f.get("trechos"));
+    } catch (erro) {
+      if (!(erro instanceof ErroTrechos)) throw erro;
+      $("erro-importar").textContent = erro.message;
+      return;
+    }
     const cadastro = {
       estadio,
-      pacote_versao: versao,
       emissora: String(f.get("emissora")).trim(),
       competicao: String(f.get("competicao")).trim(),
       data_hora: isoComFuso(String(f.get("data_hora"))),
@@ -118,7 +137,8 @@ export async function montar(raiz, ctx) {
       observacoes: String(f.get("observacoes") || "").trim(),
     };
     $("res-importar").textContent = "";
-    acompanhar(iniciarImportacao(ctx, { arquivo, cadastro, alvo: Number(f.get("alvo") || 100) }));
+    const pacote = String(f.get("pacote") || REF_PACOTE_GENERICO);
+    acompanhar(iniciarImportacao(ctx, { arquivo, cadastro, pacote, trechos, alvo: Number(f.get("alvo") || 100) }));
   };
   $("cancelar").onclick = () => ctx.importacao?.worker?.postMessage({ tipo: "cancelar" });
 

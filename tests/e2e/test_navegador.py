@@ -1,5 +1,5 @@
-"""Ponta a ponta no navegador: importar um vídeo, anotar arrastando o molde, revisar às cegas e
-unificar em Python os arquivos que a página gravou.
+"""Ponta a ponta no navegador: importar um vídeo (inteiro ou só uns trechos), anotar arrastando o
+molde do campo genérico, revisar às cegas e unificar em Python os arquivos que a página gravou.
 
 Roda só com `pytest -m e2e`; precisa do Playwright com o Chromium e do ffmpeg (para o vídeo de
 teste em AV1 ou VP9 — o Chromium do Playwright não decodifica H.264). A página usa o armazenamento
@@ -112,14 +112,10 @@ def _bytes(pagina, caminho: str) -> bytes:
     )
 
 
-def _importar(pagina, site: str, video: Path) -> None:
-    """Cria a pasta de exemplo no navegador e importa o vídeo, como na página."""
-    pagina.goto(site)
-    pagina.click("#btn-navegador")
-    pagina.click("#criar-exemplo")
-    _escolher_pessoa(pagina, site, "A01")
-    pagina.click("#ir-importar")
+def _preencher_importacao(pagina, video: Path, trechos: str = "") -> None:
+    """O formulário de importação como a pessoa preenche (o molde fica o campo genérico)."""
     pagina.wait_for_selector("#form-importar")
+    pagina.fill("input[name=estadio]", "Estádio Sintético")
     pagina.fill("input[name=emissora]", "Emissora X")
     pagina.fill("input[name=competicao]", "Estadual")
     pagina.fill("input[name=data_hora]", "2026-11-02T21:30")
@@ -127,14 +123,30 @@ def _importar(pagina, site: str, video: Path) -> None:
     pagina.fill("input[name=visitante]", "Time B")
     pagina.check("input[name=chuva]")
     pagina.fill("input[name=alvo]", "10")
+    pagina.fill("input[name=trechos]", trechos)
     pagina.set_input_files("input[name=video]", str(video))
+
+
+def _processar(pagina) -> str:
+    """Manda processar e espera terminar; devolve o erro mostrado ('' quando deu certo)."""
     pagina.click("#processar")
     pagina.wait_for_function(
         "document.querySelector('#res-importar').textContent.startsWith('Pronto')"
         " || document.querySelector('#erro-importar').textContent !== ''",
         timeout=120_000,
     )
-    assert pagina.inner_text("#erro-importar") == ""
+    return pagina.inner_text("#erro-importar")
+
+
+def _importar(pagina, site: str, video: Path, trechos: str = "") -> None:
+    """Cria a pasta de exemplo no navegador e importa o vídeo, como na página."""
+    pagina.goto(site)
+    pagina.click("#btn-navegador")
+    pagina.click("#criar-exemplo")
+    _escolher_pessoa(pagina, site, "A01")
+    pagina.click("#ir-importar")
+    _preencher_importacao(pagina, video, trechos)
+    assert _processar(pagina) == ""
 
 
 def _tela(pagina, X):
@@ -198,11 +210,29 @@ def _ajustar_molde(pagina, cam_v: Camera, registro: str) -> None:
 
 
 def _escolher_pessoa(pagina, url: str, codigo: str) -> None:
+    """Digita o código no alto da página central (não há equipe cadastrada)."""
     pagina.goto(url + "#/")
     pagina.wait_for_selector("#pessoa:not([disabled])")
-    pagina.select_option("#pessoa", codigo)
+    pagina.fill("#pessoa", codigo)
+    pagina.press("#pessoa", "Enter")
     pagina.wait_for_function(f"localStorage.getItem('anotacao.pessoa') === '{codigo}'")
     pagina.wait_for_selector("#st-camera")
+
+
+def _proximo(pagina, pessoa: str) -> dict:
+    """O próximo quadro da fila aberta para a pessoa, como a página de anotação vai abrir."""
+    return pagina.evaluate(
+        "async (p) => await (await import('./js/nucleo/filas.js')).proximoCamera(anotacao.indice, p)", pessoa
+    )
+
+
+def _bate_com_o_video(pagina, fila: Fila, quadros: Path) -> None:
+    """Cada JPEG gravado é o quadro certo do vídeo (o mais parecido entre os vizinhos)."""
+    for it in fila.itens:
+        jpg = _bytes(pagina, f"partidas/{PARTIDA}/quadros/{it.quadro}.jpg")
+        img = cv2.imdecode(np.frombuffer(jpg, np.uint8), cv2.IMREAD_COLOR)
+        psnr = {k: cv2.PSNR(img, cv2.imread(str(quadros / f"{k:05d}.png"))) for k in range(it.i - 2, it.i + 3)}
+        assert max(psnr, key=psnr.get) == it.i, psnr
 
 
 def test_importar_anotar_revisar_e_unificar(site, video, navegador, capturas, tmp_path):
@@ -215,44 +245,55 @@ def test_importar_anotar_revisar_e_unificar(site, video, navegador, capturas, tm
     pagina.click("#btn-navegador")
     pagina.click("#criar-exemplo")
     _escolher_pessoa(pagina, site, "A01")
-    pagina.wait_for_function("document.querySelector('#st-camera').textContent.startsWith('Liberado')")
+    pagina.wait_for_function("document.querySelector('#st-camera').textContent.startsWith('Pode anotar')")
     pagina.screenshot(path=str(capturas / "e2e_1_central.png"), full_page=True)
 
-    # 2) importar o vídeo no navegador
+    # 2) importar o vídeo no navegador, com o molde do campo genérico (sem o levantamento do estádio)
     pagina.click("#ir-importar")
-    pagina.wait_for_selector("#form-importar")
-    pagina.fill("input[name=emissora]", "Emissora X")
-    pagina.fill("input[name=competicao]", "Estadual")
-    pagina.fill("input[name=data_hora]", "2026-11-02T21:30")
-    pagina.fill("input[name=mandante]", "Time A")
-    pagina.fill("input[name=visitante]", "Time B")
-    pagina.check("input[name=chuva]")
-    pagina.fill("input[name=alvo]", "10")
-    pagina.set_input_files("input[name=video]", str(caminho))
-    pagina.click("#processar")
-    pagina.wait_for_function(
-        "document.querySelector('#res-importar').textContent.startsWith('Pronto')", timeout=120_000
-    )
+    _preencher_importacao(pagina, caminho)
+    assert pagina.input_value("select[name=pacote]") == "generico/pacote-1.0"
+    assert _processar(pagina) == ""
     pagina.screenshot(path=str(capturas / "e2e_2_importado.png"))
     man = Manifesto.model_validate_json(_ler(pagina, f"partidas/{PARTIDA}/manifesto.json"))
     tomadas = Tomadas.model_validate_json(_ler(pagina, f"partidas/{PARTIDA}/tomadas.json"))
     fila = Fila.model_validate_json(_ler(pagina, f"partidas/{PARTIDA}/fila.json"))
+    assert man.pacote == "generico/pacote-1.0" and man.cadastro.pacote_versao is None
+    assert man.cadastro.estadio == "estadio-sintetico"
     assert man.cadastro.chuva is True and man.cadastro.data_hora.isoformat().startswith("2026-11-02T21:30")
     assert man.video.n_quadros == 150 and (man.video.largura, man.video.altura) == (640, 360)
     assert man.video.sha256 == hashlib.sha256(caminho.read_bytes()).hexdigest()
     assert tomadas.cortes == [50, 100]
     assert len(fila.itens) == 3 and {i.tomada for i in fila.itens} == {0, 1, 2}
+    assert fila.equipe == [] and all(it.atribuido_a == [] for it in fila.itens)  # fila aberta
+    assert "trechos" not in man.pre_processamento.parametros
     jpgs = _listar(pagina, f"partidas/{PARTIDA}/quadros")
     assert sorted(jpgs) == sorted(f"{i.quadro}.jpg" for i in fila.itens)
     for it in fila.itens:
         assert it.quadro == f"t{round(it.i * 40):010d}"  # 25 fps: PTS = 40 ms por quadro
 
-    # 3) anotar arrastando o molde (o primeiro quadro de A01 na fila)
-    item = next(it for it in fila.itens if "A01" in it.atribuido_a)
+    # 3) anotar arrastando o molde (o quadro que a fila aberta dá para A01)
+    proximo = _proximo(pagina, "A01")
+    item = next(it for it in fila.itens if it.quadro == proximo["quadro"])
+    assert proximo["campo"] == {"comprimento": 105, "largura": 68}
     pagina.goto(site + "#/camera")
     _ajustar_molde(pagina, verdade[item.i], REGISTRO_DA_TOMADA[item.tomada])
     pagina.screenshot(path=str(capturas / "e2e_3_ajustado.png"))
-    pagina.check("#ck-lado")
+    assert pagina.is_hidden("#ck-lado-item")  # sem placas no molde, não há o lado para conferir
+    # esticar o molde: o que está travado continua; desfazer volta as medidas
+    assert (pagina.input_value("#comprimento"), pagina.input_value("#largura")) == ("105", "68")
+    travados = pagina.evaluate("editor.pinos.length")
+    pagina.fill("#comprimento", "100")
+    pagina.dispatch_event("#comprimento", "change")
+    assert pagina.evaluate("[editor.molde.L, editor.molde.W, editor.pinos.length]") == [100, 68, travados]
+    pagina.click("#desfazer")
+    assert pagina.evaluate("[editor.molde.L, editor.pinos.length]") == [105, travados]
+    assert pagina.input_value("#comprimento") == "105"
+    pagina.fill("#largura", "30")
+    pagina.dispatch_event("#largura", "change")
+    assert "fora da regra" in pagina.inner_text("#erro") and pagina.evaluate("editor.molde.W") == 68
+    pagina.fill("#largura", "68")
+    pagina.dispatch_event("#largura", "change")
+    assert max(pagina.evaluate("editor.residuos().map((r) => r.px)")) < 2.0
     pagina.click("#salvar")
     pagina.wait_for_function(
         "document.querySelector('#erro').textContent === '' && (window.editor === null || editor.pinos.length === 0)"
@@ -262,6 +303,7 @@ def test_importar_anotar_revisar_e_unificar(site, video, navegador, capturas, tm
     r = RotuloCamera.model_validate_json(_ler(pagina, f"partidas/{PARTIDA}/rotulos/camera/{rotulos[0]}"))
     cam_v = verdade[item.i]
     assert r.situacao == "ok" and r.residuo_mediano_px < 2.0 and r.segundos_ativos >= 0
+    assert r.pacote == "generico/pacote-1.0" and (r.campo.comprimento, r.campo.largura) == (105, 68)
     assert abs(r.camera.pan - cam_v.ptr[0]) < 0.3 and abs(r.camera.tilt - cam_v.ptr[1]) < 0.3
     assert abs(r.camera.hfov_graus - cam_v.hfov) < 0.5
 
@@ -272,6 +314,14 @@ def test_importar_anotar_revisar_e_unificar(site, video, navegador, capturas, tm
     pagina.wait_for_selector("#aprovar", state="visible")
     pagina.screenshot(path=str(capturas / "e2e_4_revisao.png"))
     assert "A01" not in pagina.inner_text("main")
+    assert pagina.inner_text("#r-campo") == "105 × 68 m"
+    # na correção dá para esticar o molde; "Voltar" devolve o rótulo como estava
+    pagina.click("#corrigir")
+    pagina.fill("#comprimento", "100")
+    pagina.dispatch_event("#comprimento", "change")
+    assert pagina.evaluate("editor.molde.L") == 100
+    pagina.click("#secao-corrigir [data-voltar]")
+    assert pagina.evaluate("[editor.molde.L, editor.molde.W, editor.somenteLeitura]") == [105, 68, True]
     pagina.click("#aprovar")
     pagina.wait_for_selector("#vazio", state="visible")
     revisoes = _listar(pagina, f"partidas/{PARTIDA}/revisoes/camera")
@@ -304,6 +354,7 @@ def test_importar_anotar_revisar_e_unificar(site, video, navegador, capturas, tm
     df = pd.read_parquet(conjunto / "camera.parquet")
     assert len(df) == 1
     assert (df.loc[0, "anotador"], df.loc[0, "revisor"], df.loc[0, "decisao"]) == ("A01", "A02", "aprovar")
+    assert (df.loc[0, "campo_comprimento"], df.loc[0, "campo_largura"]) == (105, 68)
     assert json.loads((conjunto / "manifesto.json").read_text(encoding="utf-8"))["por_conjunto"] == {"treino": 1}
 
     # 7) trazer o mesmo .zip de volta não sobrescreve nada
@@ -336,12 +387,63 @@ def test_quadros_marcados_como_chave_sem_ser(site, video, navegador, tmp_path):
     marcadas = [e - 1 for e in depois]
     falsas = set(marcadas) - {e - 1 for e in antes}
     assert any(max(m for m in marcadas if m <= it.i) in falsas for it in fila.itens)
-    quadros = origem.parent / "quadros"
-    for it in fila.itens:
-        jpg = _bytes(pagina, f"partidas/{PARTIDA}/quadros/{it.quadro}.jpg")
-        img = cv2.imdecode(np.frombuffer(jpg, np.uint8), cv2.IMREAD_COLOR)
-        psnr = {k: cv2.PSNR(img, cv2.imread(str(quadros / f"{k:05d}.png"))) for k in range(it.i - 2, it.i + 3)}
-        assert max(psnr, key=psnr.get) == it.i, psnr
+    _bate_com_o_video(pagina, fila, origem.parent / "quadros")
+    assert not erros, erros
+
+
+def test_trecho_que_comeca_numa_chave_falsa(site, video, navegador, tmp_path):
+    """O trecho começa num grupo cujo quadro-chave marcado não é chave (o navegador recusa começar ali)
+    e o próximo também não é: a leitura volta até um quadro-chave que o navegador aceita."""
+    origem, _ = video
+    caminho = tmp_path / "chaves_falsas.mp4"
+    _, depois = marcar_chaves_falsas(origem, caminho)
+    marcadas = [e - 1 for e in depois]  # 1, 25, 51, 76, ...: só a 25 é chave de verdade
+    assert marcadas[:4] == [1, 25, 51, 76]
+    erros: list[str] = []
+    pagina = _pagina(navegador, erros)
+    _importar(pagina, site, caminho, trechos="0:02.2-0:03.8")  # quadros 55 a 94: grupo da 51
+    man = Manifesto.model_validate_json(_ler(pagina, f"partidas/{PARTIDA}/manifesto.json"))
+    fila = Fila.model_validate_json(_ler(pagina, f"partidas/{PARTIDA}/fila.json"))
+    par = man.pre_processamento.parametros
+    assert par["quadros_nos_trechos"] == 40 and par["quadros_perdidos"] == 0, par
+    assert par["quadros_nao_extraidos"] == 0 and par["quadros_sem_chave_no_inicio"] == 0
+    assert fila.itens and all(55 <= it.i <= 94 for it in fila.itens)
+    _bate_com_o_video(pagina, fila, origem.parent / "quadros")
+    assert not erros, erros
+
+
+def test_importar_so_os_trechos(site, video, navegador, capturas):
+    """Só os trechos escolhidos são lidos e sorteados; trecho ilegível ou fora do vídeo avisa antes."""
+    caminho, _ = video  # 6 s a 25 quadros/s, cortes em 2 s e 4 s
+    erros: list[str] = []
+    pagina = _pagina(navegador, erros)
+    pagina.goto(site)
+    pagina.click("#btn-navegador")
+    pagina.click("#criar-exemplo")
+    _escolher_pessoa(pagina, site, "A01")
+    pagina.click("#ir-importar")
+    _preencher_importacao(pagina, caminho, "segundo tempo")
+    pagina.click("#processar")
+    assert "não entendi o trecho “segundo tempo”" in pagina.inner_text("#erro-importar")
+    assert pagina.is_hidden("#progresso")  # nem começou
+    pagina.fill("input[name=trechos]", "0:10-0:20")
+    assert "nenhum trecho cai dentro do vídeo, que tem 0:06" in _processar(pagina)
+    pagina.fill("input[name=trechos]", "0:03.4-0:03.8, 0:02.2-0:03.5")  # fora de ordem e sobrepostos
+    assert _processar(pagina) == ""
+    pagina.screenshot(path=str(capturas / "e2e_7_trechos.png"))
+    man = Manifesto.model_validate_json(_ler(pagina, f"partidas/{PARTIDA}/manifesto.json"))
+    fila = Fila.model_validate_json(_ler(pagina, f"partidas/{PARTIDA}/fila.json"))
+    tomadas = Tomadas.model_validate_json(_ler(pagina, f"partidas/{PARTIDA}/tomadas.json"))
+    par = man.pre_processamento.parametros
+    assert par["trechos"] == "2.2-3.8" and par["quadros_nos_trechos"] == 40  # quadros 55 a 94
+    assert par["quadros_perdidos"] == 0 and par["quadros_nao_extraidos"] == 0
+    assert par["quadros_sem_chave_no_inicio"] == 0
+    assert man.video.n_quadros == 150
+    assert fila.itens and all(55 <= it.i <= 94 and it.tomada == 1 for it in fila.itens), fila.itens
+    # os limites do trecho cortam (nenhuma tomada atravessa o que não foi lido); os cortes de fora
+    # dele (2 s e 4 s) nem são procurados
+    assert tomadas.cortes == [55, 95]
+    _bate_com_o_video(pagina, fila, caminho.parent / "quadros")
     assert not erros, erros
 
 
@@ -356,16 +458,13 @@ def test_politica_de_seguranca_nao_bloqueia_nada(site, video, navegador):
     pagina.goto(site)
     pagina.click("#btn-navegador")
     pagina.click("#criar-exemplo")
+    # só seletores aqui: wait_for_function roda texto como código, o que a CSP não deixa
     pagina.wait_for_selector("#pessoa:not([disabled])")
-    pagina.select_option("#pessoa", "A01")
+    pagina.fill("#pessoa", "A01")
+    pagina.press("#pessoa", "Enter")
+    pagina.wait_for_selector("#st-camera:has-text('Pode anotar')")
     pagina.goto(site + "#/importar")
-    pagina.fill("input[name=emissora]", "Emissora X")
-    pagina.fill("input[name=competicao]", "Estadual")
-    pagina.fill("input[name=data_hora]", "2026-11-02T21:30")
-    pagina.fill("input[name=mandante]", "Time A")
-    pagina.fill("input[name=visitante]", "Time B")
-    pagina.fill("input[name=alvo]", "10")
-    pagina.set_input_files("input[name=video]", str(video[0]))
+    _preencher_importacao(pagina, video[0], "0:01-0:05")
     pagina.click("#processar")
     pagina.wait_for_selector("#res-importar:has-text('Pronto'), #erro-importar:not(:empty)", timeout=120_000)
     assert pagina.inner_text("#erro-importar") == ""
@@ -499,6 +598,6 @@ def test_funciona_sem_internet(site_montado, navegador):
     pagina.click("#btn-navegador")
     pagina.click("#criar-exemplo")
     pagina.wait_for_selector("#pessoa:not([disabled])")
-    assert pagina.evaluate("anotacao.pasta.listarPacotes()") == ["estadio-sintetico/pacote-1.0"]
+    assert pagina.evaluate("anotacao.pasta.listarPacotes()") == ["estadio-sintetico/pacote-1.0", "generico/pacote-1.0"]
     pagina.context.set_offline(False)
     assert not erros, erros

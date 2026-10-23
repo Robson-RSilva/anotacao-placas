@@ -1,5 +1,6 @@
 // Vista central: quem está anotando, filas, partidas, placar e a pasta de trabalho.
 
+import { codigoPessoa } from "../nucleo/convencoes.js";
 import { pendentesRevisao, situacaoAnotador } from "../nucleo/filas.js";
 import { calcularPlacar } from "../nucleo/placar.js";
 import { exportarZip, importarZip, soDaPessoa } from "../nucleo/transferencia.js";
@@ -22,6 +23,10 @@ export async function montar(raiz, ctx) {
   const { pasta, indice } = ctx;
   const $ = (id) => el(id, raiz);
   let vivo = true;
+  // monta a central de novo — a não ser que a pessoa já tenha ido para outra página
+  const recarregar = () => {
+    if (vivo && /^#?\/?$/.test(location.hash)) ctx.ir("#/");
+  };
 
   $("pasta-nome").textContent = ctx.modo === "navegador" ? "Armazenamento deste navegador" : `Pasta «${pasta.nome}»`;
   $("trocar-pasta").onclick = () => ctx.trocarPasta();
@@ -32,10 +37,10 @@ export async function montar(raiz, ctx) {
     $("pessoa").disabled = true;
     $("nome-vazia").textContent = ctx.modo === "navegador"
       ? "O armazenamento deste navegador está vazio. Crie a pasta e traga os arquivos num .zip, ou comece pelo exemplo."
-      : `A pasta «${pasta.nome}» não tem equipe.json. Se for a pasta da equipe, confira se o Drive terminou de sincronizar.`;
+      : `A pasta «${pasta.nome}» ainda não tem os arquivos da anotação. Se for a pasta da equipe no Drive, confira se ele terminou de sincronizar; se for uma pasta nova, crie a pasta de trabalho.`;
     $("criar-vazia").onclick = async () => {
       await pasta.criar();
-      ctx.ir("#/coordenacao");
+      ctx.ir("#/");
     };
     $("criar-exemplo").onclick = async () => {
       await criarExemplo(pasta);
@@ -46,26 +51,45 @@ export async function montar(raiz, ctx) {
   }
 
   // ------------------------------------------------------------------ quem está anotando
+  // não há equipe cadastrada: cada pessoa digita o próprio código (as iniciais, por exemplo); os
+  // nomes de equipe.json, quando houver, só aparecem nas sugestões e no placar
   const equipe = await indice.equipe();
-  const codigos = new Set(equipe.membros.map((m) => m.codigo));
-  let pessoa = ctx.pessoa();
-  if (pessoa && !codigos.has(pessoa)) pessoa = null;
-  const sel = $("pessoa");
-  sel.replaceChildren(new Option("escolha…", ""), ...equipe.membros.map((m) => new Option(`${m.codigo} · ${m.nome}`, m.codigo)));
-  sel.value = pessoa || "";
-  sel.onchange = () => {
-    ctx.definirPessoa(sel.value);
-    ctx.ir("#/");
+  const nomes = new Map(equipe.membros.map((m) => [m.codigo, m.nome]));
+  const pessoa = ctx.pessoa();
+  const campo = $("pessoa");
+  campo.value = pessoa || "";
+  const sugerir = (codigos) => {
+    $("pessoas").replaceChildren(...[...codigos].sort().map((c) => Object.assign(document.createElement("option"), {
+      value: c,
+      label: nomes.get(c) || "",
+    })));
   };
-  const membro = equipe.membros.find((m) => m.codigo === pessoa) || null;
-  $("ir-camera").classList.toggle("desligado", !membro || !membro.papeis.includes("anotador"));
-  $("ir-revisao").classList.toggle("desligado", !membro || !membro.papeis.includes("revisor"));
+  sugerir(new Set(nomes.keys()));
+  $("form-pessoa").onsubmit = (e) => {
+    e.preventDefault();
+    campo.blur(); // o "change" confirma
+  };
+  campo.onchange = () => {
+    const c = codigoPessoa(campo.value);
+    if (campo.value.trim() && !c) {
+      $("dica-pessoa").textContent = "use de 2 a 10 letras e números, começando por letra";
+      return;
+    }
+    campo.value = c || "";
+    $("dica-pessoa").textContent = c ? "" : "digite o seu código para começar";
+    if (c === pessoa) return;
+    ctx.definirPessoa(c);
+    // só depois: o Enter também envia o formulário, que precisa continuar na página até lá
+    setTimeout(recarregar, 0);
+  };
+  if (!pessoa) $("dica-pessoa").textContent = "digite o seu código para começar";
   for (const id of ["ir-camera", "ir-revisao"]) {
+    $(id).classList.toggle("desligado", !pessoa);
     $(id).addEventListener("click", (e) => {
       if (e.currentTarget.classList.contains("desligado")) e.preventDefault();
     });
   }
-  $("baixar-meus").disabled = !membro;
+  $("baixar-meus").disabled = !pessoa;
 
   const projeto = await pasta.lerProjeto().catch(() => null);
   if (projeto?.manual_url) {
@@ -75,27 +99,20 @@ export async function montar(raiz, ctx) {
   if (projeto?.nome) raiz.querySelector(".barra h1").textContent = `Anotação · ${projeto.nome}`;
 
   // ------------------------------------------------------------------ situação de cada tarefa
-  if (!equipe.membros.length) {
-    $("st-camera").textContent = "A equipe está vazia: cadastre as pessoas em Coordenação.";
-  } else if (!membro) {
-    $("st-camera").textContent = "Escolha o seu código no alto da página.";
-  } else if (!membro.papeis.includes("anotador")) {
-    $("st-camera").textContent = "Você não está como anotador na equipe.";
+  if (!pessoa) {
+    $("st-camera").textContent = "Digite o seu código no alto da página.";
+    $("st-revisao").textContent = "—";
   } else {
-    situacaoAnotador(indice, membro.codigo).then((s) => {
+    situacaoAnotador(indice, pessoa).then((s) => {
       if (!vivo) return;
       $("st-camera").textContent = s.liberado
-        ? s.gabarito_total ? `Liberado (gabarito: ${numero(s.mediana_px, 1)} px).` : "Liberado (sem gabarito importado)."
+        ? s.gabarito_total ? `Liberado (gabarito: ${numero(s.mediana_px, 1)} px).` : "Pode anotar."
         : `Em treino: ${s.motivo}.`;
     }, (e) => {
       $("st-camera").textContent = mensagemDeErro(e);
     });
-  }
-  if (!membro) $("st-revisao").textContent = "—";
-  else if (!membro.papeis.includes("revisor")) $("st-revisao").textContent = "Você não é revisor.";
-  else {
-    pendentesRevisao(indice, membro.codigo).then((p) => {
-      if (vivo) $("st-revisao").textContent = `${p.length} rótulo(s) esperando você.`;
+    pendentesRevisao(indice, pessoa).then((p) => {
+      if (vivo) $("st-revisao").textContent = p.length ? `${p.length} rótulo(s) de outras pessoas esperando revisão.` : "Nada esperando revisão.";
     }, (e) => {
       $("st-revisao").textContent = mensagemDeErro(e);
     });
@@ -150,7 +167,8 @@ export async function montar(raiz, ctx) {
       tPartidas.append(tr);
     }
     tPlacar.replaceChildren();
-    if (!pl.pessoas.length) linhaVazia(tPlacar, 9, "Ninguém na equipe ainda.");
+    if (!pl.pessoas.length) linhaVazia(tPlacar, 9, "Ninguém anotou ainda.");
+    sugerir(new Set([...nomes.keys(), ...pl.pessoas.map((x) => x.pessoa)])); // quem já anotou nesta pasta
     for (const p of pl.pessoas) {
       const tr = document.createElement("tr");
       const gab = p.gabarito_n ? `${numero(p.gabarito_mediana_px, 1)} px (${p.gabarito_n})` : "—";
@@ -210,7 +228,7 @@ export async function montar(raiz, ctx) {
       }
       if (r.recusados.length) partes.push(`${r.recusados.length} recusado(s): ${r.recusados.slice(0, 3).map((x) => `${x.caminho} (${x.motivo})`).join("; ")}`);
       status(`${partes.join(", ")}.`);
-      if (r.gravados) setTimeout(() => vivo && ctx.ir("#/"), 1500);
+      if (r.gravados) setTimeout(recarregar, 1500);
     } catch (erro) {
       status(mensagemDeErro(erro));
     }

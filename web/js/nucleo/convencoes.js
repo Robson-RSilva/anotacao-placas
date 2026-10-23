@@ -8,7 +8,7 @@
 // 4. Métricas em pixels na referência 960 x 540.
 
 /** Versão da ferramenta, gravada em cada arquivo (igual a `anotacao.__version__`). */
-export const VERSAO = "0.2.1";
+export const VERSAO = "0.3.0";
 
 export const REF_W = 960;
 export const REF_H = 540;
@@ -21,12 +21,15 @@ export const RE_VERSAO_PACOTE = /^\d+\.\d+$/;
 export const RE_PARTIDA = /^\d{4}-\d{2}-\d{2}_[a-z0-9]+(?:-[a-z0-9]+)*_[a-z0-9]+(?:-[a-z0-9]+)*$/;
 export const RE_QUADRO = /^t\d{10}$/;
 export const RE_GABARITO = /^g\d{4}$/;
-export const RE_PESSOA = /^[A-Z]\d{2}$/;
+export const RE_PESSOA = /^[A-Z][A-Z0-9]{1,9}$/;
 export const RE_PACOTE_REF = /^[a-z0-9]+(?:-[a-z0-9]+)*\/pacote-\d+\.\d+$/;
-export const RE_ARQUIVO = /^(t\d{10}|g\d{4})__([A-Z]\d{2})__v(\d+)\.json$/;
+export const RE_ARQUIVO = /^(t\d{10}|g\d{4})__([A-Z][A-Z0-9]{1,9})__v(\d+)\.json$/;
 
 /** Nome da "partida" que guarda os itens do gabarito (nunca entra nos conjuntos de treino). */
 export const PARTIDA_GABARITO = "gabarito";
+
+/** Pacote do campo genérico (105 x 68 m, sem placas), para anotar sem o levantamento do estádio. */
+export const REF_PACOTE_GENERICO = "generico/pacote-1.0";
 
 /** Tarefas com rótulos por arquivo. */
 export const TAREFAS = Object.freeze(["camera"]);
@@ -73,6 +76,20 @@ export function partesPacote(ref) {
   if (!RE_PACOTE_REF.test(ref)) throw new Error(`referência de pacote inválida: ${ref}`);
   const i = ref.indexOf("/pacote-");
   return [ref.slice(0, i), ref.slice(i + "/pacote-".length)];
+}
+
+/**
+ * Texto digitado -> código da pessoa nos nomes de arquivo: maiúsculas, sem acento nem espaço, até 10
+ * caracteres, começando por letra ("Ana Clara" -> "ANACLARA", "rs" -> "RS"). null quando não dá.
+ */
+export function codigoPessoa(texto) {
+  const c = String(texto ?? "")
+    .normalize("NFKD")
+    .replace(/[^\x00-\x7F]/g, "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "")
+    .slice(0, 10);
+  return RE_PESSOA.test(c) ? c : null;
 }
 
 /** Nome do arquivo de rótulo ou revisão: um por pessoa e por versão. */

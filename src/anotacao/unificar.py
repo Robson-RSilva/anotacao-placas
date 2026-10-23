@@ -6,7 +6,8 @@ suficientes, transições e borrões ficam fora. O conjunto de cada quadro é o 
 `divisao.json` — nunca se misturam quadros da mesma partida entre treino e teste.
 
 Saída em `conjuntos/<data-hora>/`:
-    camera.parquet     um quadro por linha: imagem, câmera, partida e condições do jogo
+    camera.parquet     um quadro por linha: imagem, câmera, medidas do campo no molde, partida e
+                       condições do jogo
     manifesto.json     contagens por conjunto, versões, hash do conteúdo
     problemas.json     arquivos inválidos e quadros pendentes
 """
@@ -41,6 +42,8 @@ COLUNAS = [
     "Cy",
     "Cz",
     "k1",
+    "campo_comprimento",
+    "campo_largura",
     "lado",
     "residuo_mediano_px",
     "anotador",
@@ -64,6 +67,21 @@ def unificar(pasta: Pasta, destino: Path | None = None, agora: datetime | None =
     indice = Indice(pasta)
     divisao = pasta.ler_divisao()
     linhas, pendentes, problemas = [], [], []
+    pacotes: dict[str, tuple[float, float] | None] = {}
+
+    def campo(r) -> tuple[float, float] | None:
+        """Medidas do campo no molde do rótulo: as dele, ou as do pacote (None: pacote que não dá para ler)."""
+        if r.campo is not None:
+            return r.campo.comprimento, r.campo.largura
+        if r.pacote not in pacotes:
+            try:
+                p = pasta.ler_pacote_ref(r.pacote)
+                pacotes[r.pacote] = (p.campo.comprimento, p.campo.largura)
+            except (ValueError, OSError) as e:
+                pacotes[r.pacote] = None
+                problemas.append({"arquivo": f"estadios/{r.pacote}", "erro": f"pacote ilegível: {e}"})
+        return pacotes[r.pacote]
+
     for pid in pasta.listar_partidas():
         try:
             man = indice.manifesto(pid)
@@ -94,7 +112,12 @@ def unificar(pasta: Pasta, destino: Path | None = None, agora: datetime | None =
             _, a, r, revisor, decisao = escolhido
             if r.situacao != "ok" or r.camera is None:
                 continue
+            medidas = campo(r)
+            if medidas is None:
+                pendentes.append({"partida": pid, "quadro": quadro, "motivo": f"sem as medidas do campo ({r.pacote})"})
+                continue
             item, c, cad = item_de[quadro], r.camera, man.cadastro
+            comprimento, largura = medidas
             linhas.append(
                 {
                     "conjunto": divisao.conjunto(pid),
@@ -113,6 +136,8 @@ def unificar(pasta: Pasta, destino: Path | None = None, agora: datetime | None =
                     "Cy": c.C[1],
                     "Cz": c.C[2],
                     "k1": c.k1,
+                    "campo_comprimento": comprimento,
+                    "campo_largura": largura,
                     "lado": r.lado,
                     "residuo_mediano_px": r.residuo_mediano_px,
                     "anotador": r.anotador,

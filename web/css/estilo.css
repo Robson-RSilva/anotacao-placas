@@ -87,6 +87,8 @@ textarea { width: 100%; resize: vertical; margin-top: 0.5rem; }
 }
 .voltar { color: var(--acento); text-decoration: none; font-size: 0.9rem; }
 .quem { display: flex; gap: 0.5rem; align-items: center; font-size: 0.9rem; }
+.quem input { width: 7.5rem; text-transform: uppercase; font: 600 0.95rem ui-monospace, monospace; }
+.quem .sutil { font-size: 0.8rem; }
 
 /* ------------------------------------------------------------------ central */
 .central { max-width: 1180px; margin: 0 auto; padding: 1.25rem 1rem 3rem; display: grid; gap: 1.75rem; }
@@ -193,3 +195,6 @@ label.botao { cursor: pointer; }
 .cartao > .grade-form, .cartao > .progresso, .cartao > .rolavel { width: 100%; }
 .pagina-editor { height: 100vh; overflow: hidden; }
 .pagina-editor #app { height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+
+.medidas { display: flex; align-items: center; gap: 0.4rem; font-size: 0.9rem; }
+.medidas input { width: 5.2rem; }

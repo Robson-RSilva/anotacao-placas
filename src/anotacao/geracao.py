@@ -2,7 +2,8 @@
 
 * `web/esquemas/*.json` — JSON Schemas dos formatos (as páginas validam por eles antes de gravar);
 * `web/exemplo/*.json` — o pacote do estádio sintético e a equipe da pasta de exemplo;
-* `tests/fixtures/convencoes.json` — as convenções, para o teste do espelho em JavaScript.
+* `tests/fixtures/convencoes.json` e `tests/fixtures/pacote_generico.json` — as convenções e o campo
+  genérico, para os testes dos espelhos em JavaScript.
 
 `python scripts/gerar_arquivos_web.py` grava todos; `tests/test_arquivos_gerados.py` falha quando
 algum fica desatualizado.
@@ -25,13 +26,14 @@ from .convencoes import (
     RE_QUADRO,
     RE_VERSAO_PACOTE,
     REF_H,
+    REF_PACOTE_GENERICO,
     REF_W,
     id_partida,
     id_quadro,
     slug,
 )
 from .formatos import ESQUEMAS, Divisao, Equipe, Membro, esquema_json
-from .pacote import pacote_sintetico
+from .pacote import pacote_generico, pacote_sintetico
 
 RAIZ = Path(__file__).resolve().parents[2]
 
@@ -62,6 +64,7 @@ def convencoes_para_teste() -> dict:
         "ref": [REF_W, REF_H],
         "manual": MANUAL,
         "partida_gabarito": PARTIDA_GABARITO,
+        "ref_pacote_generico": REF_PACOTE_GENERICO,
         "regex": {
             "RE_ESTADIO": RE_ESTADIO.pattern,
             "RE_VERSAO_PACOTE": RE_VERSAO_PACOTE.pattern,
@@ -84,6 +87,7 @@ def arquivos_gerados() -> dict[str, str]:
     out["web/exemplo/equipe.json"] = equipe_exemplo().model_dump_json(indent=2) + "\n"
     out["web/exemplo/divisao.json"] = Divisao().model_dump_json(indent=2) + "\n"
     out["tests/fixtures/convencoes.json"] = _json(convencoes_para_teste())
+    out["tests/fixtures/pacote_generico.json"] = pacote_generico().model_dump_json(indent=2) + "\n"
     return out
 
 

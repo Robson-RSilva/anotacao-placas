@@ -4,7 +4,7 @@
       "additionalProperties": false,
       "properties": {
         "codigo": {
-          "pattern": "^[A-Z]\\d{2}$",
+          "pattern": "^[A-Z][A-Z0-9]{1,9}$",
           "title": "Codigo",
           "type": "string"
         },

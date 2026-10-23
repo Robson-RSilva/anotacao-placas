@@ -5,7 +5,7 @@
       "properties": {
         "atribuido_a": {
           "items": {
-            "pattern": "^[A-Z]\\d{2}$",
+            "pattern": "^[A-Z][A-Z0-9]{1,9}$",
             "type": "string"
           },
           "title": "Atribuido A",
@@ -64,7 +64,7 @@
     },
     "equipe": {
       "items": {
-        "pattern": "^[A-Z]\\d{2}$",
+        "pattern": "^[A-Z][A-Z0-9]{1,9}$",
         "type": "string"
       },
       "title": "Equipe",

@@ -7,7 +7,8 @@ import json
 import pandas as pd
 
 from anotacao.camera import Camera
-from anotacao.formatos import Divisao
+from anotacao.convencoes import REF_PACOTE_GENERICO
+from anotacao.formatos import CampoPacote, Divisao
 from anotacao.indice import Indice
 from anotacao.pasta import escrever_json
 from anotacao.unificar import unificar
@@ -87,3 +88,34 @@ def test_partida_incompleta_fica_de_fora_e_listada(pasta):
     assert len(pd.read_parquet(destino / "camera.parquet")) == 1
     prob = json.loads((destino / "problemas.json").read_text(encoding="utf-8"))
     assert [p["arquivo"] for p in prob["invalidos"]] == [f"partidas/{sem_fila}"]
+
+
+def test_medidas_do_campo_de_cada_rotulo(pasta):
+    """O molde esticado vai junto: as medidas do rótulo, ou as do pacote quando ele não tem."""
+    fila = criar_partida(pasta, [{}, {}, {}], imagens=False)
+    q = [it.quadro for it in fila.itens]
+    n0 = gravar_rotulo(pasta, q[0], "A01", camera_exemplo(), campo=CampoPacote(comprimento=102.5, largura=66))
+    n1 = gravar_rotulo(pasta, q[1], "A01", camera_exemplo())  # sem medidas (rótulo da 0.2)
+    n2 = gravar_rotulo(pasta, q[2], "A01", camera_exemplo(), pacote=REF_PACOTE_GENERICO)
+    for quadro, nome in zip(q, (n0, n1, n2), strict=True):
+        gravar_revisao(pasta, quadro, nome, "A02")
+    # pasta de antes do campo genérico: o pacote dele vem da própria ferramenta
+    (pasta.pacote_path("generico", "1.0")).unlink()
+    df = pd.read_parquet(unificar(pasta, agora=AGORA) / "camera.parquet").set_index("quadro")
+    assert df.loc[q[0], ["campo_comprimento", "campo_largura"]].tolist() == [102.5, 66.0]
+    assert df.loc[q[1], ["campo_comprimento", "campo_largura"]].tolist() == [105.0, 68.0]
+    assert df.loc[q[2], ["campo_comprimento", "campo_largura", "pacote"]].tolist() == [105.0, 68.0, REF_PACOTE_GENERICO]
+
+
+def test_pacote_ilegivel_deixa_o_rotulo_pendente(pasta):
+    fila = criar_partida(pasta, [{}, {}], imagens=False)
+    q = [it.quadro for it in fila.itens]
+    n0 = gravar_rotulo(pasta, q[0], "A01", camera_exemplo(), pacote="arena-x/pacote-2.0")
+    n1 = gravar_rotulo(pasta, q[1], "A01", camera_exemplo(), campo=CampoPacote(), pacote="arena-x/pacote-2.0")
+    gravar_revisao(pasta, q[0], n0, "A02")
+    gravar_revisao(pasta, q[1], n1, "A02")
+    destino = unificar(pasta, agora=AGORA)
+    assert pd.read_parquet(destino / "camera.parquet")["quadro"].tolist() == [q[1]]  # esse tem as medidas
+    prob = json.loads((destino / "problemas.json").read_text(encoding="utf-8"))
+    assert [p["arquivo"] for p in prob["invalidos"]] == ["estadios/arena-x/pacote-2.0"]
+    assert [p["quadro"] for p in prob["pendentes"]] == [q[0]]

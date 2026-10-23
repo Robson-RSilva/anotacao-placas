@@ -3,8 +3,9 @@
 // Não há banco de dados: a verdade são os arquivos na pasta sincronizada. O índice só evita reler o
 // mesmo JSON a cada clique. Arquivos inválidos ficam em `invalidos` e não entram em nada.
 
-import { PARTIDA_GABARITO, RE_GABARITO } from "./convencoes.js";
+import { PARTIDA_GABARITO, REF_PACOTE_GENERICO, RE_GABARITO } from "./convencoes.js";
 import { validar } from "./formatos.js";
+import { pacoteGenerico } from "./pacote.js";
 
 const ms = (iso) => Date.parse(iso);
 
@@ -102,7 +103,11 @@ export class Indice {
     return this.pasta.lerDivisao();
   }
 
-  pacote(ref) {
+  async pacote(ref) {
+    if (ref === REF_PACOTE_GENERICO && !(await this.pasta.existe(this.pasta.pacoteRef(ref)))) {
+      this._generico ??= validar("pacote", pacoteGenerico()); // pasta criada antes do campo genérico
+      return this._generico;
+    }
     return this.ler("pacote", this.pasta.pacoteRef(ref));
   }
 

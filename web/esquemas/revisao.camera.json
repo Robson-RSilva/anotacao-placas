@@ -77,7 +77,7 @@
       "type": "string"
     },
     "revisor": {
-      "pattern": "^[A-Z]\\d{2}$",
+      "pattern": "^[A-Z][A-Z0-9]{1,9}$",
       "title": "Revisor",
       "type": "string"
     },

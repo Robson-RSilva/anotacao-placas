@@ -143,8 +143,10 @@ class Divisao(Modelo):
 
 # ----------------------------------------------------------------------------- partida
 class Cadastro(Modelo):
-    estadio: Estadio
-    pacote_versao: Annotated[str, Field(pattern=RE_VERSAO_PACOTE.pattern)]
+    estadio: Estadio = Field(description="nome do estádio, em slug (entra no ID da partida)")
+    pacote_versao: Annotated[str, Field(pattern=RE_VERSAO_PACOTE.pattern)] | None = Field(
+        None, description="versão do pacote do estádio, quando há o levantamento; sem ele, o campo genérico"
+    )
     emissora: Annotated[str, Field(min_length=1)]
     competicao: Annotated[str, Field(min_length=1)]
     data_hora: datetime
@@ -286,6 +288,9 @@ class RotuloCamera(Modelo):
     criado_em: datetime
     segundos_ativos: float = Field(ge=0)
     partiu_de: PartiuDe
+    campo: CampoPacote | None = Field(
+        None, description="medidas do campo no molde deste rótulo (m); sem elas, as do pacote do estádio"
+    )
     camera: CameraRotulo | None = None
     lado: Literal["canonico", "espelhado"] | None = None
     pontos_travados: list[PontoTravado] = []

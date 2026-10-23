@@ -5,6 +5,42 @@ Formato de [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); versões
 
 ## [Não lançado]
 
+## [0.3.0] - 2026-10-23
+
+Anotar sem cadastrar equipe nem levantar o estádio antes (ADR-0006), e importar só os trechos do
+vídeo que interessam.
+
+### Adicionado
+
+- Campo genérico (`generico/pacote-1.0`): 105 × 68 m, sem placas, com posições típicas de câmera. É o
+  molde padrão da importação; a página grava o pacote ao criar a pasta, e a página e o Python o têm
+  embutido para pastas mais antigas.
+- Medidas do campo na página da câmera: o comprimento e a largura do molde se ajustam em cada quadro
+  (as marcações continuam na medida da regra), o que está travado continua no lugar e "Desfazer"
+  volta as medidas. O rótulo grava as medidas usadas (`campo`), os próximos quadros da partida abrem
+  com as últimas medidas usadas nela, e a revisão e a correção usam as do rótulo.
+- Trechos do vídeo na importação (`0:05:00-0:50:00, 1:05:00-1:50:00`; também `a` e `até` entre o
+  início e o fim): só eles são decodificados e sorteados, o começo e o fim de cada um viram cortes, e
+  o manifesto registra os trechos e quantos quadros caíram neles. Trecho ilegível ou fora do vídeo
+  avisa antes de ler o vídeo.
+- `unificar`: colunas `campo_comprimento` e `campo_largura`; rótulo cujo pacote não dá para ler fica
+  pendente e o pacote aparece nos problemas, em vez de parar tudo.
+- ADR-0006.
+
+### Mudado
+
+- Quem anota digita o próprio código no alto da página central (2 a 10 letras e números, começando
+  por letra), em vez de escolher numa lista da equipe. `equipe.json` só dá nomes aos códigos.
+- Filas abertas: a importação não distribui mais os quadros. Quem chega pega o próximo, cada código
+  começando num ponto próprio da fila; um quadro sai da fila com um rótulo, ou com duas pessoas nos
+  quadros em dupla às cegas. Filas da 0.2 com quadros atribuídos continuam como foram atribuídas.
+- Revisão aberta: qualquer pessoa menos o autor revisa, cada rótulo uma vez. Nos quadros em dupla, a
+  revisão só abre depois que as duas pessoas anotaram.
+- Importação: o estádio é só um nome (entra no ID da partida); o pacote de um estádio levantado,
+  quando a pasta tem algum, aparece como outro molde. Sem gabarito na pasta, todo mundo anota direto
+  ("Pode anotar").
+- Coordenação é opcional: nomes, link do Manual, divisão, gabarito e pacotes de estádio.
+
 ## [0.2.1] - 2026-10-23
 
 Correções de uma revisão independente do código e de testes com vídeos maiores.

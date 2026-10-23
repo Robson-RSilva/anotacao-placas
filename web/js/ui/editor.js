@@ -50,7 +50,7 @@ export class Editor {
     this.mostrarPlacas = true;
     this.vista = { escala: 1, ox: 0, oy: 0 };
     this._quadroPedido = false;
-    this._amostrasTela = this.molde.elementos.map((el) => this.molde.amostras(el.nome, 0.5));
+    this._usarMolde(molde);
     this._contornos = this.placas.map((p) => this._contornoPlaca(p.vertices));
     this._eventos();
     this._ro = new ResizeObserver(() => this.ajustarVista());
@@ -91,15 +91,30 @@ export class Editor {
 
   // ------------------------------------------------------------------ estado
   _guardar() {
-    this.historico.push({ cam: this.cam, pinos: copiar(this.pinos) });
+    this.historico.push({ cam: this.cam, pinos: copiar(this.pinos), molde: this.molde });
     if (this.historico.length > 100) this.historico.shift();
   }
 
   desfazer() {
     const s = this.historico.pop();
     if (!s) return;
+    if (s.molde !== this.molde) this._usarMolde(s.molde);
     this.cam = s.cam;
     this.pinos = s.pinos;
+    this._mudou();
+  }
+
+  _usarMolde(molde) {
+    this.molde = molde;
+    this._amostrasTela = molde.elementos.map((el) => molde.amostras(el.nome, 0.5));
+  }
+
+  /** Outras medidas do campo: os travados continuam, e a câmera se ajusta de novo a eles. */
+  trocarMolde(molde) {
+    if (molde === this.molde) return;
+    this._guardar();
+    this._usarMolde(molde);
+    this._assentar();
     this._mudou();
   }
 
@@ -110,7 +125,8 @@ export class Editor {
     this._mudou();
   }
 
-  definir(camera, pinos = []) {
+  definir(camera, pinos = [], molde = null) {
+    if (molde && molde !== this.molde) this._usarMolde(molde);
     this.cam = camera;
     this.pinos = copiar(pinos);
     this._mudou();

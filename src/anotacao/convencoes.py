@@ -23,11 +23,14 @@ RE_VERSAO_PACOTE = re.compile(r"^\d+\.\d+$")
 RE_PARTIDA = re.compile(r"^\d{4}-\d{2}-\d{2}_[a-z0-9]+(?:-[a-z0-9]+)*_[a-z0-9]+(?:-[a-z0-9]+)*$")
 RE_QUADRO = re.compile(r"^t\d{10}$")
 RE_GABARITO = re.compile(r"^g\d{4}$")
-RE_PESSOA = re.compile(r"^[A-Z]\d{2}$")
+RE_PESSOA = re.compile(r"^[A-Z][A-Z0-9]{1,9}$")
 RE_PACOTE_REF = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*/pacote-\d+\.\d+$")
 
 #: Nome da "partida" que guarda os itens do gabarito (nunca entra nos conjuntos de treino).
 PARTIDA_GABARITO = "gabarito"
+
+#: Pacote do campo genérico (105 x 68 m, sem placas), para anotar sem o levantamento do estádio.
+REF_PACOTE_GENERICO = "generico/pacote-1.0"
 
 
 def slug(texto: str) -> str:

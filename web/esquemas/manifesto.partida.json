@@ -23,6 +23,7 @@
           "type": "string"
         },
         "estadio": {
+          "description": "nome do estádio, em slug (entra no ID da partida)",
           "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
           "title": "Estadio",
           "type": "string"
@@ -47,9 +48,18 @@
           "type": "string"
         },
         "pacote_versao": {
-          "pattern": "^\\d+\\.\\d+$",
-          "title": "Pacote Versao",
-          "type": "string"
+          "anyOf": [
+            {
+              "pattern": "^\\d+\\.\\d+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "versão do pacote do estádio, quando há o levantamento; sem ele, o campo genérico",
+          "title": "Pacote Versao"
         },
         "visitante": {
           "minLength": 1,
@@ -59,7 +69,6 @@
       },
       "required": [
         "estadio",
-        "pacote_versao",
         "emissora",
         "competicao",
         "data_hora",

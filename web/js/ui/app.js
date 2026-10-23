@@ -2,7 +2,7 @@
 // (#/, #/camera, #/revisao, #/importar, #/coordenacao). Uma página só porque a permissão da pasta
 // vale para a aba aberta: trocar de vista não pede de novo.
 
-import { VERSAO } from "../nucleo/convencoes.js";
+import { VERSAO, codigoPessoa } from "../nucleo/convencoes.js";
 import { carregarEsquemas } from "../nucleo/formatos.js";
 import { Indice } from "../nucleo/indice.js";
 import { Pasta } from "../nucleo/pasta.js";
@@ -46,8 +46,9 @@ const ctx = {
     else await rotear();
   },
 
+  /** O código de quem está anotando neste navegador (ou null). */
   pessoa() {
-    return local.ler("pessoa");
+    return codigoPessoa(local.ler("pessoa"));
   },
 
   definirPessoa(codigo) {
