@@ -205,7 +205,7 @@ export async function montar(raiz, ctx) {
       item = null; // gravado: daqui não se salva de novo este quadro
       if (feito.treino) {
         const g = (await indice.itensGabarito()).find((x) => x.id === feito.quadro);
-        const d = await compararComGabarito(indice, rotulo.camera, g);
+        const d = await compararComGabarito(indice, rotulo.camera, g, rotulo.campo);
         const s = await situacaoAnotador(indice, feito.pessoa);
         const ok = d.mediana_px !== null && d.mediana_px <= LIMITE_LIBERACAO_PX;
         $("modal-titulo").textContent = ok ? "Dentro da tolerância" : "Fora da tolerância";

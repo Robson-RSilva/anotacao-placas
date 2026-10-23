@@ -5,6 +5,7 @@ import { test } from "node:test";
 import { distanciaCameras, distanciaPolilinha, residuoMediano, residuos } from "../../web/js/nucleo/avaliacao.js";
 import { Camera } from "../../web/js/nucleo/camera.js";
 import { Molde } from "../../web/js/nucleo/campo.js";
+import { pacoteGenerico } from "../../web/js/nucleo/pacote.js";
 import { calcularPlacar } from "../../web/js/nucleo/placar.js";
 import { AGORA, PACOTE, cameraExemplo, criarPartida, esquemas, gravarRevisao, gravarRotulo, pastaExemplo } from "./apoio.js";
 
@@ -24,6 +25,18 @@ test("distância entre câmeras: zero para a mesma, cresce com o erro de pan", (
   assert.ok(d[0] > 0.05 && d[0] < 3, `0,05° de pan num plano de 38° ≈ 1,3 px na ref. 960 (${d[0]})`);
   const ceu = Camera.olharPara([0, -58, 14], [0, -58, 60], 20, 640, 360).paraRotulo(); // olhando para cima
   assert.equal(distanciaCameras(ceu, ceu, pacote, molde, 640, 360), null);
+});
+
+test("distância no campo genérico: as marcações de cada rótulo, com as medidas que ele usou", () => {
+  const pacote = pacoteGenerico(); // sem placas: vale o campo
+  const r = cameraExemplo([-8, 0, 0], 38).paraRotulo();
+  const padrao = Molde.doPacote(pacote);
+  assert.ok(distanciaCameras(r, r, pacote, padrao, 640, 360)[0] < 1e-9);
+  // a mesma câmera com o campo esticado desenha as marcações em outro lugar
+  const esticado = Molde.doCampo(100, 64);
+  const d = distanciaCameras(r, r, pacote, padrao, 640, 360, esticado);
+  assert.ok(d[0] > 1 && d[1] >= d[0], `${d}`);
+  assert.deepEqual(distanciaCameras(r, r, pacote, esticado, 640, 360, esticado), [0, 0]);
 });
 
 test("resíduos dos travados, em px na referência 960", () => {

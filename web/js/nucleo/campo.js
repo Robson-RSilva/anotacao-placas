@@ -28,17 +28,17 @@ export function comprimento(el) {
   return el.raio * Math.abs(el.a1 - el.a0);
 }
 
+/** O ponto 3D na fração `s` (0 a 1) do elemento: a mesma marcação em campos de medidas diferentes. */
+export function pontoNaFracao(el, s) {
+  if (el.tipo === "reta") return [0, 1, 2].map((i) => el.A[i] + s * (el.B[i] - el.A[i]));
+  const a = el.a0 + s * (el.a1 - el.a0);
+  return [el.centro[0] + el.raio * Math.cos(a), el.centro[1] + el.raio * Math.sin(a), 0];
+}
+
 /** Pontos 3D ao longo do elemento, com espaçamento aproximado `passo` (m) — igual a campo.py. */
 export function amostrar(el, passo = 0.25) {
   const n = Math.max(Math.ceil(comprimento(el) / passo), 1) + 1;
-  const t = linspace(0, 1, n);
-  if (el.tipo === "reta") {
-    return t.map((s) => [0, 1, 2].map((i) => el.A[i] + s * (el.B[i] - el.A[i])));
-  }
-  return t.map((s) => {
-    const a = el.a0 + s * (el.a1 - el.a0);
-    return [el.centro[0] + el.raio * Math.cos(a), el.centro[1] + el.raio * Math.sin(a), 0];
-  });
+  return linspace(0, 1, n).map((s) => pontoNaFracao(el, s));
 }
 
 const DOIS_PI = 2 * Math.PI;

@@ -25,6 +25,8 @@ vídeo que interessam.
   avisa antes de ler o vídeo.
 - `unificar`: colunas `campo_comprimento` e `campo_largura`; rótulo cujo pacote não dá para ler fica
   pendente e o pacote aparece nos problemas, em vez de parar tudo.
+- Concordância da dupla e acerto no gabarito comparam o que cada rótulo desenha, com as medidas do
+  campo que ele usou (no campo genérico, sem placas, pelas marcações).
 - ADR-0006.
 
 ### Mudado

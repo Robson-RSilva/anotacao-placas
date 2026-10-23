@@ -13,10 +13,12 @@ export const N_LIBERACAO = 10;
 export const LIMITE_LIBERACAO_PX = 2.0;
 
 /** Diferença entre a câmera de um rótulo e a do item do gabarito: {mediana_px, p90_px} (null sem câmera). */
-export async function compararComGabarito(indice, camera, item) {
+export async function compararComGabarito(indice, camera, item, campo = null) {
   if (!camera) return { mediana_px: null, p90_px: null };
   const pacote = await indice.pacote(item.pacote);
-  const d = distanciaCameras(camera, item.camera, pacote, Molde.doPacote(pacote), item.largura, item.altura);
+  const verdade = Molde.doPacote(pacote);
+  const doRotulo = campo ? Molde.doCampo(campo.comprimento, campo.largura) : verdade; // as medidas que a pessoa usou
+  const d = distanciaCameras(camera, item.camera, pacote, doRotulo, item.largura, item.altura, verdade);
   return d ? { mediana_px: d[0], p90_px: d[1] } : { mediana_px: null, p90_px: null };
 }
 
@@ -27,7 +29,7 @@ export async function resultados(indice, pessoa, itens = null) {
   const out = [];
   for (const a of ip.ultimos().values()) {
     if (a.pessoa !== pessoa || !porId.has(a.quadro)) continue;
-    const r = await compararComGabarito(indice, a.dados.camera, porId.get(a.quadro));
+    const r = await compararComGabarito(indice, a.dados.camera, porId.get(a.quadro), a.dados.campo);
     out.push({ item: a.quadro, mediana_px: r.mediana_px, criado_em: a.dados.criado_em });
   }
   return out.sort((x, y) => Date.parse(x.criado_em) - Date.parse(y.criado_em));

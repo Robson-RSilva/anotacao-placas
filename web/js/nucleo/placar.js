@@ -93,7 +93,6 @@ export async function calcularPlacar(indice, agora = new Date()) {
     // concordância nos rótulos cegos (quadros em dupla): o rótulo de cada pessoa, nunca uma correção
     // que ela fez revisando o da outra
     const ultimos = ip.ultimosProprios();
-    const molde = Molde.doPacote(pacote);
     const doQuadro = new Map();
     for (const a of ultimos.values()) {
       if (!doQuadro.has(a.quadro)) doQuadro.set(a.quadro, []);
@@ -104,7 +103,9 @@ export async function calcularPlacar(indice, agora = new Date()) {
       // as duas primeiras pessoas que anotaram o quadro
       const [a1, a2] = (doQuadro.get(item.quadro) || []).sort((x, y) => Date.parse(x.dados.criado_em) - Date.parse(y.dados.criado_em));
       if (!a1 || !a2 || !a1.dados.camera || !a2.dados.camera) continue;
-      const d = distanciaCameras(a1.dados.camera, a2.dados.camera, pacote, molde, man.video.largura, man.video.altura);
+      const m1 = Molde.doRotulo(a1.dados, pacote); // as medidas do campo que cada pessoa usou
+      const m2 = Molde.doRotulo(a2.dados, pacote);
+      const d = distanciaCameras(a1.dados.camera, a2.dados.camera, pacote, m1, man.video.largura, man.video.altura, m2);
       if (d) {
         lista(concord, a1.pessoa).push(d[0]);
         lista(concord, a2.pessoa).push(d[0]);

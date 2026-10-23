@@ -1,6 +1,7 @@
 // Medidas de qualidade dos rótulos, sempre em pixels na referência 960 (ADR-0001).
 
 import { Camera } from "./camera.js";
+import { comprimento, linspace, pontoNaFracao } from "./campo.js";
 import { REF_W } from "./convencoes.js";
 import { mediana, percentil } from "./estatistica.js";
 import { amostrasPlacas } from "./pacote.js";
@@ -47,22 +48,38 @@ export function residuoMediano(rotulo, molde, w, h) {
   return mediana(residuos(rotulo, molde, w, h).filter(Number.isFinite));
 }
 
+/** As mesmas marcações nos dois moldes (pontos nas mesmas frações de cada elemento, a cada ~`passo` m). */
+function marcacoesCorrespondentes(moldeA, moldeB, passo = 1.0) {
+  const pa = [];
+  const pb = [];
+  for (const ea of moldeA.elementos) {
+    const eb = moldeB.elemento(ea.nome);
+    for (const s of linspace(0, 1, Math.max(Math.ceil(comprimento(ea) / passo), 1) + 1)) {
+      pa.push(pontoNaFracao(ea, s));
+      pb.push(pontoNaFracao(eb, s));
+    }
+  }
+  return [pa, pb];
+}
+
 /**
  * Mediana e p90 da distância (ref. 960) entre as placas desenhadas pelas duas câmeras.
  *
- * Usa os pontos das placas que a câmera `a` põe dentro da imagem; sem placas no quadro, usa as
- * marcações do campo. Devolve null quando nem isso aparece.
+ * Usa os pontos das placas que a câmera `a` põe dentro da imagem; sem placas no quadro (ou no
+ * molde, como no campo genérico), usa as marcações do campo, cada câmera com o molde do seu rótulo —
+ * duas pessoas que esticaram o campo de jeitos diferentes desenham marcações diferentes. Devolve null
+ * quando nem isso aparece.
  */
-export function distanciaCameras(a, b, pacote, molde, w, h) {
+export function distanciaCameras(a, b, pacote, moldeA, w, h, moldeB = moldeA) {
   const ca = Camera.deRotulo(a, w, h);
   const cb = Camera.deRotulo(b, w, h);
-  const conjuntos = [amostrasPlacas(pacote), molde.elementos.flatMap((e) => molde.amostras(e.nome, 1.0))];
-  for (const P of conjuntos) {
-    if (!P.length) continue;
+  const placas = amostrasPlacas(pacote);
+  for (const [PA, PB] of [[placas, placas], marcacoesCorrespondentes(moldeA, moldeB)]) {
+    if (!PA.length) continue;
     const d = [];
-    for (const X of P) {
-      const pa = ca.projetar(X);
-      const pb = cb.projetar(X);
+    for (let i = 0; i < PA.length; i++) {
+      const pa = ca.projetar(PA[i]);
+      const pb = cb.projetar(PB[i]);
       if (!pa || !pb) continue;
       if (pa[0] < 0 || pa[0] >= w || pa[1] < 0 || pa[1] >= h) continue;
       d.push(Math.hypot(pa[0] - pb[0], pa[1] - pb[1]) * (REF_W / w));
