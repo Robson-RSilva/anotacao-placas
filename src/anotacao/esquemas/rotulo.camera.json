@@ -1,0 +1,308 @@
+{
+  "$defs": {
+    "CameraRotulo": {
+      "additionalProperties": false,
+      "properties": {
+        "C": {
+          "description": "centro óptico (m)",
+          "items": {
+            "type": "number"
+          },
+          "maxItems": 3,
+          "minItems": 3,
+          "title": "C",
+          "type": "array"
+        },
+        "hfov_graus": {
+          "description": "campo de visão horizontal",
+          "exclusiveMaximum": 150,
+          "exclusiveMinimum": 0.5,
+          "title": "Hfov Graus",
+          "type": "number"
+        },
+        "k1": {
+          "default": 0.0,
+          "maximum": 1.0,
+          "minimum": -1.0,
+          "title": "K1",
+          "type": "number"
+        },
+        "pan": {
+          "title": "Pan",
+          "type": "number"
+        },
+        "roll": {
+          "maximum": 45,
+          "minimum": -45,
+          "title": "Roll",
+          "type": "number"
+        },
+        "tilt": {
+          "maximum": 90,
+          "minimum": -90,
+          "title": "Tilt",
+          "type": "number"
+        }
+      },
+      "required": [
+        "hfov_graus",
+        "pan",
+        "tilt",
+        "roll",
+        "C"
+      ],
+      "title": "CameraRotulo",
+      "type": "object"
+    },
+    "LinhaTravada": {
+      "additionalProperties": false,
+      "properties": {
+        "elemento": {
+          "title": "Elemento",
+          "type": "string"
+        },
+        "x": {
+          "title": "X",
+          "type": "number"
+        },
+        "y": {
+          "title": "Y",
+          "type": "number"
+        }
+      },
+      "required": [
+        "elemento",
+        "x",
+        "y"
+      ],
+      "title": "LinhaTravada",
+      "type": "object"
+    },
+    "PartiuDe": {
+      "additionalProperties": false,
+      "properties": {
+        "fonte": {
+          "enum": [
+            "modelo",
+            "quadro_anotado",
+            "registro",
+            "rotulo_anterior",
+            "rotulo_revisado",
+            "nenhuma"
+          ],
+          "title": "Fonte",
+          "type": "string"
+        },
+        "referencia": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Referencia"
+        },
+        "versao": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Versao"
+        }
+      },
+      "required": [
+        "fonte"
+      ],
+      "title": "PartiuDe",
+      "type": "object"
+    },
+    "PontoTravado": {
+      "additionalProperties": false,
+      "properties": {
+        "ponto": {
+          "title": "Ponto",
+          "type": "string"
+        },
+        "x": {
+          "title": "X",
+          "type": "number"
+        },
+        "y": {
+          "title": "Y",
+          "type": "number"
+        }
+      },
+      "required": [
+        "ponto",
+        "x",
+        "y"
+      ],
+      "title": "PontoTravado",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "anotador": {
+      "pattern": "^[A-Z]\\d{2}$",
+      "title": "Anotador",
+      "type": "string"
+    },
+    "camera": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/CameraRotulo"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "comentario": {
+      "default": "",
+      "title": "Comentario",
+      "type": "string"
+    },
+    "corrige": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "arquivo do rótulo que esta versão corrige (revisão cruzada)",
+      "title": "Corrige"
+    },
+    "criado_em": {
+      "format": "date-time",
+      "title": "Criado Em",
+      "type": "string"
+    },
+    "ferramenta": {
+      "title": "Ferramenta",
+      "type": "string"
+    },
+    "formato": {
+      "const": "rotulo.camera/1",
+      "default": "rotulo.camera/1",
+      "title": "Formato",
+      "type": "string"
+    },
+    "lado": {
+      "anyOf": [
+        {
+          "enum": [
+            "canonico",
+            "espelhado"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Lado"
+    },
+    "linhas_travadas": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/LinhaTravada"
+      },
+      "title": "Linhas Travadas",
+      "type": "array"
+    },
+    "manual": {
+      "title": "Manual",
+      "type": "string"
+    },
+    "pacote": {
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*/pacote-\\d+\\.\\d+$",
+      "title": "Pacote",
+      "type": "string"
+    },
+    "partida": {
+      "description": "ID da partida, ou 'gabarito'",
+      "title": "Partida",
+      "type": "string"
+    },
+    "partiu_de": {
+      "$ref": "#/$defs/PartiuDe"
+    },
+    "pontos_travados": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/PontoTravado"
+      },
+      "title": "Pontos Travados",
+      "type": "array"
+    },
+    "quadro": {
+      "description": "ID do quadro (t + PTS em ms) ou do item do gabarito (g0001)",
+      "title": "Quadro",
+      "type": "string"
+    },
+    "residuo_mediano_px": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "pontos e linhas travados, ref. 960",
+      "title": "Residuo Mediano Px"
+    },
+    "segundos_ativos": {
+      "minimum": 0,
+      "title": "Segundos Ativos",
+      "type": "number"
+    },
+    "situacao": {
+      "enum": [
+        "ok",
+        "sem_marcacoes",
+        "impossivel_transicao",
+        "impossivel_borrao",
+        "duvida"
+      ],
+      "title": "Situacao",
+      "type": "string"
+    },
+    "versao": {
+      "minimum": 1,
+      "title": "Versao",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "partida",
+    "pacote",
+    "quadro",
+    "anotador",
+    "versao",
+    "ferramenta",
+    "manual",
+    "criado_em",
+    "segundos_ativos",
+    "partiu_de",
+    "situacao"
+  ],
+  "title": "RotuloCamera",
+  "type": "object"
+}

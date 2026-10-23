@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Câmera do quadro · Anotação</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/static/css/estilo.css">
+</head>
+<body class="pagina-editor">
+  <header class="barra">
+    <a href="/" class="voltar">← Central</a>
+    <h1>Câmera do quadro</h1>
+    <span id="dica" class="dica"></span>
+    <span class="tempo" title="Tempo ativo neste quadro">⏱ <span id="tempo">0:00</span></span>
+  </header>
+
+  <main class="editor">
+    <div class="tela" id="area"><canvas id="tela" aria-label="Quadro com o molde do campo"></canvas>
+      <div id="vazio" class="vazio" hidden></div>
+    </div>
+
+    <aside class="painel" id="painel" hidden>
+      <section id="treino" class="faixa treino" hidden>
+        Treino com gabarito: ao salvar, aparece a diferença para a câmera verdadeira.
+      </section>
+      <section id="devolvido" class="faixa devolvido" hidden></section>
+
+      <section>
+        <h2>Começar de</h2>
+        <div class="linha-campos">
+          <select id="registro" aria-label="Câmera do registro do estádio"></select>
+          <button id="recomecar" type="button" title="Volta para a câmera escolhida e destrava tudo">Recomeçar</button>
+        </div>
+        <div class="botoes">
+          <button id="virar" type="button">Virar o lado <kbd>F</kbd></button>
+          <button id="desfazer" type="button">Desfazer <kbd>Ctrl Z</kbd></button>
+        </div>
+      </section>
+
+      <section>
+        <h2>Travados <span id="n-pinos" class="contagem"></span></h2>
+        <ul id="pinos" class="pinos"><li class="sutil">Arraste ou clique num ponto do molde para travar.</li></ul>
+      </section>
+
+      <section>
+        <h2>Pronto quando</h2>
+        <ul class="checagem">
+          <li id="ck-pontos">3 pontos espalhados, ou 2 pontos e 1 linha</li>
+          <li id="ck-residuo">molde a até 2 px dos travados</li>
+          <li><label><input type="checkbox" id="ck-lado"> conferi o lado numa placa estática</label></li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>Situação</h2>
+        <div class="situacoes" id="situacoes">
+          <label><input type="radio" name="situacao" value="ok" checked> Câmera certa</label>
+          <label><input type="radio" name="situacao" value="sem_marcacoes"> Sem marcações suficientes</label>
+          <label><input type="radio" name="situacao" value="impossivel_transicao"> Impossível: transição ou grafismo</label>
+          <label><input type="radio" name="situacao" value="impossivel_borrao"> Impossível: borrão</label>
+          <label><input type="radio" name="situacao" value="duvida"> Dúvida (com comentário)</label>
+        </div>
+        <textarea id="comentario" rows="2" placeholder="Comentário (obrigatório em dúvida)"></textarea>
+      </section>
+
+      <button id="salvar" class="primario" type="button">Salvar <kbd>S</kbd></button>
+      <p id="erro" class="erro" role="alert"></p>
+
+      <details class="ajuda">
+        <summary>Como usar</summary>
+        <ul>
+          <li><b>Arrastar um ponto</b>: o molde inteiro acompanha; ao soltar, ele fica travado.</li>
+          <li><b>Clicar num ponto</b>: trava onde está.</li>
+          <li><b>Arrastar uma linha</b> (lateral, fundo): leva a linha até a pintada.</li>
+          <li><b>Botão direito</b> num travado: destrava.</li>
+          <li><b>Roda do mouse</b>: aproxima. Arrastar o vazio move a vista. <kbd>0</kbd> volta a vista.</li>
+          <li><kbd>L</kbd> nomes · <kbd>P</kbd> placas · <kbd>F</kbd> virar o lado · <kbd>S</kbd> salvar</li>
+        </ul>
+      </details>
+    </aside>
+  </main>
+
+  <div id="modal" class="modal" hidden>
+    <div class="caixa">
+      <h2 id="modal-titulo"></h2>
+      <p id="modal-texto"></p>
+      <button id="modal-ok" class="primario" type="button">Próximo</button>
+    </div>
+  </div>
+
+  <script type="module" src="/static/js/pagina-camera.js"></script>
+</body>
+</html>

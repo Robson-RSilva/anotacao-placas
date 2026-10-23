@@ -1,0 +1,118 @@
+{
+  "$defs": {
+    "CameraRotulo": {
+      "additionalProperties": false,
+      "properties": {
+        "C": {
+          "description": "centro óptico (m)",
+          "items": {
+            "type": "number"
+          },
+          "maxItems": 3,
+          "minItems": 3,
+          "title": "C",
+          "type": "array"
+        },
+        "hfov_graus": {
+          "description": "campo de visão horizontal",
+          "exclusiveMaximum": 150,
+          "exclusiveMinimum": 0.5,
+          "title": "Hfov Graus",
+          "type": "number"
+        },
+        "k1": {
+          "default": 0.0,
+          "maximum": 1.0,
+          "minimum": -1.0,
+          "title": "K1",
+          "type": "number"
+        },
+        "pan": {
+          "title": "Pan",
+          "type": "number"
+        },
+        "roll": {
+          "maximum": 45,
+          "minimum": -45,
+          "title": "Roll",
+          "type": "number"
+        },
+        "tilt": {
+          "maximum": 90,
+          "minimum": -90,
+          "title": "Tilt",
+          "type": "number"
+        }
+      },
+      "required": [
+        "hfov_graus",
+        "pan",
+        "tilt",
+        "roll",
+        "C"
+      ],
+      "title": "CameraRotulo",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "altura": {
+      "exclusiveMinimum": 0,
+      "title": "Altura",
+      "type": "integer"
+    },
+    "camera": {
+      "$ref": "#/$defs/CameraRotulo"
+    },
+    "formato": {
+      "const": "gabarito.camera/1",
+      "default": "gabarito.camera/1",
+      "title": "Formato",
+      "type": "string"
+    },
+    "id": {
+      "pattern": "^g\\d{4}$",
+      "title": "Id",
+      "type": "string"
+    },
+    "imagem": {
+      "title": "Imagem",
+      "type": "string"
+    },
+    "largura": {
+      "exclusiveMinimum": 0,
+      "title": "Largura",
+      "type": "integer"
+    },
+    "observacao": {
+      "default": "",
+      "title": "Observacao",
+      "type": "string"
+    },
+    "origem": {
+      "enum": [
+        "simulador",
+        "arbitrado"
+      ],
+      "title": "Origem",
+      "type": "string"
+    },
+    "pacote": {
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*/pacote-\\d+\\.\\d+$",
+      "title": "Pacote",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "pacote",
+    "imagem",
+    "largura",
+    "altura",
+    "camera",
+    "origem"
+  ],
+  "title": "GabaritoCamera",
+  "type": "object"
+}

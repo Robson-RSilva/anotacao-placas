@@ -1,0 +1,114 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "comentario": {
+      "default": "",
+      "title": "Comentario",
+      "type": "string"
+    },
+    "criado_em": {
+      "format": "date-time",
+      "title": "Criado Em",
+      "type": "string"
+    },
+    "decisao": {
+      "enum": [
+        "aprovar",
+        "corrigir",
+        "devolver"
+      ],
+      "title": "Decisao",
+      "type": "string"
+    },
+    "ferramenta": {
+      "title": "Ferramenta",
+      "type": "string"
+    },
+    "formato": {
+      "const": "revisao.camera/1",
+      "default": "revisao.camera/1",
+      "title": "Formato",
+      "type": "string"
+    },
+    "manual": {
+      "title": "Manual",
+      "type": "string"
+    },
+    "motivo": {
+      "anyOf": [
+        {
+          "enum": [
+            "lado_trocado",
+            "molde_fora_da_tolerancia",
+            "ponto_em_marca_coberta",
+            "deveria_ser_sem_marcacoes",
+            "outro"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Motivo"
+    },
+    "nova_versao": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "arquivo da correção, quando a decisão é corrigir",
+      "title": "Nova Versao"
+    },
+    "partida": {
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}_[a-z0-9]+(?:-[a-z0-9]+)*_[a-z0-9]+(?:-[a-z0-9]+)*$",
+      "title": "Partida",
+      "type": "string"
+    },
+    "quadro": {
+      "pattern": "^t\\d{10}$",
+      "title": "Quadro",
+      "type": "string"
+    },
+    "revisor": {
+      "pattern": "^[A-Z]\\d{2}$",
+      "title": "Revisor",
+      "type": "string"
+    },
+    "rotulo": {
+      "description": "arquivo do rótulo revisado",
+      "title": "Rotulo",
+      "type": "string"
+    },
+    "segundos_ativos": {
+      "minimum": 0,
+      "title": "Segundos Ativos",
+      "type": "number"
+    },
+    "versao": {
+      "minimum": 1,
+      "title": "Versao",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "partida",
+    "quadro",
+    "rotulo",
+    "revisor",
+    "versao",
+    "decisao",
+    "ferramenta",
+    "manual",
+    "criado_em",
+    "segundos_ativos"
+  ],
+  "title": "RevisaoCamera",
+  "type": "object"
+}

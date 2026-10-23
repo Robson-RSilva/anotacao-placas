@@ -1,0 +1,12 @@
+{
+  "name": "anotacao-placas-web",
+  "private": true,
+  "type": "module",
+  "description": "Testes do JavaScript das páginas (sem dependências: node --test).",
+  "scripts": {
+    "test": "node --test tests/js/*.test.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "additionalProperties": false,
+  "description": "Partidas fora do treino. Tudo o que não está aqui é treino.",
+  "properties": {
+    "formato": {
+      "const": "divisao/1",
+      "default": "divisao/1",
+      "title": "Formato",
+      "type": "string"
+    },
+    "teste_congelado": {
+      "default": [],
+      "items": {
+        "pattern": "^\\d{4}-\\d{2}-\\d{2}_[a-z0-9]+(?:-[a-z0-9]+)*_[a-z0-9]+(?:-[a-z0-9]+)*$",
+        "type": "string"
+      },
+      "title": "Teste Congelado",
+      "type": "array"
+    },
+    "teste_externo": {
+      "default": [],
+      "items": {
+        "pattern": "^\\d{4}-\\d{2}-\\d{2}_[a-z0-9]+(?:-[a-z0-9]+)*_[a-z0-9]+(?:-[a-z0-9]+)*$",
+        "type": "string"
+      },
+      "title": "Teste Externo",
+      "type": "array"
+    },
+    "validacao": {
+      "default": [],
+      "items": {
+        "pattern": "^\\d{4}-\\d{2}-\\d{2}_[a-z0-9]+(?:-[a-z0-9]+)*_[a-z0-9]+(?:-[a-z0-9]+)*$",
+        "type": "string"
+      },
+      "title": "Validacao",
+      "type": "array"
+    }
+  },
+  "title": "Divisao",
+  "type": "object"
+}

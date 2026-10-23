@@ -1,0 +1,58 @@
+{
+  "$defs": {
+    "Membro": {
+      "additionalProperties": false,
+      "properties": {
+        "codigo": {
+          "pattern": "^[A-Z]\\d{2}$",
+          "title": "Codigo",
+          "type": "string"
+        },
+        "nome": {
+          "title": "Nome",
+          "type": "string"
+        },
+        "papeis": {
+          "items": {
+            "enum": [
+              "anotador",
+              "revisor"
+            ],
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Papeis",
+          "type": "array"
+        }
+      },
+      "required": [
+        "codigo",
+        "nome",
+        "papeis"
+      ],
+      "title": "Membro",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "formato": {
+      "const": "equipe/1",
+      "default": "equipe/1",
+      "title": "Formato",
+      "type": "string"
+    },
+    "membros": {
+      "items": {
+        "$ref": "#/$defs/Membro"
+      },
+      "title": "Membros",
+      "type": "array"
+    }
+  },
+  "required": [
+    "membros"
+  ],
+  "title": "Equipe",
+  "type": "object"
+}

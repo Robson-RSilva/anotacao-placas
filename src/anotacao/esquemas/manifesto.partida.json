@@ -1,0 +1,227 @@
+{
+  "$defs": {
+    "Cadastro": {
+      "additionalProperties": false,
+      "properties": {
+        "chuva": {
+          "title": "Chuva",
+          "type": "boolean"
+        },
+        "competicao": {
+          "minLength": 1,
+          "title": "Competicao",
+          "type": "string"
+        },
+        "data_hora": {
+          "format": "date-time",
+          "title": "Data Hora",
+          "type": "string"
+        },
+        "emissora": {
+          "minLength": 1,
+          "title": "Emissora",
+          "type": "string"
+        },
+        "estadio": {
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+          "title": "Estadio",
+          "type": "string"
+        },
+        "iluminacao": {
+          "enum": [
+            "dia",
+            "noite",
+            "transicao"
+          ],
+          "title": "Iluminacao",
+          "type": "string"
+        },
+        "mandante": {
+          "minLength": 1,
+          "title": "Mandante",
+          "type": "string"
+        },
+        "observacoes": {
+          "default": "",
+          "title": "Observacoes",
+          "type": "string"
+        },
+        "pacote_versao": {
+          "pattern": "^\\d+\\.\\d+$",
+          "title": "Pacote Versao",
+          "type": "string"
+        },
+        "visitante": {
+          "minLength": 1,
+          "title": "Visitante",
+          "type": "string"
+        }
+      },
+      "required": [
+        "estadio",
+        "pacote_versao",
+        "emissora",
+        "competicao",
+        "data_hora",
+        "mandante",
+        "visitante",
+        "iluminacao",
+        "chuva"
+      ],
+      "title": "Cadastro",
+      "type": "object"
+    },
+    "PreProcessamento": {
+      "additionalProperties": false,
+      "properties": {
+        "criado_em": {
+          "format": "date-time",
+          "title": "Criado Em",
+          "type": "string"
+        },
+        "ferramenta": {
+          "title": "Ferramenta",
+          "type": "string"
+        },
+        "parametros": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "boolean"
+              }
+            ]
+          },
+          "title": "Parametros",
+          "type": "object"
+        },
+        "previsor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Previsor"
+        },
+        "segundos": {
+          "minimum": 0,
+          "title": "Segundos",
+          "type": "number"
+        }
+      },
+      "required": [
+        "ferramenta",
+        "criado_em",
+        "segundos",
+        "parametros"
+      ],
+      "title": "PreProcessamento",
+      "type": "object"
+    },
+    "VideoInfo": {
+      "additionalProperties": false,
+      "properties": {
+        "altura": {
+          "exclusiveMinimum": 0,
+          "title": "Altura",
+          "type": "integer"
+        },
+        "bytes": {
+          "minimum": 0,
+          "title": "Bytes",
+          "type": "integer"
+        },
+        "duracao_s": {
+          "minimum": 0,
+          "title": "Duracao S",
+          "type": "number"
+        },
+        "fps": {
+          "exclusiveMinimum": 0,
+          "title": "Fps",
+          "type": "number"
+        },
+        "largura": {
+          "exclusiveMinimum": 0,
+          "title": "Largura",
+          "type": "integer"
+        },
+        "n_quadros": {
+          "minimum": 0,
+          "title": "N Quadros",
+          "type": "integer"
+        },
+        "nome_original": {
+          "title": "Nome Original",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "nome_original",
+        "sha256",
+        "bytes",
+        "duracao_s",
+        "fps",
+        "largura",
+        "altura",
+        "n_quadros"
+      ],
+      "title": "VideoInfo",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "cadastro": {
+      "$ref": "#/$defs/Cadastro"
+    },
+    "formato": {
+      "const": "manifesto.partida/1",
+      "default": "manifesto.partida/1",
+      "title": "Formato",
+      "type": "string"
+    },
+    "pacote": {
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*/pacote-\\d+\\.\\d+$",
+      "title": "Pacote",
+      "type": "string"
+    },
+    "partida": {
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}_[a-z0-9]+(?:-[a-z0-9]+)*_[a-z0-9]+(?:-[a-z0-9]+)*$",
+      "title": "Partida",
+      "type": "string"
+    },
+    "pre_processamento": {
+      "$ref": "#/$defs/PreProcessamento"
+    },
+    "video": {
+      "$ref": "#/$defs/VideoInfo"
+    }
+  },
+  "required": [
+    "partida",
+    "pacote",
+    "cadastro",
+    "video",
+    "pre_processamento"
+  ],
+  "title": "Manifesto",
+  "type": "object"
+}

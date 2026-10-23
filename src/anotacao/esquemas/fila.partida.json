@@ -1,0 +1,100 @@
+{
+  "$defs": {
+    "ItemFila": {
+      "additionalProperties": false,
+      "properties": {
+        "atribuido_a": {
+          "items": {
+            "pattern": "^[A-Z]\\d{2}$",
+            "type": "string"
+          },
+          "title": "Atribuido A",
+          "type": "array"
+        },
+        "dupla": {
+          "default": false,
+          "description": "rótulo cego: duas pessoas anotam do zero",
+          "title": "Dupla",
+          "type": "boolean"
+        },
+        "i": {
+          "minimum": 0,
+          "title": "I",
+          "type": "integer"
+        },
+        "pts_ms": {
+          "minimum": 0,
+          "title": "Pts Ms",
+          "type": "integer"
+        },
+        "quadro": {
+          "pattern": "^t\\d{10}$",
+          "title": "Quadro",
+          "type": "string"
+        },
+        "sem_previsao": {
+          "default": false,
+          "description": "começa sem previsão, para medir o viés de ancoragem",
+          "title": "Sem Previsao",
+          "type": "boolean"
+        },
+        "tomada": {
+          "minimum": 0,
+          "title": "Tomada",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "quadro",
+        "tomada",
+        "i",
+        "pts_ms",
+        "atribuido_a"
+      ],
+      "title": "ItemFila",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "criado_em": {
+      "format": "date-time",
+      "title": "Criado Em",
+      "type": "string"
+    },
+    "equipe": {
+      "items": {
+        "pattern": "^[A-Z]\\d{2}$",
+        "type": "string"
+      },
+      "title": "Equipe",
+      "type": "array"
+    },
+    "formato": {
+      "const": "fila.partida/1",
+      "default": "fila.partida/1",
+      "title": "Formato",
+      "type": "string"
+    },
+    "itens": {
+      "items": {
+        "$ref": "#/$defs/ItemFila"
+      },
+      "title": "Itens",
+      "type": "array"
+    },
+    "partida": {
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}_[a-z0-9]+(?:-[a-z0-9]+)*_[a-z0-9]+(?:-[a-z0-9]+)*$",
+      "title": "Partida",
+      "type": "string"
+    }
+  },
+  "required": [
+    "partida",
+    "criado_em",
+    "equipe",
+    "itens"
+  ],
+  "title": "Fila",
+  "type": "object"
+}
