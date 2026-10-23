@@ -126,7 +126,15 @@ export async function montar(raiz, ctx) {
   calcularPlacar(indice).then(async (pl) => {
     if (!vivo) return;
     tPartidas.replaceChildren();
-    if (!pl.partidas.length) linhaVazia(tPartidas, 7, "Nenhuma partida importada ainda.");
+    if (!pl.partidas.length && !pl.problemas.length) linhaVazia(tPartidas, 7, "Nenhuma partida importada ainda.");
+    for (const p of pl.problemas) {
+      // incompleta (ainda sincronizando) ou com arquivo inválido: fica fora das filas até se resolver
+      const aviso = celula(`fora das filas: ${p.erro}`, "erro");
+      aviso.colSpan = 6;
+      const tr = document.createElement("tr");
+      tr.append(celula(p.partida), aviso);
+      tPartidas.append(tr);
+    }
     for (const g of [...pl.partidas].reverse()) {
       const c = (await indice.manifesto(g.partida)).cadastro;
       const tr = document.createElement("tr");
@@ -197,6 +205,9 @@ export async function montar(raiz, ctx) {
     try {
       const r = await importarZip(pasta, arquivo, (f) => status(`lendo o .zip… ${Math.round(100 * f)}%`));
       const partes = [`${r.gravados} arquivo(s) novo(s)`, `${r.existentes} já existiam`];
+      if (r.conflitos.length) {
+        partes.push(`${r.conflitos.length} em conflito — já havia um arquivo com o mesmo nome e outro conteúdo, e ficou o da pasta: ${r.conflitos.slice(0, 3).join("; ")}`);
+      }
       if (r.recusados.length) partes.push(`${r.recusados.length} recusado(s): ${r.recusados.slice(0, 3).map((x) => `${x.caminho} (${x.motivo})`).join("; ")}`);
       status(`${partes.join(", ")}.`);
       if (r.gravados) setTimeout(() => vivo && ctx.ir("#/"), 1500);

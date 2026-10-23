@@ -5,6 +5,51 @@ Formato de [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); versões
 
 ## [Não lançado]
 
+## [0.2.1] - 2026-10-23
+
+Correções de uma revisão independente do código e de testes com vídeos maiores.
+
+### Corrigido
+
+- Câmera e revisão: depois de salvar, se o próximo quadro não abria (imagem ainda sincronizando), o
+  editor anterior ficava na tela e salvar de novo gravava a câmera do quadro anterior no próximo — ou
+  aprovava um rótulo que ninguém viu. Agora nada fica salvável até o próximo abrir inteiro.
+- O rótulo e a revisão saem em nome de quem abriu o item; se a pessoa escolhida muda em outra aba, a
+  página recarrega a fila certa em vez de gravar no nome errado.
+- Uma partida incompleta (a fila ainda sincronizando) ou com arquivo inválido não trava mais as filas,
+  o placar e a importação dos outros: fica de fora e aparece na lista de partidas com o motivo. O
+  `anotacao unificar` também a deixa de fora e avisa, e o `anotacao validar` a lista em vez de parar
+  com erro.
+- Arquivo vazio (escrita interrompida, ou que o Drive ainda está sincronizando) conta como ausente: não
+  bloqueia mais reimportar a partida e pode ser regravado.
+- Dupla às cegas: quem também anota o quadro não é sorteado para revisar o rótulo do outro (só quando
+  não há mais ninguém, e depois de fazer o próprio), e o revisor sorteado não muda quando o outro
+  termina; uma correção feita na revisão não tira o quadro da fila da pessoa, nem esconde o rótulo
+  dela da revisão, e a concordância compara só os rótulos cegos.
+- Revisão: se o rótulo sai da fila enquanto está aberto (outra pessoa revisou), a página passa para o
+  próximo em vez de falhar a cada tentativa.
+- Os itens escondidos do gabarito contam a partir da liberação: rótulos reais de antes de importar o
+  gabarito não viram uma rajada de itens escondidos.
+- Importação: o MP4 que marca como quadro-chave um quadro que não é (quadros I de H.264 que não são
+  IDR, comuns em gravações de TV) era recusado pelo navegador e a importação parava; agora a leitura
+  começa no primeiro quadro-chave aceito e a extração volta até um começo aceito. Quadros que não deu
+  para decodificar nunca são sorteados, e um vídeo que não começa num quadro-chave é aceito.
+- Importação: vídeo cortado (cópia ou download interrompido) é lido até onde vai, em vez de falhar no
+  fim; MP4 fragmentado com o som antes do vídeo sem endereço base agora acha os quadros certos.
+- Importação: duas pessoas não importam a mesma partida ao mesmo tempo — uma marca `importando.json`
+  na pasta da partida, renovada a cada minuto, segura a segunda (e deixa de valer 10 minutos depois
+  de uma importação que parou); antes de gravar, confere de novo se a partida já existe, e nunca
+  troca as imagens de uma partida que já existe.
+- Trazer um .zip mostra os conflitos: um arquivo com o mesmo nome e outro conteúdo (a mesma pessoa
+  anotando o quadro em dois computadores) era contado como "já existia" sem aviso.
+
+### Adicionado
+
+- Tempo que falta na importação, pelo ritmo até ali.
+- Testes: vídeo com quadros marcados como chave sem ser, CSP ligada no navegador, MP4 cortado e
+  fragmentado com som, filas com partidas incompletas, dupla às cegas e gabarito depois de rótulos
+  reais.
+
 ## [0.2.0] - 2026-10-23
 
 Tudo roda no navegador de cada pessoa, publicado no GitHub Pages: ninguém precisa instalar nada para
@@ -39,6 +84,8 @@ anotar (ADR-0005).
 - O gabarito escondido conta a partir da liberação de verdade, não dos 10 primeiros itens.
 - Rótulo ou revisão cujo conteúdo não bate com o nome do arquivo conta como inválido.
 - O gabarito só aceita imagens JPEG.
+- O revisor de cada rótulo é sorteado pelo SHA-256 do nome do arquivo (antes SHA-1): rótulos da 0.1
+  ainda sem revisão podem mudar de revisor.
 
 ### Removido
 

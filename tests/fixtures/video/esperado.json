@@ -566,6 +566,195 @@
    }
   ]
  },
+ "h264_fragmentado_som_antes.mp4": {
+  "codec": "h264",
+  "largura": 64,
+  "altura": 48,
+  "pacotes": [
+   {
+    "pos": 5513,
+    "tamanho": 1489,
+    "chave": true,
+    "pts_ms": 0.0,
+    "descartado": false
+   },
+   {
+    "pos": 7002,
+    "tamanho": 11,
+    "chave": false,
+    "pts_ms": 63.28125,
+    "descartado": false
+   },
+   {
+    "pos": 7013,
+    "tamanho": 11,
+    "chave": false,
+    "pts_ms": 103.28125,
+    "descartado": false
+   },
+   {
+    "pos": 7024,
+    "tamanho": 59,
+    "chave": false,
+    "pts_ms": 143.28125,
+    "descartado": false
+   },
+   {
+    "pos": 7083,
+    "tamanho": 11,
+    "chave": false,
+    "pts_ms": 183.28125,
+    "descartado": false
+   },
+   {
+    "pos": 7094,
+    "tamanho": 11,
+    "chave": false,
+    "pts_ms": 223.28125,
+    "descartado": false
+   },
+   {
+    "pos": 7105,
+    "tamanho": 22,
+    "chave": false,
+    "pts_ms": 263.28125,
+    "descartado": false
+   },
+   {
+    "pos": 7127,
+    "tamanho": 22,
+    "chave": false,
+    "pts_ms": 303.28125,
+    "descartado": false
+   },
+   {
+    "pos": 7149,
+    "tamanho": 11,
+    "chave": false,
+    "pts_ms": 343.28125,
+    "descartado": false
+   },
+   {
+    "pos": 7160,
+    "tamanho": 33,
+    "chave": false,
+    "pts_ms": 383.28125,
+    "descartado": false
+   },
+   {
+    "pos": 10937,
+    "tamanho": 968,
+    "chave": true,
+    "pts_ms": 423.28125,
+    "descartado": false
+   },
+   {
+    "pos": 11905,
+    "tamanho": 16,
+    "chave": false,
+    "pts_ms": 463.28125,
+    "descartado": false
+   },
+   {
+    "pos": 11921,
+    "tamanho": 11,
+    "chave": false,
+    "pts_ms": 503.28125,
+    "descartado": false
+   },
+   {
+    "pos": 11932,
+    "tamanho": 20,
+    "chave": false,
+    "pts_ms": 543.28125,
+    "descartado": false
+   },
+   {
+    "pos": 11952,
+    "tamanho": 11,
+    "chave": false,
+    "pts_ms": 583.28125,
+    "descartado": false
+   },
+   {
+    "pos": 11963,
+    "tamanho": 32,
+    "chave": false,
+    "pts_ms": 623.28125,
+    "descartado": false
+   },
+   {
+    "pos": 11995,
+    "tamanho": 33,
+    "chave": false,
+    "pts_ms": 663.28125,
+    "descartado": false
+   },
+   {
+    "pos": 12028,
+    "tamanho": 11,
+    "chave": false,
+    "pts_ms": 703.28125,
+    "descartado": false
+   },
+   {
+    "pos": 12039,
+    "tamanho": 43,
+    "chave": false,
+    "pts_ms": 743.28125,
+    "descartado": false
+   },
+   {
+    "pos": 12082,
+    "tamanho": 48,
+    "chave": false,
+    "pts_ms": 783.28125,
+    "descartado": false
+   },
+   {
+    "pos": 14372,
+    "tamanho": 914,
+    "chave": true,
+    "pts_ms": 823.28125,
+    "descartado": false
+   },
+   {
+    "pos": 15286,
+    "tamanho": 11,
+    "chave": false,
+    "pts_ms": 863.28125,
+    "descartado": false
+   },
+   {
+    "pos": 15297,
+    "tamanho": 31,
+    "chave": false,
+    "pts_ms": 903.28125,
+    "descartado": false
+   },
+   {
+    "pos": 15328,
+    "tamanho": 39,
+    "chave": false,
+    "pts_ms": 943.28125,
+    "descartado": false
+   },
+   {
+    "pos": 15367,
+    "tamanho": 11,
+    "chave": false,
+    "pts_ms": 983.28125,
+    "descartado": false
+   },
+   {
+    "pos": 15378,
+    "tamanho": 52,
+    "chave": false,
+    "pts_ms": 1023.28125,
+    "descartado": false
+   }
+  ]
+ },
  "av1.mp4": {
   "codec": "av1",
   "largura": 96,

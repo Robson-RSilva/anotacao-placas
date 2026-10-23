@@ -65,8 +65,12 @@ def unificar(pasta: Pasta, destino: Path | None = None, agora: datetime | None =
     divisao = pasta.ler_divisao()
     linhas, pendentes, problemas = [], [], []
     for pid in pasta.listar_partidas():
-        man = indice.manifesto(pid)
-        fila = indice.fila(pid)
+        try:
+            man = indice.manifesto(pid)
+            fila = indice.fila(pid)
+        except (ValueError, OSError) as e:  # incompleta (ainda sincronizando) ou inválida: fica de fora
+            problemas.append({"arquivo": f"partidas/{pid}", "erro": f"partida fora dos conjuntos: {e}"})
+            continue
         ip = indice.partida(pid)
         problemas += [{"arquivo": str(p.relative_to(pasta.raiz)), "erro": e} for p, e in ip.invalidos]
         item_de = {it.quadro: it for it in fila.itens}

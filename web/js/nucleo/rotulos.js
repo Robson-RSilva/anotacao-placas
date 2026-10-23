@@ -8,6 +8,14 @@ import { arredondar } from "./estatistica.js";
 import { pendentesRevisao } from "./filas.js";
 import { validar } from "./formatos.js";
 
+/** O rótulo saiu da fila de revisão da pessoa (outra pessoa revisou, ou a fila mudou). */
+export class ForaDaFila extends Error {
+  constructor() {
+    super("este rótulo não está mais na sua fila de revisão");
+    this.name = "ForaDaFila";
+  }
+}
+
 function cameraDoRotulo(c) {
   return {
     hfov_graus: c.hfov_graus,
@@ -96,9 +104,7 @@ function montarRevisao(arquivo, pessoa, versao, { decisao, motivo, comentario, s
 export async function salvarRevisao(indice, pessoa, arquivo, decisao, { agora = new Date() } = {}) {
   const pasta = indice.pasta;
   const pendentes = await pendentesRevisao(indice, pessoa);
-  if (!pendentes.some((p) => p.arquivo.caminho === arquivo.caminho)) {
-    throw new Error("este rótulo não está mais na sua fila de revisão");
-  }
+  if (!pendentes.some((p) => p.arquivo.caminho === arquivo.caminho)) throw new ForaDaFila();
   const dir = pasta.revisoes(arquivo.partida);
   const versao = await pasta.proximaVersao(dir, arquivo.quadro, pessoa);
   // valida a decisão antes de gravar qualquer coisa

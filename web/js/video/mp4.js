@@ -228,17 +228,29 @@ function amostrasDoStbl(b, stbl) {
   return out;
 }
 
-/** Amostras de um moof (MP4 fragmentado) para a faixa `id`. */
-function amostrasDoMoof(b, inicioMoof, moof, id, padroes, dtsAnterior) {
+const SEM_PADROES = Object.freeze({ duracao: 0, tamanho: 0, flags: 0 });
+
+/**
+ * Amostras de um moof (MP4 fragmentado) para a faixa `id`. Todas as faixas do moof são percorridas:
+ * sem endereço base declarado, os dados de uma faixa começam onde terminam os da faixa anterior.
+ * `padroes`: Map id da faixa → valores padrão do trex.
+ */
+function amostrasDoMoof(b, inicioMoof, moof, id, padroesPorFaixa, dtsAnterior) {
   const out = [];
   let dtsFim = dtsAnterior;
+  let fimDaAnterior = null; // fim dos dados da faixa anterior neste moof
   for (const traf of filhos(b, moof.ini, moof.fim).filter((x) => x.tipo === "traf")) {
     const cs = filhos(b, traf.ini, traf.fim);
     const tfhd = achar(cs, "tfhd");
-    if (!tfhd || u32(b, tfhd.ini + 4) !== id) continue;
+    if (!tfhd) continue;
+    const idFaixa = u32(b, tfhd.ini + 4);
+    const minha = idFaixa === id;
+    const padroes = padroesPorFaixa.get(idFaixa) || SEM_PADROES;
     const fl = u24(b, tfhd.ini + 1);
     let p = tfhd.ini + 8;
-    let base = inicioMoof;
+    // base explícita; senão o começo do moof (default-base-is-moof, ou a primeira faixa); senão o
+    // fim dos dados da faixa anterior
+    let base = fimDaAnterior === null || fl & 0x20000 ? inicioMoof : fimDaAnterior;
     if (fl & 0x1) {
       base = u64(b, p);
       p += 8;
@@ -295,20 +307,21 @@ function amostrasDoMoof(b, inicioMoof, moof, id, padroes, dtsAnterior) {
           comp = s32(b, q); // versão 0 é "sem sinal", mas há gravadores que põem negativos
           q += 4;
         }
-        out.push({ offset: pos, tamanho, dts, cts: dts + comp, sync: !((flags >>> 16) & 1) });
+        if (minha) out.push({ offset: pos, tamanho, dts, cts: dts + comp, sync: !((flags >>> 16) & 1) });
         pos += tamanho;
         dts += duracao;
       }
       fimDados = pos;
     }
-    dtsFim = dts;
+    fimDaAnterior = fimDados;
+    if (minha) dtsFim = dts;
   }
   return { amostras: out, dtsFim };
 }
 
 /**
  * Abre um MP4/MOV e devolve a faixa de vídeo: {codec, descricao, largura, altura, timescale,
- * inicioMidia, amostras: [{offset, tamanho, dts, cts, sync}], fragmentado}.
+ * inicioMidia, amostras: [{offset, tamanho, dts, cts, sync}], cortadas, fragmentado}.
  */
 export async function abrirMp4(leitor) {
   const topo = await caixasDoTopo(leitor);
@@ -366,13 +379,9 @@ export async function abrirMp4(leitor) {
   const mvex = achar(cmoov, "mvex");
   const moofs = topo.filter((x) => x.tipo === "moof");
   if (mvex && moofs.length) {
-    const padroes = { duracao: 0, tamanho: 0, flags: 0 };
+    const padroes = new Map();
     for (const trex of filhos(b, mvex.ini, mvex.fim).filter((x) => x.tipo === "trex")) {
-      if (u32(b, trex.ini + 4) === id) {
-        padroes.duracao = u32(b, trex.ini + 12);
-        padroes.tamanho = u32(b, trex.ini + 16);
-        padroes.flags = u32(b, trex.ini + 20);
-      }
+      padroes.set(u32(b, trex.ini + 4), { duracao: u32(b, trex.ini + 12), tamanho: u32(b, trex.ini + 16), flags: u32(b, trex.ini + 20) });
     }
     let dts = amostras.length ? amostras[amostras.length - 1].dts + 1 : 0;
     for (const m of moofs) {
@@ -382,9 +391,25 @@ export async function abrirMp4(leitor) {
       dts = r.dtsFim;
     }
   }
-  if (!amostras.length) throw new ErroVideo("a faixa de vídeo não tem quadros");
-  if (!amostras[0].sync) throw new ErroVideo("o vídeo não começa num quadro-chave");
-  return { codec, descricao, largura, altura, timescale, escalaFilme, inicioMidia, amostras, fragmentado: Boolean(mvex && moofs.length) };
+  // arquivo cortado (download ou cópia interrompida): as amostras que passam do fim ficam de fora
+  const declaradas = amostras.length;
+  amostras = amostras.filter((a) => a.offset + a.tamanho <= leitor.tamanho);
+  const cortadas = declaradas - amostras.length;
+  if (!amostras.length) throw new ErroVideo(cortadas ? "o arquivo está cortado antes do primeiro quadro" : "a faixa de vídeo não tem quadros");
+  if (!amostras.some((a) => a.sync)) throw new ErroVideo("o vídeo não tem nenhum quadro-chave");
+  // se não começar num quadro-chave (gravação cortada no meio), a leitura pula até o primeiro
+  return {
+    codec,
+    descricao,
+    largura,
+    altura,
+    timescale,
+    escalaFilme,
+    inicioMidia,
+    amostras,
+    cortadas,
+    fragmentado: Boolean(mvex && moofs.length),
+  };
 }
 
 /**

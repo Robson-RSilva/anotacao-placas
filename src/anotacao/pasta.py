@@ -231,11 +231,19 @@ class Pasta:
         return ler_json(self.fila(partida), Fila)
 
     def listar_partidas(self) -> list[str]:
-        """Partidas completas (com manifesto), da mais antiga para a mais nova."""
+        """Partidas completas (com manifesto), da mais antiga para a mais nova.
+
+        Um manifesto vazio é uma importação interrompida (ou que o Drive ainda está sincronizando):
+        a partida não conta, como nas páginas.
+        """
         if not self.partidas.exists():
             return []
-        ids = [p.name for p in self.partidas.iterdir() if RE_PARTIDA.match(p.name) and (p / "manifesto.json").exists()]
-        return sorted(ids)
+
+        def completa(p: Path) -> bool:
+            m = p / "manifesto.json"
+            return m.is_file() and m.stat().st_size > 0
+
+        return sorted(p.name for p in self.partidas.iterdir() if RE_PARTIDA.match(p.name) and completa(p))
 
     def listar(self, diretorio: Path) -> list[tuple[Path, str, str, int]]:
         """Arquivos de rótulo ou revisão de uma pasta: (caminho, quadro, pessoa, versão)."""

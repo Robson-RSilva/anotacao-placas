@@ -100,23 +100,28 @@ export async function montar(raiz, ctx) {
 
   async function carregar() {
     $("erro").textContent = "";
+    // o que está na tela não pode ser salvo para o próximo quadro, nem se ele falhar ao abrir
+    item = null;
     const pessoa = ctx.pessoa();
     const membro = (await indice.equipe()).membros.find((m) => m.codigo === pessoa);
     if (!membro) return mostrarVazio("Escolha o seu código na página central.");
     if (!membro.papeis.includes("anotador")) return mostrarVazio("Você não está como anotador na equipe.");
-    item = await proximoCamera(indice, pessoa);
-    if (!item) {
+    const proximo = await proximoCamera(indice, pessoa);
+    if (!proximo) {
       const sit = await situacaoAnotador(indice, pessoa);
       return mostrarVazio(sit.liberado ? "Nada na sua fila agora." : "O gabarito acabou antes da liberação: fale com quem coordena.");
     }
-    pacote = await indice.pacote(item.pacote);
-    const arquivo = await pasta.arquivo(pasta.quadro(item.partida, item.quadro));
+    const pacoteDoItem = await indice.pacote(proximo.pacote);
+    const arquivo = await pasta.arquivo(pasta.quadro(proximo.partida, proximo.quadro));
     if (!arquivo) return mostrarVazio("A imagem deste quadro ainda não chegou na pasta (o Drive terminou de sincronizar?).");
-    soltarImagem();
     const { img, url } = await imagemDoArquivo(arquivo);
+    soltarImagem();
     urlImagem = url;
-    const cam = Camera.deRotulo(item.camera_inicial, img.naturalWidth, img.naturalHeight);
+    pacote = pacoteDoItem;
+    const cam = Camera.deRotulo(proximo.camera_inicial, img.naturalWidth, img.naturalHeight);
     if (editor) editor.destruir();
+    editor = null;
+    window.editor = null;
     editor = new Editor($("tela"), {
       imagem: img,
       molde: Molde.doPacote(pacote),
@@ -130,12 +135,12 @@ export async function montar(raiz, ctx) {
     sel.replaceChildren(...pacote.cameras.map((c) => new Option(`${c.nome} (${c.tipo})`, c.nome)));
     const perto = pacote.cameras.reduce((a, c) => (Math.hypot(...c.T.map((v, i) => v - cam.C[i])) < Math.hypot(...a.T.map((v, i) => v - cam.C[i])) ? c : a));
     sel.value = perto.nome;
-    $("treino").hidden = !item.treino;
+    $("treino").hidden = !proximo.treino;
     const dev = $("devolvido");
-    dev.hidden = !item.devolvido;
-    if (item.devolvido) {
-      dev.textContent = `Devolvido na revisão: ${MOTIVOS[item.devolvido.motivo] || item.devolvido.motivo}`
-        + (item.devolvido.comentario ? ` — “${item.devolvido.comentario}”` : "");
+    dev.hidden = !proximo.devolvido;
+    if (proximo.devolvido) {
+      dev.textContent = `Devolvido na revisão: ${MOTIVOS[proximo.devolvido.motivo] || proximo.devolvido.motivo}`
+        + (proximo.devolvido.comentario ? ` — “${proximo.devolvido.comentario}”` : "");
     }
     raiz.querySelector("input[name=situacao][value=ok]").checked = true;
     $("comentario").value = "";
@@ -144,10 +149,19 @@ export async function montar(raiz, ctx) {
     $("vazio").hidden = true;
     tempo.zerar();
     atualizarPainel();
+    item = { ...proximo, pessoa }; // só agora: salvar grava para este quadro, em nome de quem o abriu
   }
 
+  const abrirProximo = () => carregar().catch((e) => mostrarVazio(mensagemDeErro(e)));
+
   async function salvar() {
-    if (!editor || salvando) return;
+    if (!editor || !item || salvando || !$("modal").hidden) return;
+    if (ctx.pessoa() !== item.pessoa) {
+      // trocaram a pessoa em outra aba: este quadro era de outra pessoa
+      await abrirProximo();
+      $("erro").textContent = "A pessoa escolhida mudou em outra aba; este é o quadro dela.";
+      return;
+    }
     const sit = situacao();
     const comentario = $("comentario").value.trim();
     $("erro").textContent = "";
@@ -166,15 +180,15 @@ export async function montar(raiz, ctx) {
       if (pendente.length && !window.confirm("O quadro ainda não cumpre o “pronto quando”. Salvar mesmo assim?")) return;
     }
     salvando = true;
+    const feito = item;
     try {
-      const pessoa = ctx.pessoa();
-      const { rotulo } = await salvarRotulo(indice, pessoa, {
-        partida: item.partida,
-        quadro: item.quadro,
-        pacote: item.pacote,
+      const { rotulo } = await salvarRotulo(indice, feito.pessoa, {
+        partida: feito.partida,
+        quadro: feito.quadro,
+        pacote: feito.pacote,
         largura: editor.w,
         altura: editor.h,
-        partiu_de: item.partiu_de,
+        partiu_de: feito.partiu_de,
         camera: comCamera ? est.camera : null,
         pontos_travados: comCamera ? est.pontos_travados : [],
         linhas_travadas: comCamera ? est.linhas_travadas : [],
@@ -182,10 +196,11 @@ export async function montar(raiz, ctx) {
         comentario,
         segundos_ativos: tempo.segundos(),
       });
-      if (item.treino) {
-        const g = (await indice.itensGabarito()).find((x) => x.id === item.quadro);
+      item = null; // gravado: daqui não se salva de novo este quadro
+      if (feito.treino) {
+        const g = (await indice.itensGabarito()).find((x) => x.id === feito.quadro);
         const d = await compararComGabarito(indice, rotulo.camera, g);
-        const s = await situacaoAnotador(indice, pessoa);
+        const s = await situacaoAnotador(indice, feito.pessoa);
         const ok = d.mediana_px !== null && d.mediana_px <= LIMITE_LIBERACAO_PX;
         $("modal-titulo").textContent = ok ? "Dentro da tolerância" : "Fora da tolerância";
         $("modal-texto").textContent = (d.mediana_px === null
@@ -195,14 +210,21 @@ export async function montar(raiz, ctx) {
         $("modal").hidden = false;
         $("modal-ok").focus();
       } else {
-        await carregar();
+        await abrirProximo();
       }
     } catch (e) {
-      $("erro").textContent = mensagemDeErro(e);
+      if (item) $("erro").textContent = mensagemDeErro(e); // não gravou: dá para tentar de novo
+      else mostrarVazio(`O rótulo foi gravado, mas: ${mensagemDeErro(e)}`);
     } finally {
       salvando = false;
     }
   }
+
+  // a pessoa escolhida mudou em outra aba: o quadro aberto não é mais de quem está aqui
+  const aoTrocarPessoa = (e) => {
+    if ((e.key === null || e.key === "anotacao.pessoa") && item && ctx.pessoa() !== item.pessoa) abrirProximo();
+  };
+  window.addEventListener("storage", aoTrocarPessoa);
 
   $("salvar").onclick = salvar;
   $("virar").onclick = () => editor && editor.espelhar();
@@ -210,7 +232,7 @@ export async function montar(raiz, ctx) {
   $("recomecar").onclick = () => editor && editor.recomecar(cameraDoRegistro($("registro").value));
   $("modal-ok").onclick = async () => {
     $("modal").hidden = true;
-    await carregar().catch((e) => mostrarVazio(mensagemDeErro(e)));
+    await abrirProximo();
   };
 
   const teclas = (e) => {
@@ -241,11 +263,12 @@ export async function montar(raiz, ctx) {
   };
   window.addEventListener("keydown", teclas);
 
-  await carregar().catch((e) => mostrarVazio(mensagemDeErro(e)));
+  await abrirProximo();
 
   return {
     desmontar() {
       window.removeEventListener("keydown", teclas);
+      window.removeEventListener("storage", aoTrocarPessoa);
       tempo.destruir();
       if (editor) editor.destruir();
       window.editor = null;

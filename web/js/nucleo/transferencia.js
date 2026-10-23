@@ -71,10 +71,20 @@ export function soDaPessoa(pessoa) {
   return (caminho) => re.test(caminho);
 }
 
+/** O arquivo da pasta tem exatamente estes bytes? */
+async function mesmoConteudo(pasta, caminho, dados) {
+  const f = await pasta.arquivo(caminho);
+  if (!f || f.size !== dados.length) return false;
+  const atual = new Uint8Array(await f.arrayBuffer());
+  for (let i = 0; i < atual.length; i++) if (atual[i] !== dados[i]) return false;
+  return true;
+}
+
 /**
  * Traz para a pasta os arquivos de um .zip. Aceita só arquivos da pasta de trabalho, valida os
  * JSON e nunca sobrescreve. Uma pasta-mãe única no .zip (ex.: "trabalho/") é ignorada.
- * Devolve {gravados, existentes, recusados: [{caminho, motivo}]}.
+ * Devolve {gravados, existentes, conflitos, recusados: [{caminho, motivo}]}: `conflitos` são os
+ * arquivos que já existiam com outro conteúdo (ficou o que estava na pasta).
  */
 export async function importarZip(pasta, blob, aoProgresso = () => {}) {
   const entradas = [];
@@ -87,7 +97,7 @@ export async function importarZip(pasta, blob, aoProgresso = () => {}) {
   const prefixo = primeiros.size === 1 && !TOPO.has([...primeiros][0]) && entradas.every((e) => e.caminho.includes("/"))
     ? `${[...primeiros][0]}/`
     : "";
-  const out = { gravados: 0, existentes: 0, recusados: [] };
+  const out = { gravados: 0, existentes: 0, conflitos: [], recusados: [] };
   const decodificador = new TextDecoder();
   for (const [k, e] of entradas.entries()) {
     const caminho = e.caminho.slice(prefixo.length);
@@ -103,8 +113,9 @@ export async function importarZip(pasta, blob, aoProgresso = () => {}) {
       await pasta.escrever(caminho, e.dados);
       out.gravados += 1;
     } catch (erro) {
-      if (erro instanceof ArquivoExiste) out.existentes += 1;
-      else out.recusados.push({ caminho, motivo: erro.message });
+      if (!(erro instanceof ArquivoExiste)) out.recusados.push({ caminho, motivo: erro.message });
+      else if (await mesmoConteudo(pasta, caminho, e.dados)) out.existentes += 1;
+      else out.conflitos.push(caminho); // por exemplo, a mesma pessoa anotou o quadro em dois computadores
     }
   }
   return out;

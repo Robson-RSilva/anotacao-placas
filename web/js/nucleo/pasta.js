@@ -102,6 +102,11 @@ export class Pasta {
     return `${this.partida(partida)}/fila.json`;
   }
 
+  /** Marca de importação em andamento (some quando a importação termina). */
+  importando(partida) {
+    return `${this.partida(partida)}/importando.json`;
+  }
+
   quadros(partida) {
     return partida === PARTIDA_GABARITO ? "gabarito/itens" : `${this.partida(partida)}/quadros`;
   }
@@ -158,13 +163,19 @@ export class Pasta {
   }
 
   /** O arquivo (File, com lastModified e size) ou null. */
+  /**
+   * O arquivo (File), ou null. Um arquivo vazio conta como ausente: é uma escrita interrompida (o
+   * navegador cria o arquivo antes de gravar o conteúdo) ou que o Drive ainda está sincronizando.
+   */
   async arquivo(caminho) {
     const h = await this._alcaArquivo(caminho);
-    return h ? h.getFile() : null;
+    if (!h) return null;
+    const f = await h.getFile();
+    return f.size ? f : null;
   }
 
   async existe(caminho) {
-    return (await this._alcaArquivo(caminho)) !== null;
+    return (await this.arquivo(caminho)) !== null;
   }
 
   async lerTexto(caminho) {
@@ -267,8 +278,8 @@ export class Pasta {
     for (const item of await this.listar("partidas")) {
       if (item.tipo !== "pasta" || !RE_PARTIDA.test(item.nome)) continue;
       try {
-        await item.alca.getFileHandle("manifesto.json");
-        out.push(item.nome);
+        const manifesto = await (await item.alca.getFileHandle("manifesto.json")).getFile();
+        if (manifesto.size) out.push(item.nome); // vazio: importação interrompida ou ainda sincronizando
       } catch (e) {
         if (!naoAchou(e)) throw e;
       }

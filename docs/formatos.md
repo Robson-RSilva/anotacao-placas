@@ -95,11 +95,12 @@ se o contêiner não tem relógio confiável, vale índice / fps e o manifesto r
 
 | Arquivo | Formato | O que tem |
 | --- | --- | --- |
-| `manifesto.json` | `manifesto.partida/1` | cadastro (estádio, emissora, competição, data e hora com fuso, mandante, visitante, iluminação, chuva), vídeo (nome, sha256 do arquivo inteiro, duração, fps, resolução, quadros) e parâmetros da importação (sorteio, origem do PTS, codec, decodificador, cortes, quadros perdidos). Gravado por último: a partida só existe quando o manifesto existe. |
+| `manifesto.json` | `manifesto.partida/1` | cadastro (estádio, emissora, competição, data e hora com fuso, mandante, visitante, iluminação, chuva), vídeo (nome, sha256 do arquivo inteiro, duração, fps, resolução, quadros) e parâmetros da importação (sorteio, origem do PTS, codec, decodificador, cortes, quadros perdidos, quadros sem chave no início, quadros não extraídos, amostras além do fim de um arquivo cortado). Gravado por último: a partida só existe quando o manifesto existe — e um manifesto vazio (escrita interrompida) não conta. |
 | `tomadas.json` | `tomadas.partida/1` | cortes, transições e tomadas (índices, PTS, zoom e grupo aproximados — só para o sorteio). `replay` fica `null`: replays são conferidos na solução assistida. |
 | `fila.json` | `fila.partida/1` | quadros sorteados, a quem cada um foi atribuído, e as marcas de dupla às cegas e de "sem previsão". |
 | `quadros/<quadro>.jpg` | JPEG | os quadros sorteados, na resolução original do vídeo. |
 | `previsoes/<quadro>.json` | `previsao.camera/1` | câmera prevista e confiança, gravadas por `anotacao prever` (nunca nos quadros "sem previsão"). |
+| `importando.json` | — | só durante a importação: quem está importando a partida (some no fim; não vai para o .zip). Uma marca sem renovação há 10 minutos é de uma importação que parou. |
 
 ## Da pasta
 

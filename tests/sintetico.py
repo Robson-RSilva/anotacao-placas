@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import shutil
+import struct
 import subprocess
+from collections.abc import Iterator
 from pathlib import Path
 
 import cv2
@@ -106,3 +108,38 @@ def codificar(quadros: Path, saida: Path, fps: float = 25.0) -> Path:
             )
             return saida
     raise RuntimeError("o ffmpeg não tem codificador AV1 nem VP9")
+
+
+def _caixas(dados: bytes | bytearray, ini: int, fim: int) -> Iterator[tuple[str, int, int, int]]:
+    """Caixas de um trecho de MP4: (tipo, início, início do conteúdo, fim)."""
+    pos = ini
+    while pos + 8 <= fim:
+        tam, tipo = struct.unpack(">I4s", dados[pos : pos + 8])
+        cab = 8
+        if tam == 1:
+            (tam,) = struct.unpack(">Q", dados[pos + 8 : pos + 16])
+            cab = 16
+        elif tam == 0:
+            tam = fim - pos
+        yield tipo.decode("latin-1"), pos, pos + cab, pos + tam
+        pos += tam
+
+
+def marcar_chaves_falsas(origem: Path, destino: Path) -> tuple[list[int], list[int]]:
+    """Copia o MP4 marcando como chave (stss) o quadro seguinte a cada quadro-chave, menos no segundo.
+
+    O vídeo passa a começar numa chave falsa e só o segundo quadro-chave marcado é de verdade, como no
+    MP4 de H.264 que marca como chave quadros I que não são IDR. Devolve as marcas antes e depois
+    (números de amostra, a partir de 1).
+    """
+    dados = bytearray(origem.read_bytes())
+    ini, fim = 0, len(dados)
+    for tipo in ("moov", "trak", "mdia", "minf", "stbl", "stss"):
+        _, _, ini, fim = next(c for c in _caixas(dados, ini, fim) if c[0] == tipo)
+    (n,) = struct.unpack(">I", dados[ini + 4 : ini + 8])
+    antes = list(struct.unpack(f">{n}I", dados[ini + 8 : ini + 8 + 4 * n]))
+    depois = [e if k == 1 else e + 1 for k, e in enumerate(antes)]
+    assert n >= 3 and not set(depois[:1] + depois[2:]) & set(antes), antes
+    dados[ini + 8 : ini + 8 + 4 * n] = struct.pack(f">{n}I", *depois)
+    destino.write_bytes(bytes(dados))
+    return antes, depois

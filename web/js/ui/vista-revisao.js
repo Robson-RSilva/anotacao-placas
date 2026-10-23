@@ -4,7 +4,7 @@ import { Camera } from "../nucleo/camera.js";
 import { Molde } from "../nucleo/campo.js";
 import { pendentesRevisao } from "../nucleo/filas.js";
 import { cameraPadrao } from "../nucleo/pacote.js";
-import { salvarRevisao } from "../nucleo/rotulos.js";
+import { ForaDaFila, salvarRevisao } from "../nucleo/rotulos.js";
 import { Editor } from "./editor.js";
 import { TempoAtivo } from "./tempo.js";
 import { el, formatarTempo, imagemDoArquivo, mensagemDeErro, numero } from "./util.js";
@@ -82,6 +82,8 @@ export async function montar(raiz, ctx) {
 
   async function carregar() {
     $("erro").textContent = "";
+    // a decisão não pode ir para outro rótulo, nem se o próximo falhar ao abrir
+    atual = null;
     const pessoa = ctx.pessoa();
     const membro = (await indice.equipe()).membros.find((m) => m.codigo === pessoa);
     if (!membro) return mostrarVazio("Escolha o seu código na página central.");
@@ -89,19 +91,21 @@ export async function montar(raiz, ctx) {
     const pend = await pendentesRevisao(indice, pessoa);
     $("pendentes").textContent = pend.length ? `${pend.length} na fila` : "";
     if (!pend.length) return mostrarVazio("Nenhum rótulo esperando a sua revisão.");
-    atual = pend[0];
-    const rot = atual.rotulo;
-    const man = await indice.manifesto(atual.arquivo.partida);
+    const proximo = pend[0];
+    const rot = proximo.rotulo;
+    const man = await indice.manifesto(proximo.arquivo.partida);
     const pacote = await indice.pacote(man.pacote);
-    const arquivo = await pasta.arquivo(pasta.quadro(atual.arquivo.partida, atual.arquivo.quadro));
+    const arquivo = await pasta.arquivo(pasta.quadro(proximo.arquivo.partida, proximo.arquivo.quadro));
     if (!arquivo) return mostrarVazio("A imagem deste quadro ainda não chegou na pasta (o Drive terminou de sincronizar?).");
-    soltarImagem();
     const { img, url } = await imagemDoArquivo(arquivo);
+    soltarImagem();
     urlImagem = url;
     const cam = rot.camera
       ? Camera.deRotulo(rot.camera, img.naturalWidth, img.naturalHeight)
       : cameraPadrao(pacote, img.naturalWidth, img.naturalHeight);
     if (editor) editor.destruir();
+    editor = null;
+    window.editor = null;
     editor = new Editor($("tela"), {
       imagem: img,
       molde: Molde.doPacote(pacote),
@@ -124,21 +128,46 @@ export async function montar(raiz, ctx) {
     $("vazio").hidden = true;
     modo("ver");
     tempo.zerar();
+    atual = { ...proximo, pessoa }; // só agora: a decisão vale para este rótulo, em nome de quem o abriu
   }
 
+  const abrirProximo = () => carregar().catch((e) => mostrarVazio(mensagemDeErro(e)));
+
   async function enviar(decisao) {
-    if (enviando || !atual) return;
+    if (enviando || !atual || !editor) return;
+    if (ctx.pessoa() !== atual.pessoa) {
+      // trocaram a pessoa em outra aba: este rótulo estava na fila de outra pessoa
+      await abrirProximo();
+      $("erro").textContent = "A pessoa escolhida mudou em outra aba; esta é a fila dela.";
+      return;
+    }
     enviando = true;
     $("erro").textContent = "";
+    const feito = atual;
     try {
-      await salvarRevisao(indice, ctx.pessoa(), atual.arquivo, { ...decisao, segundos_ativos: tempo.segundos() });
-      await carregar();
+      await salvarRevisao(indice, feito.pessoa, feito.arquivo, { ...decisao, segundos_ativos: tempo.segundos() });
+      atual = null; // gravada: daqui não se decide de novo este rótulo
+      await abrirProximo();
     } catch (e) {
-      $("erro").textContent = mensagemDeErro(e);
+      if (e instanceof ForaDaFila) {
+        // outra pessoa revisou antes, ou a fila mudou: tentar de novo não adianta, vai para o próximo
+        await abrirProximo();
+        $("erro").textContent = "Aquele rótulo saiu da sua fila (já foi revisado ou mudou de revisor); este é o próximo.";
+      } else if (atual) {
+        $("erro").textContent = mensagemDeErro(e); // não gravou: dá para tentar de novo
+      } else {
+        mostrarVazio(`A revisão foi gravada, mas: ${mensagemDeErro(e)}`);
+      }
     } finally {
       enviando = false;
     }
   }
+
+  // a pessoa escolhida mudou em outra aba: o rótulo aberto não é mais da fila de quem está aqui
+  const aoTrocarPessoa = (e) => {
+    if ((e.key === null || e.key === "anotacao.pessoa") && atual && ctx.pessoa() !== atual.pessoa) abrirProximo();
+  };
+  window.addEventListener("storage", aoTrocarPessoa);
 
   $("aprovar").onclick = () => enviar({ decisao: "aprovar" });
   $("devolver").onclick = () => modo("devolver");
@@ -161,6 +190,7 @@ export async function montar(raiz, ctx) {
     enviar({ decisao: "devolver", motivo, comentario });
   };
   $("salvar-correcao").onclick = () => {
+    if (!editor || !atual) return;
     const sit = $("situacao-corr").value;
     const est = editor.estado();
     const comCamera = sit === "ok";
@@ -194,11 +224,12 @@ export async function montar(raiz, ctx) {
   };
   window.addEventListener("keydown", teclas);
 
-  await carregar().catch((e) => mostrarVazio(mensagemDeErro(e)));
+  await abrirProximo();
 
   return {
     desmontar() {
       window.removeEventListener("keydown", teclas);
+      window.removeEventListener("storage", aoTrocarPessoa);
       tempo.destruir();
       if (editor) editor.destruir();
       window.editor = null;

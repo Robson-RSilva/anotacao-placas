@@ -29,7 +29,14 @@ from anotacao.cli import main
 from anotacao.formatos import Fila, GabaritoCamera, Manifesto, RevisaoCamera, RotuloCamera, Tomadas
 from anotacao.pacote import pacote_sintetico
 
-from sintetico import REGISTRO_DA_TOMADA, codificadores_ffmpeg, codificar, gravar_quadros, renderizar
+from sintetico import (
+    REGISTRO_DA_TOMADA,
+    codificadores_ffmpeg,
+    codificar,
+    gravar_quadros,
+    marcar_chaves_falsas,
+    renderizar,
+)
 
 pytestmark = pytest.mark.e2e
 playwright = pytest.importorskip("playwright.sync_api")
@@ -90,6 +97,44 @@ def _ler(pagina, caminho: str) -> str:
 
 def _listar(pagina, diretorio: str) -> list[str]:
     return pagina.evaluate("async (d) => (await anotacao.pasta.listar(d)).map((x) => x.nome)", diretorio)
+
+
+def _bytes(pagina, caminho: str) -> bytes:
+    return base64.b64decode(
+        pagina.evaluate(
+            """async (c) => {
+                const b = new Uint8Array(await (await anotacao.pasta.arquivo(c)).arrayBuffer());
+                let s = "";
+                for (let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode(...b.subarray(i, i + 0x8000));
+                return btoa(s); }""",
+            caminho,
+        )
+    )
+
+
+def _importar(pagina, site: str, video: Path) -> None:
+    """Cria a pasta de exemplo no navegador e importa o vídeo, como na página."""
+    pagina.goto(site)
+    pagina.click("#btn-navegador")
+    pagina.click("#criar-exemplo")
+    _escolher_pessoa(pagina, site, "A01")
+    pagina.click("#ir-importar")
+    pagina.wait_for_selector("#form-importar")
+    pagina.fill("input[name=emissora]", "Emissora X")
+    pagina.fill("input[name=competicao]", "Estadual")
+    pagina.fill("input[name=data_hora]", "2026-11-02T21:30")
+    pagina.fill("input[name=mandante]", "Time A")
+    pagina.fill("input[name=visitante]", "Time B")
+    pagina.check("input[name=chuva]")
+    pagina.fill("input[name=alvo]", "10")
+    pagina.set_input_files("input[name=video]", str(video))
+    pagina.click("#processar")
+    pagina.wait_for_function(
+        "document.querySelector('#res-importar').textContent.startsWith('Pronto')"
+        " || document.querySelector('#erro-importar').textContent !== ''",
+        timeout=120_000,
+    )
+    assert pagina.inner_text("#erro-importar") == ""
 
 
 def _tela(pagina, X):
@@ -266,6 +311,74 @@ def test_importar_anotar_revisar_e_unificar(site, video, navegador, capturas, tm
     pagina.wait_for_function("document.querySelector('#res-pasta').textContent.includes('já existiam')")
     assert pagina.inner_text("#res-pasta").startswith("0 arquivo(s) novo(s)")
     assert not erros, erros
+
+
+def test_quadros_marcados_como_chave_sem_ser(site, video, navegador, tmp_path):
+    """O MP4 marca como chave quadros que não são (como os quadros I de H.264 que não são IDR) e o
+    navegador recusa começar a decodificar neles: a leitura começa no primeiro que ele aceita, e a
+    extração volta até um começo aceito. Cada JPEG continua sendo o quadro certo."""
+    origem, _ = video
+    caminho = tmp_path / "chaves_falsas.mp4"
+    antes, depois = marcar_chaves_falsas(origem, caminho)
+    erros: list[str] = []
+    pagina = _pagina(navegador, erros)
+    _importar(pagina, site, caminho)
+
+    man = Manifesto.model_validate_json(_ler(pagina, f"partidas/{PARTIDA}/manifesto.json"))
+    fila = Fila.model_validate_json(_ler(pagina, f"partidas/{PARTIDA}/fila.json"))
+    aceita = depois[1] - 1  # a única chave de verdade antes das falsas (índice a partir de 0)
+    assert "importando.json" not in _listar(pagina, f"partidas/{PARTIDA}")  # a marca some no fim
+    assert man.pre_processamento.parametros["quadros_sem_chave_no_inicio"] == aceita
+    assert man.pre_processamento.parametros["quadros_perdidos"] == 0
+    assert man.pre_processamento.parametros["quadros_nao_extraidos"] == 0
+    assert len(fila.itens) == 3 and all(it.i >= aceita for it in fila.itens)
+    # algum quadro sorteado está num grupo que começa numa chave falsa: a extração teve de voltar
+    marcadas = [e - 1 for e in depois]
+    falsas = set(marcadas) - {e - 1 for e in antes}
+    assert any(max(m for m in marcadas if m <= it.i) in falsas for it in fila.itens)
+    quadros = origem.parent / "quadros"
+    for it in fila.itens:
+        jpg = _bytes(pagina, f"partidas/{PARTIDA}/quadros/{it.quadro}.jpg")
+        img = cv2.imdecode(np.frombuffer(jpg, np.uint8), cv2.IMREAD_COLOR)
+        psnr = {k: cv2.PSNR(img, cv2.imread(str(quadros / f"{k:05d}.png"))) for k in range(it.i - 2, it.i + 3)}
+        assert max(psnr, key=psnr.get) == it.i, psnr
+    assert not erros, erros
+
+
+def test_politica_de_seguranca_nao_bloqueia_nada(site, video, navegador):
+    """Com a CSP ligada (os outros testes a desligam para poder rodar JavaScript na página), as vistas
+    abrem e a importação roda no worker sem nenhuma violação nem erro no console."""
+    contexto = navegador.new_context(viewport={"width": 1400, "height": 860})
+    pagina = contexto.new_page()
+    avisos: list[str] = []
+    pagina.on("console", lambda m: avisos.append(f"{m.type}: {m.text}") if m.type in ("error", "warning") else None)
+    pagina.on("pageerror", lambda e: avisos.append(str(e)))
+    pagina.goto(site)
+    pagina.click("#btn-navegador")
+    pagina.click("#criar-exemplo")
+    pagina.wait_for_selector("#pessoa:not([disabled])")
+    pagina.select_option("#pessoa", "A01")
+    pagina.goto(site + "#/importar")
+    pagina.fill("input[name=emissora]", "Emissora X")
+    pagina.fill("input[name=competicao]", "Estadual")
+    pagina.fill("input[name=data_hora]", "2026-11-02T21:30")
+    pagina.fill("input[name=mandante]", "Time A")
+    pagina.fill("input[name=visitante]", "Time B")
+    pagina.fill("input[name=alvo]", "10")
+    pagina.set_input_files("input[name=video]", str(video[0]))
+    pagina.click("#processar")
+    pagina.wait_for_selector("#res-importar:has-text('Pronto'), #erro-importar:not(:empty)", timeout=120_000)
+    assert pagina.inner_text("#erro-importar") == ""
+    for rota, seletor in [
+        ("#/camera", "#painel:not([hidden]), #vazio:not([hidden])"),
+        ("#/revisao", "#vazio:not([hidden])"),
+        ("#/coordenacao", "#equipe"),
+        ("#/", "#placar tbody td"),
+    ]:
+        pagina.goto(site + rota)
+        pagina.wait_for_selector(seletor)
+    assert not avisos, avisos
+    contexto.close()
 
 
 def test_treino_com_gabarito(site, navegador, capturas, tmp_path):

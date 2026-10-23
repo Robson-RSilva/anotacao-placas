@@ -26,8 +26,71 @@ export class PartidaJaExiste extends Error {
   }
 }
 
+/** O navegador não aceitou começar a decodificar nesta amostra: o MP4 a marca como chave, mas não é. */
+export class ChaveRecusada extends Error {
+  constructor(mensagem) {
+    super(mensagem);
+    this.name = "ChaveRecusada";
+  }
+}
+
+/**
+ * Marca "importando" na pasta da partida, renovada a cada minuto enquanto a importação anda: duas
+ * pessoas não importam a mesma partida ao mesmo tempo (uma escreveria por cima das imagens da outra).
+ * Uma marca sem renovação há 10 minutos é de uma importação que parou e não impede nada.
+ */
+export class MarcaDeImportacao {
+  static VALIDADE_MS = 10 * 60_000;
+  static RENOVAR_MS = 60_000;
+
+  constructor(pasta, partida, arquivo, agora = () => Date.now()) {
+    this.pasta = pasta;
+    this.caminho = pasta.importando(partida);
+    this.dados = { id: crypto.randomUUID(), nome_original: arquivo.name, bytes: arquivo.size };
+    this.agora = agora;
+    this.ultima = -Infinity;
+  }
+
+  async _ler() {
+    try {
+      return await this.pasta.lerJson(this.caminho);
+    } catch {
+      return null; // não existe, ou está sendo escrita
+    }
+  }
+
+  /** Falha se outra importação desta partida está em andamento. */
+  async conferir() {
+    const outra = await this._ler();
+    const idade = outra ? this.agora() - Date.parse(outra.atualizado_em) : Infinity;
+    if (outra && outra.id !== this.dados.id && idade < MarcaDeImportacao.VALIDADE_MS) {
+      const falta = Math.max(1, Math.ceil((MarcaDeImportacao.VALIDADE_MS - idade) / 60_000));
+      throw new PartidaJaExiste(
+        `esta partida está sendo importada agora (${outra.nome_original}): espere terminar; se essa importação foi interrompida, tente de novo daqui a ${falta} min`,
+      );
+    }
+  }
+
+  /** Grava ou renova a marca (no máximo uma vez por minuto, a não ser forçando). */
+  async renovar(forcar = false) {
+    if (this.tirada || (!forcar && this.agora() - this.ultima < MarcaDeImportacao.RENOVAR_MS)) return;
+    this.ultima = this.agora();
+    const marca = { ...this.dados, atualizado_em: new Date(this.agora()).toISOString() };
+    this.gravando = this.pasta.escreverJson(this.caminho, marca, { sobrescrever: true });
+    await this.gravando;
+  }
+
+  /** Tira a marca, se ainda for a desta importação (depois de qualquer renovação em andamento). */
+  async tirar() {
+    this.tirada = true;
+    await this.gravando?.catch(() => {});
+    if ((await this._ler())?.id === this.dados.id) await this.pasta.apagar(this.caminho).catch(() => {});
+  }
+}
+
 const BLOCO = 8 << 20;
 const FILA_MAX = 12;
+const DICA = "converta o vídeo para MP4 com H.264 (no HandBrake ou no ffmpeg) e tente de novo";
 const pausa = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function checarCancelamento(sinal) {
@@ -57,6 +120,7 @@ export async function configuracaoDecodificador(faixa) {
 class Decodificador {
   constructor(config, aoQuadro) {
     this.erro = null;
+    this.precisaChave = true; // o primeiro trecho depois do configure() tem de ser um quadro-chave
     this.d = new VideoDecoder({
       output: (quadro) => {
         try {
@@ -79,7 +143,16 @@ class Decodificador {
       await Promise.race([new Promise((r) => this.d.addEventListener("dequeue", r, { once: true })), pausa(20)]);
     }
     if (this.erro) throw this.erro;
-    this.d.decode(new EncodedVideoChunk({ type: amostra.sync ? "key" : "delta", timestamp: ts, data: dados }));
+    const trecho = new EncodedVideoChunk({ type: amostra.sync ? "key" : "delta", timestamp: ts, data: dados });
+    try {
+      this.d.decode(trecho);
+    } catch (e) {
+      // o navegador confere o primeiro quadro-chave e recusa (DataError) o que o MP4 marca como chave
+      // sem ser — por exemplo, um quadro I de H.264 que não é IDR
+      if (this.precisaChave && e?.name === "DataError") throw new ChaveRecusada(e.message);
+      throw e;
+    }
+    this.precisaChave = false;
   }
 
   async esvaziar() {
@@ -138,6 +211,16 @@ async function analisar(leitor, faixa, ap, config, fps, { aoProgresso, sinal }) 
   });
   const hash = new Sha256();
   const amostras = faixa.amostras;
+  let esperandoChave = true; // até o navegador aceitar o primeiro quadro-chave
+  const alimentar = async (a, j, dados) => {
+    if (esperandoChave && !a.sync) return; // antes de um quadro-chave não há como decodificar
+    try {
+      await dec.enviar(a, ap.tsUs[j], dados);
+      esperandoChave = false;
+    } catch (e) {
+      if (!(e instanceof ChaveRecusada)) throw e; // não serve de começo: tenta o próximo quadro-chave
+    }
+  };
   let j = 0;
   let cauda = new Uint8Array(0);
   let caudaInicio = 0;
@@ -161,7 +244,7 @@ async function analisar(leitor, faixa, ap, config, fps, { aoProgresso, sinal }) 
         if (a.offset < janelaInicio) dados = await leitor.ler(a.offset, a.tamanho); // fora de ordem no arquivo
         else if (a.offset + a.tamanho <= janelaFim) dados = janela.subarray(a.offset - janelaInicio, a.offset - janelaInicio + a.tamanho);
         else break;
-        await dec.enviar(a, ap.tsUs[j], dados);
+        await alimentar(a, j, dados);
         j += 1;
       }
       if (j < amostras.length && amostras[j].offset >= janelaInicio && amostras[j].offset < janelaFim) {
@@ -175,25 +258,45 @@ async function analisar(leitor, faixa, ap, config, fps, { aoProgresso, sinal }) 
     }
     for (; j < amostras.length; j++) {
       const a = amostras[j];
-      await dec.enviar(a, ap.tsUs[j], await leitor.ler(a.offset, a.tamanho));
+      await alimentar(a, j, await leitor.ler(a.offset, a.tamanho));
     }
     await dec.esvaziar();
   } finally {
     dec.fechar();
   }
-  // quadros que o decodificador não entregou: repetem o anterior (diferença zero)
+  // Quadros que o decodificador não entregou. Os do começo, antes do primeiro quadro-chave aceito,
+  // não têm como ser decodificados; os do meio repetem o anterior (diferença zero). Nenhum é sorteado.
+  let inicio = 0;
+  while (inicio < n && !visto[inicio]) inicio += 1;
+  if (inicio === n || !tamanho) throw new ErroVideo(`nenhum quadro pôde ser decodificado; ${DICA}`);
+  if (inicio > n / 2) throw new ErroVideo(`o navegador só conseguiu decodificar a partir do quadro ${inicio} de ${n}; ${DICA}`);
+  for (let k = 0; k < inicio; k++) {
+    gramado[k] = gramado[inicio];
+    bordas[k] = bordas[inicio];
+  }
   let perdidos = 0;
-  for (let k = 0; k < n; k++) {
+  for (let k = inicio + 1; k < n; k++) {
     if (visto[k]) continue;
     perdidos += 1;
-    if (k > 0) {
-      gramado[k] = gramado[k - 1];
-      bordas[k] = bordas[k - 1];
-    }
+    gramado[k] = gramado[k - 1];
+    bordas[k] = bordas[k - 1];
   }
-  if (perdidos > Math.max(10, 0.02 * n)) throw new ErroVideo(`${perdidos} de ${n} quadros não puderam ser decodificados`);
-  if (!tamanho) throw new ErroVideo("nenhum quadro pôde ser decodificado");
-  return { sha256: hash.hex(), dHist, dEstr, gramado, bordas, curtos, tamanho, perdidos };
+  if (perdidos > Math.max(10, 0.02 * n)) throw new ErroVideo(`${perdidos} de ${n} quadros não puderam ser decodificados; ${DICA}`);
+  return { sha256: hash.hex(), dHist, dEstr, gramado, bordas, curtos, tamanho, visto, inicio, perdidos };
+}
+
+/** Lê amostras em sequência aproveitando blocos grandes do arquivo, em vez de uma leitura por amostra. */
+function leituraEmBlocos(leitor, bloco = 32 << 20) {
+  let ini = 0;
+  let buf = new Uint8Array(0);
+  return async (offset, n) => {
+    if (offset < ini || offset + n > ini + buf.length) {
+      if (n >= bloco) return leitor.ler(offset, n);
+      ini = offset;
+      buf = await leitor.ler(offset, Math.min(bloco, leitor.tamanho - offset));
+    }
+    return buf.subarray(offset - ini, offset - ini + n);
+  };
 }
 
 /** Início do grupo de quadros (GOP) de onde dá para decodificar a amostra `si` (ordem de decodificação). */
@@ -219,14 +322,13 @@ async function extrair(leitor, faixa, ap, config, alvos, gravar, { aoProgresso, 
     g.ultimo = Math.max(g.ultimo, si);
     g.alvos.push({ ...alvo, ts: ap.tsUs[si] });
   }
-  let feitos = 0;
   const tamanhos = new Map();
-  for (const p of [...porGrupo.keys()].sort((a, b) => a - b)) {
-    checarCancelamento(sinal);
-    const g = porGrupo.get(p);
-    const doTs = new Map(g.alvos.map((a) => [a.ts, a]));
-    const inicio = sincronos[p];
-    const proximo = sincronos.find((s) => s > g.ultimo);
+
+  // decodifica de sincronos[p] até o fim do grupo do último alvo e grava os alvos em JPEG
+  async function decodificar(p, grupos) {
+    const doTs = new Map(grupos.flatMap((g) => g.alvos.map((a) => [a.ts, a])));
+    const ultimo = Math.max(...grupos.map((g) => g.ultimo));
+    const proximo = sincronos.find((s) => s > ultimo);
     const fim = proximo === undefined ? amostras.length : proximo;
     const pendentes = [];
     const dec = new Decodificador(config, (quadro) => {
@@ -238,27 +340,43 @@ async function extrair(leitor, faixa, ap, config, alvos, gravar, { aoProgresso, 
       tela.getContext("2d").drawImage(quadro, 0, 0, w, h);
       tamanhos.set(alvo.quadro, [w, h]);
       pendentes.push(tela.convertToBlob({ type: "image/jpeg", quality: qualidade }).then((blob) => gravar(alvo.quadro, blob)));
+      aoProgresso("extraindo os quadros sorteados", tamanhos.size / alvos.length);
     });
+    const ler = leituraEmBlocos(leitor);
     try {
-      const de = amostras[inicio].offset;
-      let ate = de;
-      for (let i = inicio; i < fim; i++) ate = Math.max(ate, amostras[i].offset + amostras[i].tamanho);
-      const corrido = ate - de <= 256 * 2 ** 20 ? await leitor.ler(de, ate - de) : null;
-      for (let i = inicio; i < fim; i++) {
+      for (let i = sincronos[p]; i < fim; i++) {
+        checarCancelamento(sinal);
+        if (i % 500 === 0) aoProgresso("extraindo os quadros sorteados", tamanhos.size / alvos.length); // trechos longos sem alvo
         const a = amostras[i];
-        const dados = corrido && a.offset >= de ? corrido.subarray(a.offset - de, a.offset - de + a.tamanho) : await leitor.ler(a.offset, a.tamanho);
-        await dec.enviar(a, ap.tsUs[i], dados);
+        await dec.enviar(a, ap.tsUs[i], await ler(a.offset, a.tamanho));
+        if (pendentes.length >= 4) await Promise.all(pendentes.splice(0)); // poucas imagens grandes na memória
       }
       await dec.esvaziar();
     } finally {
       dec.fechar();
     }
     await Promise.all(pendentes);
-    feitos += g.alvos.length;
-    aoProgresso("extraindo os quadros sorteados", feitos / alvos.length);
   }
-  const faltando = alvos.filter((a) => !tamanhos.has(a.quadro));
-  if (faltando.length) throw new ErroVideo(`${faltando.length} quadros sorteados não puderam ser extraídos (ex.: ${faltando[0].quadro})`);
+
+  const ordem = [...porGrupo.keys()].sort((a, b) => a - b);
+  for (let gi = 0; gi < ordem.length; ) {
+    let p = ordem[gi];
+    let grupos = [porGrupo.get(p)];
+    for (;;) {
+      try {
+        await decodificar(p, grupos);
+        break;
+      } catch (e) {
+        if (!(e instanceof ChaveRecusada)) throw e;
+        if (p === 0) break; // nem o começo do vídeo serve: esses alvos ficam de fora
+        // o navegador não aceita começar aqui: começa um grupo antes e, para não voltar de novo a cada
+        // grupo seguinte, segue direto até o último alvo, numa passada só
+        p -= 1;
+        grupos = ordem.slice(gi).map((q) => porGrupo.get(q));
+      }
+    }
+    gi += grupos.length;
+  }
   return tamanhos;
 }
 
@@ -288,6 +406,21 @@ export async function importarVideo({ pasta, arquivo, cadastro, alvo = PARAMETRO
   };
   validar("manifesto", provisorio);
 
+  const marca = new MarcaDeImportacao(pasta, pid, arquivo);
+  await marca.conferir();
+  await marca.renovar(true);
+  try {
+    return await importarComMarca({ pasta, arquivo, cadastro, alvo, aoProgresso, sinal, t0, ref, pid, anotadores, marca });
+  } finally {
+    await marca.tirar();
+  }
+}
+
+async function importarComMarca({ pasta, arquivo, cadastro, alvo, aoProgresso: avisar, sinal, t0, ref, pid, anotadores, marca }) {
+  const aoProgresso = (etapa, frac) => {
+    avisar(etapa, frac);
+    marca.renovar().catch(() => {}); // no máximo uma vez por minuto; se falhar, tenta na próxima
+  };
   aoProgresso("abrindo o vídeo", 0);
   const leitor = leitorDeArquivo(arquivo);
   const faixa = await abrirMp4(leitor);
@@ -298,8 +431,20 @@ export async function importarVideo({ pasta, arquivo, cadastro, alvo = PARAMETRO
   const params = { ...PARAMETROS, alvo: Math.max(1, Math.min(Math.round(alvo), 5000)) };
 
   const lido = await analisar(leitor, faixa, ap, config, fps, { aoProgresso, sinal });
+  // a leitura demora: outra pessoa pode ter importado a mesma partida enquanto isso
+  const conferirQueNinguemImportou = async () => {
+    if (await pasta.existe(pasta.manifesto(pid))) throw new PartidaJaExiste(`a partida ${pid} foi importada por outra pessoa enquanto este vídeo era lido`);
+    await marca.conferir();
+  };
+  await conferirQueNinguemImportou();
   for (const outra of await pasta.listarPartidas()) {
-    if ((await pasta.lerManifesto(outra)).video.sha256 === lido.sha256) throw new PartidaJaExiste(`este vídeo já foi importado como ${outra}`);
+    let sha = null;
+    try {
+      sha = (await pasta.lerManifesto(outra)).video.sha256;
+    } catch {
+      continue; // manifesto inválido de outra partida não impede esta importação
+    }
+    if (sha === lido.sha256) throw new PartidaJaExiste(`este vídeo já foi importado como ${outra}`);
   }
 
   aoProgresso("achando cortes e sorteando", 0);
@@ -308,6 +453,7 @@ export async function importarVideo({ pasta, arquivo, cadastro, alvo = PARAMETRO
   const graduais = detectarGraduais(lido.dHist, cortes);
   const transicao = new Uint8Array(n);
   for (const [a, b] of graduais) transicao.fill(1, a, b);
+  for (let k = 0; k < n; k++) if (!lido.visto[k]) transicao[k] = 1; // o que não foi decodificado não é sorteado
   const tomadas = montarTomadas(n, cortes);
   const aleatorio = new Aleatorio(pid);
   agrupar(tomadas, lido.curtos, lido.gramado, lido.bordas, aleatorio);
@@ -321,12 +467,22 @@ export async function importarVideo({ pasta, arquivo, cadastro, alvo = PARAMETRO
     ap,
     config,
     sorteados.map((s) => ({ k: s.i, quadro: s.quadro })),
-    (quadro, blob) => pasta.escrever(pasta.quadro(pid, quadro), blob, { sobrescrever: true }),
+    async (quadro, blob) => {
+      await conferirQueNinguemImportou(); // nunca troca as imagens de uma partida que já existe
+      return pasta.escrever(pasta.quadro(pid, quadro), blob, { sobrescrever: true });
+    },
     { aoProgresso, sinal },
   );
+  // um quadro que não deu para extrair (o navegador recusou todos os começos possíveis) fica de fora
+  const itens = sorteados.map((s, k) => ({ s, atribuido_a: atribuicoes[k] })).filter(({ s }) => tamanhos.has(s.quadro));
+  const naoExtraidos = sorteados.length - itens.length;
+  if (naoExtraidos > Math.max(2, 0.05 * sorteados.length) || (sorteados.length && !itens.length)) {
+    throw new ErroVideo(`${naoExtraidos} de ${sorteados.length} quadros sorteados não puderam ser extraídos; ${DICA}`);
+  }
   const [largura, altura] = tamanhos.size ? [...tamanhos.values()][0] : lido.tamanho;
 
   aoProgresso("gravando a partida", 0);
+  await conferirQueNinguemImportou();
   const agora = new Date().toISOString();
   await pasta.gravar(
     "tomadas",
@@ -357,12 +513,12 @@ export async function importarVideo({ pasta, arquivo, cadastro, alvo = PARAMETRO
       partida: pid,
       criado_em: agora,
       equipe: anotadores,
-      itens: sorteados.map((s, k) => ({
+      itens: itens.map(({ s, atribuido_a }) => ({
         quadro: s.quadro,
         tomada: s.tomada,
         i: s.i,
         pts_ms: s.pts_ms,
-        atribuido_a: atribuicoes[k],
+        atribuido_a,
         dupla: s.dupla,
         sem_previsao: s.sem_previsao,
       })),
@@ -380,6 +536,9 @@ export async function importarVideo({ pasta, arquivo, cadastro, alvo = PARAMETRO
     codec: faixa.codec,
     decodificador: "webcodecs",
     quadros_perdidos: lido.perdidos,
+    quadros_sem_chave_no_inicio: lido.inicio,
+    quadros_nao_extraidos: naoExtraidos,
+    amostras_alem_do_fim: faixa.cortadas,
   });
   await pasta.gravar("manifesto", pasta.manifesto(pid), {
     formato: "manifesto.partida/1",
@@ -399,5 +558,5 @@ export async function importarVideo({ pasta, arquivo, cadastro, alvo = PARAMETRO
     pre_processamento: { ferramenta: VERSAO, criado_em: agora, segundos: arredondar(segundos, 2), parametros, previsor: null },
   });
   aoProgresso("pronto", 1);
-  return { partida: pid, n_quadros_video: n, n_tomadas: tomadas.length, n_sorteados: sorteados.length, segundos };
+  return { partida: pid, n_quadros_video: n, n_tomadas: tomadas.length, n_sorteados: itens.length, segundos };
 }

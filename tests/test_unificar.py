@@ -70,3 +70,20 @@ def test_indice_recusa_arquivo_com_nome_trocado(pasta):
     ip = Indice(pasta).partida(PARTIDA)
     assert [a.nome for a in ip.rotulos] == [nome]
     assert "não bate" in ip.invalidos[0][1]
+
+
+def test_partida_incompleta_fica_de_fora_e_listada(pasta):
+    fila = criar_partida(pasta, [{}], imagens=False)
+    nome = gravar_rotulo(pasta, fila.itens[0].quadro, "A01", camera_exemplo())
+    gravar_revisao(pasta, fila.itens[0].quadro, nome, "A02")
+    sem_fila = "2026-11-05_estadio-sintetico_time-c-time-d"
+    criar_partida(pasta, [{}], partida=sem_fila, imagens=False)
+    pasta.fila(sem_fila).unlink()  # a fila ainda não sincronizou
+    vazia = "2026-11-06_estadio-sintetico_time-e-time-f"
+    criar_partida(pasta, [{}], partida=vazia, imagens=False)
+    pasta.manifesto(vazia).write_bytes(b"")  # importação interrompida
+    assert pasta.listar_partidas() == [PARTIDA, sem_fila]
+    destino = unificar(pasta, agora=AGORA)
+    assert len(pd.read_parquet(destino / "camera.parquet")) == 1
+    prob = json.loads((destino / "problemas.json").read_text(encoding="utf-8"))
+    assert [p["arquivo"] for p in prob["invalidos"]] == [f"partidas/{sem_fila}"]

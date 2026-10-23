@@ -19,6 +19,7 @@ function iniciarImportacao(ctx, mensagem) {
   worker.onmessage = (e) => {
     const m = e.data;
     if (m.tipo === "progresso") {
+      if (m.etapa !== job.etapa) job.inicioEtapa = performance.now();
       job.etapa = m.etapa;
       job.frac = m.frac;
       avisar();
@@ -36,6 +37,14 @@ function iniciarImportacao(ctx, mensagem) {
   };
   worker.postMessage({ tipo: "importar", raiz: ctx.pasta.raiz, ...mensagem });
   return job;
+}
+
+/** Quanto falta na etapa atual, pelo ritmo até aqui (só depois de um tempo, para não chutar). */
+function falta(job) {
+  const passou = (performance.now() - (job.inicioEtapa ?? performance.now())) / 1000;
+  if (job.frac < 0.03 || job.frac >= 1 || passou < 10) return "";
+  const s = (passou * (1 - job.frac)) / job.frac;
+  return s < 90 ? " — falta menos de 2 min" : ` — faltam uns ${Math.round(s / 60)} min`;
 }
 
 export async function montar(raiz, ctx) {
@@ -65,7 +74,7 @@ export async function montar(raiz, ctx) {
     if (!job) return;
     const frac = job.resultado ? 1 : job.frac || 0;
     $("barra").style.width = `${Math.round(100 * frac)}%`;
-    $("etapa").textContent = rodando ? `${job.etapa} ${Math.round(100 * frac)}%` : job.resultado ? "pronto" : "parou";
+    $("etapa").textContent = rodando ? `${job.etapa} ${Math.round(100 * frac)}%${falta(job)}` : job.resultado ? "pronto" : "parou";
     $("erro-importar").textContent = job.erro || "";
     if (job.resultado) {
       const r = job.resultado;

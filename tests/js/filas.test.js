@@ -1,5 +1,5 @@
 // Filas: treino e liberação pelo gabarito, gabarito escondido a cada 15, devolvidos primeiro,
-// câmera de partida e revisão cruzada às cegas.
+// câmera de partida, revisão cruzada às cegas e partidas incompletas.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
@@ -13,7 +13,9 @@ import {
   situacaoAnotador,
 } from "../../web/js/nucleo/filas.js";
 import { N_LIBERACAO, liberacao, nTreino } from "../../web/js/nucleo/gabarito.js";
+import { calcularPlacar } from "../../web/js/nucleo/placar.js";
 import {
+  AGORA,
   PARTIDA,
   cameraExemplo,
   criarGabarito,
@@ -161,4 +163,94 @@ test("revisão às cegas: nunca o autor, cada rótulo uma vez, correções fora"
 test("sem outros revisores, qualquer membro que não seja o autor revisa", () => {
   assert.equal(revisorDesignado("t0000001000__A01__v1.json", "A01", ["A01"], ["A01", "A02"]), "A02");
   assert.equal(revisorDesignado("t0000001000__A01__v1.json", "A01", [], ["A01"]), null);
+});
+
+test("dupla às cegas: quem também anota o quadro só revisa depois de fazer o próprio rótulo", async () => {
+  const { pasta, indice } = await pastaExemplo(); // A01 e A02 anotam e revisam
+  await criarPartida(pasta, [{ atribuido_a: ["A01", "A02"], dupla: true }]);
+  const q = quadro(0);
+  const doA01 = await gravarRotulo(pasta, { quadro: q, pessoa: "A01", cam: cameraExemplo(), m: 1 });
+  // A02 ainda vai anotar o mesmo quadro do zero: não pode ver o rótulo de A01 antes
+  assert.deepEqual(await pendentesRevisao(indice, "A02"), []);
+  assert.equal(revisorDesignado(doA01, "A01", ["A01", "A02"], ["A01", "A02"], new Set(["A02"])), null);
+  const item = await proximoCamera(indice, "A02");
+  assert.equal(item.quadro, q);
+  assert.notEqual(item.partiu_de.referencia, doA01); // nunca parte do rótulo do outro no mesmo quadro
+  const doA02 = await gravarRotulo(pasta, { quadro: q, pessoa: "A02", cam: cameraExemplo([-7, 0, 0]), m: 2 });
+  // depois de anotar, cada um revisa o rótulo do outro
+  assert.deepEqual((await pendentesRevisao(indice, "A02")).map((p) => p.arquivo.nome), [doA01]);
+  assert.deepEqual((await pendentesRevisao(indice, "A01")).map((p) => p.arquivo.nome), [doA02]);
+  // A02 corrige o de A01: a correção (versão 2 de A02) não esconde o rótulo de A02, que segue esperando revisão
+  await gravarRotulo(pasta, { quadro: q, pessoa: "A02", cam: cameraExemplo([-6, 0, 0]), versao: 2, corrige: doA01, m: 3 });
+  await gravarRevisao(pasta, { quadro: q, rotulo: doA01, revisor: "A02", decisao: "corrigir", nova_versao: `${q}__A02__v2.json`, m: 3 });
+  assert.deepEqual((await pendentesRevisao(indice, "A01")).map((p) => p.arquivo.nome), [doA02]);
+  assert.equal(await proximoCamera(indice, "A02"), null);
+});
+
+test("uma correção feita na revisão não conta como o rótulo da pessoa no quadro", async () => {
+  const membros = ["A01", "A02", "A03"].map((codigo) => ({ codigo, nome: codigo, papeis: ["anotador", "revisor"] }));
+  const { pasta, indice } = await pastaExemplo({ membros });
+  await criarPartida(pasta, [{ atribuido_a: ["A01", "A02"], dupla: true }]);
+  const q = quadro(0);
+  const doA01 = await gravarRotulo(pasta, { quadro: q, pessoa: "A01", cam: cameraExemplo(), m: 1 });
+  await gravarRotulo(pasta, { quadro: q, pessoa: "A02", cam: cameraExemplo(), corrige: doA01, m: 2 }); // de antes da 0.2.1
+  const item = await proximoCamera(indice, "A02");
+  assert.equal(item.quadro, q, "o quadro continua na fila de A02");
+  assert.equal(item.versao, 2, "e a versão nova não repete o nome da correção");
+});
+
+test("os itens escondidos do gabarito contam a partir da liberação", async () => {
+  const { pasta, indice } = await pastaExemplo();
+  await criarPartida(pasta, Array.from({ length: 140 }, () => ({})));
+  // 100 rótulos reais feitos quando ainda não havia gabarito
+  for (let k = 0; k < 100; k++) await gravarRotulo(pasta, { quadro: quadro(k), pessoa: "A01", m: k });
+  const cams = await criarGabarito(pasta, 20);
+  const ids = Object.keys(cams);
+  let item = await proximoCamera(indice, "A01");
+  assert.ok(item.partida === "gabarito" && item.treino, "com gabarito novo, primeiro o treino");
+  for (let k = 0; k < N_LIBERACAO; k++) await gravarRotulo(pasta, { partida: "gabarito", quadro: ids[k], pessoa: "A01", cam: cams[ids[k]], m: 200 + k });
+  // liberado: volta para os reais, sem uma rajada de escondidos por causa dos 100 de antes
+  for (let k = 0; k < INTERVALO_GABARITO; k++) {
+    item = await proximoCamera(indice, "A01");
+    assert.ok(item.partida === PARTIDA, `real ${k + 1} depois da liberação`);
+    await gravarRotulo(pasta, { quadro: item.quadro, pessoa: "A01", m: 300 + k });
+  }
+  item = await proximoCamera(indice, "A01");
+  assert.ok(item.partida === "gabarito" && !item.treino, "depois de 15 reais, um escondido");
+  await gravarRotulo(pasta, { partida: "gabarito", quadro: item.quadro, pessoa: "A01", cam: cams[item.quadro], m: 400 });
+  assert.equal((await proximoCamera(indice, "A01")).partida, PARTIDA, "e só um");
+});
+
+test("partida incompleta ou inválida não trava as filas nem o placar", async () => {
+  const { pasta, indice } = await pastaExemplo();
+  await criarPartida(pasta, [{}]);
+  const semFila = "2026-11-05_estadio-sintetico_time-c-time-d";
+  await criarPartida(pasta, [{}], { partida: semFila });
+  await pasta.apagar(pasta.fila(semFila)); // a fila ainda não sincronizou
+  const vazia = "2026-11-06_estadio-sintetico_time-e-time-f";
+  await criarPartida(pasta, [{}], { partida: vazia });
+  await pasta.escrever(pasta.manifesto(vazia), "", { sobrescrever: true }); // escrita interrompida
+  assert.deepEqual(await pasta.listarPartidas(), [PARTIDA, semFila]);
+  assert.equal((await proximoCamera(indice, "A01")).partida, PARTIDA);
+  const nome = await gravarRotulo(pasta, { quadro: quadro(0), pessoa: "A01", cam: cameraExemplo() });
+  assert.deepEqual((await pendentesRevisao(indice, "A02")).map((p) => p.arquivo.nome), [nome]);
+  const pl = await calcularPlacar(indice, AGORA);
+  assert.deepEqual(pl.partidas.map((p) => p.partida), [PARTIDA]);
+  assert.equal(pl.problemas.length, 1);
+  assert.equal(pl.problemas[0].partida, semFila);
+  assert.match(pl.problemas[0].erro, /fila\.json/);
+});
+
+test("dupla às cegas: o revisor não muda quando o outro anotador termina o dele", async () => {
+  const membros = ["A01", "A02", "A03"].map((codigo) => ({ codigo, nome: codigo, papeis: ["anotador", "revisor"] }));
+  const { pasta, indice } = await pastaExemplo({ membros });
+  await criarPartida(pasta, [{ atribuido_a: ["A01", "A02"], dupla: true }]);
+  const q = quadro(0);
+  const doA01 = await gravarRotulo(pasta, { quadro: q, pessoa: "A01", cam: cameraExemplo(), m: 1 });
+  const nomes = async (p) => (await pendentesRevisao(indice, p)).map((x) => x.arquivo.nome);
+  assert.deepEqual(await nomes("A03"), [doA01]);
+  const doA02 = await gravarRotulo(pasta, { quadro: q, pessoa: "A02", cam: cameraExemplo([-7, 0, 0]), m: 2 });
+  assert.deepEqual(await nomes("A03"), [doA01, doA02]); // o de A01 continua com A03
+  assert.deepEqual(await nomes("A01"), []);
+  assert.deepEqual(await nomes("A02"), []);
 });

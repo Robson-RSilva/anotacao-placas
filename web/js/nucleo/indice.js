@@ -23,8 +23,17 @@ export class IndicePartida {
 
   /** Última versão de cada (quadro, pessoa), em Map com a chave "quadro|pessoa". */
   ultimos() {
+    return this._ultimos(this.rotulos);
+  }
+
+  /** Como `ultimos`, mas só os rótulos da própria pessoa: sem as correções que ela fez revisando. */
+  ultimosProprios() {
+    return this._ultimos(this.rotulos.filter((a) => a.dados.corrige === null));
+  }
+
+  _ultimos(rotulos) {
     const out = new Map();
-    for (const a of this.rotulos) {
+    for (const a of rotulos) {
       const k = `${a.quadro}|${a.pessoa}`;
       const atual = out.get(k);
       if (!atual || a.versao > atual.versao) out.set(k, a);
@@ -115,6 +124,27 @@ export class Indice {
 
   listarPartidas() {
     return this.pasta.listarPartidas();
+  }
+
+  /**
+   * As partidas que dá para usar, com manifesto, fila, pacote e rótulos lidos. Uma partida
+   * incompleta (a fila ainda sincronizando) ou com arquivo inválido vai para `problemas` e não trava
+   * as outras.
+   */
+  async partidasProntas() {
+    const prontas = [];
+    const problemas = [];
+    for (const partida of await this.listarPartidas()) {
+      try {
+        const manifesto = await this.manifesto(partida);
+        const fila = await this.fila(partida);
+        const pacote = await this.pacote(manifesto.pacote);
+        prontas.push({ partida, manifesto, fila, pacote, ip: await this.partida(partida) });
+      } catch (e) {
+        problemas.push({ partida, erro: e.message || String(e) });
+      }
+    }
+    return { prontas, problemas };
   }
 
   /** Itens do gabarito válidos, em ordem de ID. */

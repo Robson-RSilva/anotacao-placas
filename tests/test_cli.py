@@ -44,6 +44,13 @@ def test_validar_aponta_problemas(pasta, capsys):
     assert "__A01__v1.json" in saida
 
 
+def test_validar_partida_incompleta(pasta, capsys):
+    criar_partida(pasta, [{}], imagens=False)
+    pasta.fila(PARTIDA).unlink()  # a fila ainda não sincronizou
+    assert main(["validar", "--pasta", str(pasta.raiz)]) == 1
+    assert f"{PARTIDA}: partida incompleta ou inválida" in capsys.readouterr().out
+
+
 def test_gabarito(pasta, pacote, tmp_path, capsys):
     origem = tmp_path / "gab"
     origem.mkdir()

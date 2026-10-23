@@ -114,3 +114,13 @@ test("escrita que falha não deixa arquivo vazio para trás", async () => {
   await p.escreverJson("a/b.json", { x: 1 });
   assert.deepEqual(await p.lerJson("a/b.json"), { x: 1 });
 });
+
+test("arquivo vazio (escrita interrompida ou sincronizando) conta como ausente e pode ser regravado", async () => {
+  const p = new Pasta(new PastaMemoria());
+  await p.escrever("a/b.json", ""); // o navegador cria o arquivo vazio antes de gravar o conteúdo
+  assert.equal(await p.existe("a/b.json"), false);
+  assert.equal(await p.arquivo("a/b.json"), null);
+  await p.escreverJson("a/b.json", { x: 1 }); // sem pedir para sobrescrever
+  assert.deepEqual(await p.lerJson("a/b.json"), { x: 1 });
+  await assert.rejects(p.escreverJson("a/b.json", { x: 2 }), ArquivoExiste);
+});

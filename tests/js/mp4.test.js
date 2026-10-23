@@ -41,6 +41,24 @@ for (const [nome, ref] of Object.entries(esperado)) {
   });
 }
 
+test("arquivo cortado: as amostras que passam do fim ficam de fora", async () => {
+  for (const nome of ["h264_inicio.mp4", "h264_fragmentado.mp4", "h264_fragmentado_som_antes.mp4"]) {
+    const bytes = new Uint8Array(readFileSync(new URL(nome, PASTA)));
+    const ref = esperado[nome].pacotes;
+    const fim = ref[Math.floor(ref.length / 2)].pos + 5; // no meio de uma amostra
+    const f = await abrirMp4(leitor(bytes.subarray(0, fim)));
+    const inteiras = ref.filter((p) => p.pos + p.tamanho <= fim).length;
+    assert.ok(inteiras > 0 && inteiras < ref.length, nome);
+    assert.equal(f.amostras.length, inteiras, nome);
+    // num fragmentado, os fragmentos que nem chegaram a ser gravados não contam
+    assert.ok(f.cortadas > 0 && f.cortadas <= ref.length - inteiras, nome);
+    if (!f.fragmentado) assert.equal(f.cortadas, ref.length - inteiras, nome);
+    assert.ok(f.amostras.every((a) => a.offset + a.tamanho <= fim), nome);
+  }
+  const inteiro = await abrirMp4(leitor(new Uint8Array(readFileSync(new URL("h264_inicio.mp4", PASTA)))));
+  assert.equal(inteiro.cortadas, 0);
+});
+
 test("arquivo sem índice ou que não é MP4", async () => {
   const bytes = new Uint8Array(readFileSync(new URL("h264_b.mp4", PASTA)));
   const semMoov = bytes.subarray(0, 200); // corta no meio dos dados

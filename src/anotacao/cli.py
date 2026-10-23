@@ -62,9 +62,13 @@ def cmd_validar(a: argparse.Namespace) -> int:
         problemas += [f"{ref}: {e}" for e in validar_geometria(pasta.ler_pacote_ref(ref))]
     indice = Indice(pasta)
     for pid in pasta.listar_partidas():
-        indice.manifesto(pid)
-        indice.tomadas(pid)
-        fila = indice.fila(pid)
+        try:
+            indice.manifesto(pid)
+            indice.tomadas(pid)
+            fila = indice.fila(pid)
+        except (ValueError, OSError) as e:  # incompleta (ainda sincronizando) ou inválida
+            problemas.append(f"{pid}: partida incompleta ou inválida: {e}")
+            continue
         faltando = [it.quadro for it in fila.itens if not pasta.quadro(pid, it.quadro).exists()]
         if faltando:
             problemas.append(f"{pid}: {len(faltando)} quadro(s) da fila sem imagem (ex.: {faltando[0]})")
@@ -82,6 +86,10 @@ def cmd_unificar(a: argparse.Namespace) -> int:
     destino = unificar(Pasta(a.pasta))
     man = json.loads((destino / "manifesto.json").read_text(encoding="utf-8"))
     print(f"{destino}: {man['quadros']} quadros {man['por_conjunto']}")
+    prob = json.loads((destino / "problemas.json").read_text(encoding="utf-8"))
+    for p in prob["invalidos"]:
+        if p["erro"].startswith("partida fora dos conjuntos"):
+            print(f"atenção: {p['arquivo']}: {p['erro']}")
     return 0
 
 

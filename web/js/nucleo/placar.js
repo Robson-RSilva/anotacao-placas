@@ -62,10 +62,8 @@ export async function calcularPlacar(indice, agora = new Date()) {
   const somar = (mapa, cod) => mapa.set(cod, (mapa.get(cod) || 0) + 1);
 
   const partidas = [];
-  for (const pid of await indice.listarPartidas()) {
-    const ip = await indice.partida(pid);
-    const man = await indice.manifesto(pid);
-    const fila = await indice.fila(pid);
+  const { prontas, problemas } = await indice.partidasProntas();
+  for (const { partida: pid, manifesto: man, fila, pacote, ip } of prontas) {
     const aprovadoQuadro = new Set();
     for (const a of ip.rotulos) {
       const r = a.dados;
@@ -92,9 +90,9 @@ export async function calcularPlacar(indice, agora = new Date()) {
         marcarDia(rv.revisor, rv.criado_em);
       }
     }
-    // concordância nos rótulos cegos (quadros em dupla)
-    const ultimos = ip.ultimos();
-    const pacote = await indice.pacote(man.pacote);
+    // concordância nos rótulos cegos (quadros em dupla): o rótulo de cada pessoa, nunca uma correção
+    // que ela fez revisando o da outra
+    const ultimos = ip.ultimosProprios();
     const molde = Molde.doPacote(pacote);
     for (const item of fila.itens) {
       if (!item.dupla || item.atribuido_a.length < 2) continue;
@@ -108,7 +106,7 @@ export async function calcularPlacar(indice, agora = new Date()) {
       }
     }
     let pendentes = 0;
-    for (const a of ultimos.values()) if (!(ip.revisoesDe.get(a.nome) || []).length && a.dados.corrige === null) pendentes += 1;
+    for (const a of ultimos.values()) if (!(ip.revisoesDe.get(a.nome) || []).length) pendentes += 1;
     partidas.push({
       partida: pid,
       sorteados: fila.itens.length,
@@ -149,5 +147,5 @@ export async function calcularPlacar(indice, agora = new Date()) {
   linhas.sort((x, y) => y.aprovados_semana - x.aprovados_semana || y.aprovados - x.aprovados || (x.pessoa < y.pessoa ? -1 : 1));
   const total = {};
   for (const k of ["sorteados", "anotados", "aprovados", "pendentes_revisao"]) total[k] = partidas.reduce((s, x) => s + x[k], 0);
-  return { calculado_em: agora.toISOString(), pessoas: linhas, partidas, total, gabarito_importado: temGabarito };
+  return { calculado_em: agora.toISOString(), pessoas: linhas, partidas, total, gabarito_importado: temGabarito, problemas };
 }

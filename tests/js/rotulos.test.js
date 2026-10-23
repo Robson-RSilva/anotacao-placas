@@ -5,6 +5,7 @@ import { test } from "node:test";
 
 import { Camera } from "../../web/js/nucleo/camera.js";
 import { Molde } from "../../web/js/nucleo/campo.js";
+import { VERSAO } from "../../web/js/nucleo/convencoes.js";
 import { ErroFormato } from "../../web/js/nucleo/formatos.js";
 import { pendentesRevisao, proximoCamera } from "../../web/js/nucleo/filas.js";
 import { compararComGabarito } from "../../web/js/nucleo/gabarito.js";
@@ -52,7 +53,7 @@ test("salvar rótulo: versão, lado, resíduo e validação", async () => {
   assert.equal(rotulo.lado, "canonico"); // câmera principal, do lado das cabines
   assert.equal(rotulo.segundos_ativos, 33.3);
   assert.ok(rotulo.residuo_mediano_px < 1e-6);
-  assert.equal(rotulo.ferramenta, "0.2.0");
+  assert.equal(rotulo.ferramenta, VERSAO);
   const lido = await pasta.lerJson(`${pasta.rotulos(PARTIDA)}/${nome}`);
   assert.deepEqual(lido, JSON.parse(JSON.stringify(rotulo)));
   // a mesma pessoa no mesmo quadro: versão 2
@@ -142,9 +143,18 @@ test("exportar e importar a pasta: só arquivos da pasta de trabalho, validados,
   // noutra pasta vazia
   const outra = new Pasta(new PastaMemoria("outra"));
   const r = await importarZip(outra, blob);
-  assert.deepEqual(r, { gravados: n, existentes: 0, recusados: [] });
+  assert.deepEqual(r, { gravados: n, existentes: 0, conflitos: [], recusados: [] });
   const r2 = await importarZip(outra, blob);
   assert.equal(r2.existentes, n);
+  // mesmo nome com outro conteúdo (a mesma pessoa anotou o quadro em dois computadores): conflito
+  const [rotulo] = await outra.listar(pasta.rotulos(PARTIDA));
+  const caminho = `${pasta.rotulos(PARTIDA)}/${rotulo.nome}`;
+  const mudado = { ...(await outra.lerJson(caminho)), comentario: "feito no outro computador" };
+  await outra.escreverJson(caminho, mudado, { sobrescrever: true });
+  const r4 = await importarZip(outra, blob);
+  assert.deepEqual(r4.conflitos, [caminho]);
+  assert.equal(r4.existentes, n - 1);
+  assert.equal((await outra.lerJson(caminho)).comentario, "feito no outro computador"); // ficou o da pasta
   // só os arquivos de A01
   const meus = await exportarZip(pasta, soDaPessoa("A01"));
   assert.equal(meus.n, 1);

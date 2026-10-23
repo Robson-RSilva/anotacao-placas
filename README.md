@@ -43,7 +43,10 @@ Safari só funcionam assim.
    decodificador do próprio navegador (WebCodecs): hash, relógio de cada quadro (PTS), cortes e
    transições (regras do laboratório, só para organizar o sorteio), agrupamento das tomadas, sorteio de
    1 ou 2 quadros por tomada e distribuição na equipe. Só os quadros sorteados vão para a pasta, em
-   JPEG. MKV e TS: converta antes para MP4 (no OBS, Arquivo → Remuxar gravações).
+   JPEG. MKV e TS: converta antes para MP4 (no OBS, Arquivo → Remuxar gravações). A leitura passa
+   por todos os quadros e leva tempo: num teste com 2 núcleos e sem decodificação pela placa de vídeo,
+   2 minutos de vídeo em 1080p levaram 1 minuto. Deixe a aba aberta até terminar; dá para voltar à
+   central enquanto isso.
 3. **Anotar a câmera.** O molde do campo abre pela melhor câmera disponível (versão devolvida,
    previsão do modelo, um quadro já anotado da mesma tomada ou o registro do estádio). Arrastar um
    ponto move o molde inteiro, porque o que se ajusta por trás é a câmera; cada ponto solto fica
