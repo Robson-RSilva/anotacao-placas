@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -35,6 +36,23 @@ from anotacao.pasta import Pasta, escrever_json, nome_arquivo
 from sintetico import renderizar
 
 FIXTURES = Path(__file__).parent / "fixtures"
+
+
+def _escapar(texto: str, propriedade: bool = False) -> str:
+    texto = texto.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+    return texto.replace(":", "%3A").replace(",", "%2C") if propriedade else texto
+
+
+def pytest_runtest_logreport(report):
+    """No GitHub Actions, cada falha vira uma anotação do trabalho, que dá para ler pela API sem o log."""
+    if report.failed and os.environ.get("GITHUB_ACTIONS") == "true":
+        arquivo, linha, _ = report.location
+        titulo = _escapar(report.nodeid, propriedade=True)
+        texto = _escapar(str(report.longrepr)[-4000:])
+        sys.__stdout__.write(f"\n::error file={arquivo},line={(linha or 0) + 1},title={titulo}::{texto}\n")
+        sys.__stdout__.flush()
+
+
 AGORA = datetime(2026, 11, 3, 15, 0, tzinfo=UTC)
 PARTIDA = "2026-11-02_estadio-sintetico_time-a-time-b"
 
