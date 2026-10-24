@@ -39,6 +39,27 @@ test("distância no campo genérico: as marcações de cada rótulo, com as medi
   assert.deepEqual(distanciaCameras(r, r, pacote, esticado, 640, 360, esticado), [0, 0]);
 });
 
+test("sem placas no molde, a câmera espelhada pela simetria de 180° vale o mesmo que a certa", () => {
+  const generico = pacoteGenerico();
+  const molde = Molde.doPacote(generico);
+  for (const cam of [cameraExemplo([-8, 0, 0], 38), Camera.olharPara([4, 50, 10], [10, -6, 0], 30, 640, 360)]) {
+    const r = cam.paraRotulo();
+    const espelhada = cam.espelhada().paraRotulo();
+    // o mesmo campo desenhado: no campo genérico, nada decide o lado
+    assert.ok(distanciaCameras(espelhada, r, generico, molde, 640, 360)[0] < 1e-6);
+    assert.ok(distanciaCameras(r, espelhada, generico, molde, 640, 360)[0] < 1e-6);
+    // e um erro de verdade continua aparecendo dos dois lados
+    const quase = Camera.deHfov(r.hfov_graus, r.pan + 0.5, r.tilt, r.roll, r.C, 640, 360);
+    assert.ok(distanciaCameras(quase.espelhada().paraRotulo(), r, generico, molde, 640, 360)[0] > 2);
+  }
+  // com as placas do estádio no molde, o lado espelhado é erro
+  const estadio = PACOTE();
+  const r = cameraExemplo([-8, 0, 0], 38).paraRotulo();
+  const espelhada = cameraExemplo([-8, 0, 0], 38).espelhada().paraRotulo();
+  const d = distanciaCameras(espelhada, r, estadio, Molde.doPacote(estadio), 640, 360);
+  assert.ok(d && d[0] > 20, `${d}`);
+});
+
 test("resíduos dos travados, em px na referência 960", () => {
   const pacote = PACOTE();
   const molde = Molde.doPacote(pacote);

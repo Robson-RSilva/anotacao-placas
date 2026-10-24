@@ -115,7 +115,7 @@ se o contêiner não tem relógio confiável, vale índice / fps e o manifesto r
 | `projeto.json` | `projeto/1` | opcional: nome do projeto e link (https) do Manual de anotação, mostrados nas páginas. |
 | `divisao.json` | `divisao/1` | partidas de validação, teste congelado e teste externo; o resto é treino. |
 | `estadios/<estadio>/pacote-<v>/pacote.json` | `pacote.estadio/1` | medidas do campo, placas (vértices BL, BR, TR, TL vistos de frente; tipo; lado; patrocinador) e câmeras do registro (posição do tripé). `estadios/generico/pacote-1.0` é o campo genérico: 105 × 68 m, sem placas, com posições típicas de câmera; a página o grava ao criar a pasta, e o Python e a página o têm embutido para pastas mais antigas. |
-| `gabarito/itens/<id>.json` | `gabarito.camera/1` | imagem, tamanho, pacote e a câmera verdadeira; origem `simulador` ou `arbitrado`. |
+| `gabarito/itens/<id>.json` | `gabarito.camera/1` | imagem, tamanho, o pacote com que o item abre (o campo genérico, nos lotes de ouro), a câmera verdadeira e, quando o campo não tem as medidas do pacote, as medidas verdadeiras (`campo`, de 90 a 120 por 45 a 90 m); origem `simulador` ou `arbitrado`. Sem placas no pacote, a comparação com a câmera verdadeira aceita o lado espelhado (ADR-0008). |
 
 ## Saída do unificar
 

@@ -12,12 +12,18 @@ import { mediana } from "./estatistica.js";
 export const N_LIBERACAO = 10;
 export const LIMITE_LIBERACAO_PX = 2.0;
 
+/** O campo verdadeiro do item: as medidas dele (um campo de outro tamanho no molde do pacote) ou as do pacote. */
+export function campoDoItem(item, pacote) {
+  return item.campo ? Molde.doCampo(item.campo.comprimento, item.campo.largura) : Molde.doPacote(pacote);
+}
+
 /** Diferença entre a câmera de um rótulo e a do item do gabarito: {mediana_px, p90_px} (null sem câmera). */
 export async function compararComGabarito(indice, camera, item, campo = null) {
   if (!camera) return { mediana_px: null, p90_px: null };
   const pacote = await indice.pacote(item.pacote);
-  const verdade = Molde.doPacote(pacote);
-  const doRotulo = campo ? Molde.doCampo(campo.comprimento, campo.largura) : verdade; // as medidas que a pessoa usou
+  const verdade = campoDoItem(item, pacote);
+  // as medidas que a pessoa usou; um rótulo sem elas (da 0.2) usou as do pacote
+  const doRotulo = campo ? Molde.doCampo(campo.comprimento, campo.largura) : Molde.doPacote(pacote);
   const d = distanciaCameras(camera, item.camera, pacote, doRotulo, item.largura, item.altura, verdade);
   return d ? { mediana_px: d[0], p90_px: d[1] } : { mediana_px: null, p90_px: null };
 }

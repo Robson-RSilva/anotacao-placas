@@ -112,6 +112,35 @@ test("treino com gabarito: diferença para a câmera verdadeira", async () => {
   assert.ok(d.mediana_px > 2 && d.p90_px >= d.mediana_px);
 });
 
+test("gabarito no campo genérico: as medidas verdadeiras do item e o lado espelhado", async () => {
+  const { pasta, indice } = await pastaExemplo();
+  const cam = Camera.olharPara([0, -56, 18], [-10, 4, 0], 34, 640, 360);
+  await pasta.gravar("gabarito", pasta.itemGabarito("g0001"), {
+    formato: "gabarito.camera/1",
+    id: "g0001",
+    pacote: "generico/pacote-1.0",
+    imagem: "g0001.jpg",
+    largura: 640,
+    altura: 360,
+    camera: cam.paraRotulo(),
+    campo: { comprimento: 100, largura: 64 },
+    origem: "simulador",
+    observacao: "",
+  });
+  const [g] = await indice.itensGabarito();
+  assert.deepEqual(g.campo, { comprimento: 100, largura: 64 });
+  // o item abre no molde do pacote, 105 x 68 m: quem anota precisa achar as medidas
+  const item = await proximoCamera(indice, "A01");
+  assert.equal(item.quadro, "g0001");
+  assert.deepEqual(item.campo, { comprimento: 105, largura: 68 });
+  const campo = { comprimento: 100, largura: 64 };
+  assert.ok((await compararComGabarito(indice, cam.paraRotulo(), g, campo)).mediana_px < 1e-6);
+  const semAjustar = await compararComGabarito(indice, cam.paraRotulo(), g, { comprimento: 105, largura: 68 });
+  assert.ok(semAjustar.mediana_px > 2, `${semAjustar.mediana_px}`);
+  // no campo genérico, o lado espelhado acerta tanto quanto o certo
+  assert.ok((await compararComGabarito(indice, cam.espelhada().paraRotulo(), g, campo)).mediana_px < 1e-6);
+});
+
 test(".zip: ida e volta, CRC e leitura de um .zip comprimido do sistema", async () => {
   const blob = await criarZip([
     { caminho: "a/b.txt", dados: "olá" },

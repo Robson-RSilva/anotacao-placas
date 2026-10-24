@@ -23,11 +23,11 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from anotacao.camera import Camera
+from anotacao.camera import Camera, mirror_camera
 from anotacao.campo import Campo
 from anotacao.cli import main
 from anotacao.formatos import Fila, GabaritoCamera, Manifesto, RevisaoCamera, RotuloCamera, Tomadas
-from anotacao.pacote import pacote_sintetico
+from anotacao.pacote import pacote_generico, pacote_sintetico
 
 from sintetico import (
     REGISTRO_DA_TOMADA,
@@ -176,9 +176,10 @@ def _espalhados(pontos: dict, n: int) -> list[str]:
     return escolhidos
 
 
-def _ajustar_molde(pagina, cam_v: Camera, registro: str) -> None:
+def _ajustar_molde(pagina, cam_v: Camera, registro: str, campo: Campo = CAMPO) -> None:
     """Recomeça pela câmera do registro, abre o molde um pouco fora da verdade (como uma previsão
-    imprecisa) e arrasta 5 pontos espalhados até onde a câmera verdadeira os põe."""
+    imprecisa) e arrasta 5 pontos espalhados até onde a câmera verdadeira os põe (no campo de
+    `campo`, que precisa ser o do molde do editor)."""
     pagina.wait_for_function("window.editor !== undefined && window.editor !== null")
     pagina.select_option("#registro", registro)
     pagina.click("#recomecar")
@@ -191,15 +192,15 @@ def _ajustar_molde(pagina, cam_v: Camera, registro: str) -> None:
         [cam_v.hfov * 1.08, pan + 2.5, tilt + 1.5, roll, [float(v) for v in cam_v.C]],
     )
     alvos = {}
-    for nome in CAMPO.nomes_pontos:
-        px, _ = cam_v.project(CAMPO.ponto(nome))
-        ini = _tela(pagina, CAMPO.ponto(nome))
+    for nome in campo.nomes_pontos:
+        px, _ = cam_v.project(campo.ponto(nome))
+        ini = _tela(pagina, campo.ponto(nome))
         if cam_v.in_image(px, margem=-30)[0] and ini and 0 < ini[2] < cam_v.w and 0 < ini[3] < cam_v.h:
             alvos[nome] = px[0]
     escolhidos = _espalhados(alvos, 5)
     assert len(escolhidos) >= 4, escolhidos
     for nome in escolhidos:
-        ini = _tela(pagina, CAMPO.ponto(nome))
+        ini = _tela(pagina, campo.ponto(nome))
         fim = _imagem_para_janela(pagina, *map(float, alvos[nome]))
         pagina.mouse.move(ini[0], ini[1])
         pagina.mouse.down()
@@ -450,8 +451,12 @@ def test_dois_computadores_na_pasta_sincronizada(site, video, navegador, captura
     _sincronizar(ana, bruno)
     bruno.wait_for_selector("#devolver", state="visible", timeout=10_000)
     assert "A01" not in bruno.inner_text("main")
-    devolvido = bruno.evaluate("document.querySelector('#pendentes').textContent")
-    assert devolvido.startswith("3")
+    # os três chegaram (a contagem no alto é a da hora em que o primeiro abriu, que pode ter sido no
+    # meio da sincronização; ela se refaz a cada decisão)
+    n = bruno.evaluate(
+        "async () => (await (await import('./js/nucleo/filas.js')).pendentesRevisao(anotacao.indice, 'B02')).length"
+    )
+    assert n == 3
     bruno.click("#devolver")
     bruno.select_option("#motivo", "outro")
     bruno.fill("#comentario-dev", "confira o quadro")
@@ -741,6 +746,91 @@ def test_treino_com_gabarito(site, navegador, capturas, tmp_path):
     pagina.screenshot(path=str(capturas / "e2e_6_treino.png"))
     rot = _listar(pagina, "gabarito/rotulos/camera")
     assert rot == [f"{atual}__A01__v1.json"]
+    assert not erros, erros
+
+
+def _item_aberto(pagina, imagens: dict[str, np.ndarray]) -> str:
+    """Qual item do gabarito o editor abriu: o que tem a imagem igual à mostrada."""
+    b64 = pagina.evaluate(
+        "() => { const c = document.createElement('canvas'); c.width = editor.w; c.height = editor.h;"
+        " c.getContext('2d').drawImage(editor.img, 0, 0); return c.toDataURL('image/png').split(',')[1]; }"
+    )
+    mostrado = cv2.imdecode(np.frombuffer(base64.b64decode(b64), np.uint8), cv2.IMREAD_COLOR)
+    return max(imagens, key=lambda g: cv2.PSNR(mostrado, imagens[g]))
+
+
+def test_lote_de_ouro_no_campo_generico(site, navegador, capturas, tmp_path):
+    """Um lote de ouro em .zip, no campo genérico: um item de um campo de 100 x 64 m, que abre no molde
+    de 105 x 68 m e só fecha com as medidas certas, e um de câmera reversa anotado do lado espelhado —
+    sem placas, nada decide o lado, e as duas câmeras desenham o mesmo campo."""
+    generico = pacote_generico()
+    lote = tmp_path / "L0-teste.zip"
+    cams, campos, imagens = {}, {}, {}
+    with zipfile.ZipFile(lote, "w") as z:
+        for gid, C, alvo, medidas in [
+            ("g0901", [0.0, -56.0, 18.0], [-22.0, 6.0, 0.0], (100.0, 64.0)),
+            ("g0902", [6.0, 50.0, 12.0], [-24.0, -6.0, 0.0], None),
+        ]:
+            campo = Campo(L=medidas[0], W=medidas[1]) if medidas else CAMPO
+            cam = Camera.look_at(np.asarray(C), alvo, 40.0, 640, 360)
+            img = renderizar(cam, campo, generico, int(gid[1:]))
+            jpg = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 95])[1]
+            z.writestr(f"gabarito/itens/{gid}.jpg", jpg.tobytes())
+            g = GabaritoCamera(
+                id=gid,
+                pacote=generico.ref,
+                imagem=f"{gid}.jpg",
+                largura=640,
+                altura=360,
+                camera=cam.para_rotulo(),
+                campo={"comprimento": medidas[0], "largura": medidas[1]} if medidas else None,
+                origem="simulador",
+            )
+            z.writestr(f"gabarito/itens/{gid}.json", g.model_dump_json())
+            cams[gid], campos[gid], imagens[gid] = cam, campo, img
+    erros: list[str] = []
+    pagina = _pagina(navegador, erros)
+    pagina.goto(site)
+    pagina.evaluate("anotacao.intervaloAtualizar = 300")
+    pagina.click("#btn-navegador")
+    pagina.click("#criar-vazia")  # a pasta só com o campo genérico
+    _escolher_pessoa(pagina, site, "A01")
+    pagina.set_input_files("#trazer-zip", str(lote))
+    pagina.wait_for_function("document.querySelector('#res-pasta').textContent.startsWith('4 arquivo(s) novo(s)')")
+    pagina.wait_for_function("document.querySelector('#st-camera').textContent.startsWith('Em treino')")
+    pagina.click("#ir-camera")
+    pagina.wait_for_selector("#treino", state="visible")
+    feitos = []
+    for _ in range(2):
+        pagina.wait_for_function("window.editor !== undefined && window.editor !== null && !editor.pinos.length")
+        gid = _item_aberto(pagina, imagens)
+        assert gid not in feitos
+        assert pagina.evaluate("[editor.molde.L, editor.molde.W]") == [105, 68], "o item abre no molde genérico"
+        assert pagina.is_hidden("#ck-lado-item"), "sem placas no molde, não há lado a conferir"
+        if campos[gid] is not CAMPO:
+            pagina.fill("#comprimento", "100")
+            pagina.dispatch_event("#comprimento", "change")
+            pagina.fill("#largura", "64")
+            pagina.dispatch_event("#largura", "change")
+            assert pagina.evaluate("[editor.molde.L, editor.molde.W]") == [100, 64]
+            _ajustar_molde(pagina, cams[gid], "principal", campos[gid])
+        else:
+            # a câmera reversa anotada do lado das cabines: o mesmo campo desenhado
+            _ajustar_molde(pagina, mirror_camera(cams[gid]), "principal")
+        pagina.click("#salvar")
+        pagina.wait_for_selector("#modal", state="visible")
+        assert pagina.inner_text("#modal-titulo") == "Dentro da tolerância", pagina.inner_text("#modal-texto")
+        if not feitos:
+            pagina.screenshot(path=str(capturas / "e2e_10_lote_de_ouro.png"))
+        feitos.append(gid)
+        pagina.click("#modal-ok")
+    pagina.wait_for_selector("#vazio:has-text('O gabarito acabou')")
+    rotulos = sorted(_listar(pagina, "gabarito/rotulos/camera"))
+    assert rotulos == ["g0901__A01__v1.json", "g0902__A01__v1.json"]
+    espelhado = json.loads(_ler(pagina, "gabarito/rotulos/camera/g0902__A01__v1.json"))
+    assert espelhado["lado"] == "canonico" and cams["g0902"].C[1] > 0, "o rótulo ficou do lado oposto ao da verdade"
+    medidas = json.loads(_ler(pagina, "gabarito/rotulos/camera/g0901__A01__v1.json"))["campo"]
+    assert medidas == {"comprimento": 100, "largura": 64}
     assert not erros, erros
 
 

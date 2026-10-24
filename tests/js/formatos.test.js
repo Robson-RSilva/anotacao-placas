@@ -69,6 +69,26 @@ test("regras entre campos do rótulo", () => {
   assert.deepEqual(conferir("rotulo", rotulo({ partida: "gabarito", quadro: "g0001" })), []);
 });
 
+test("item do gabarito: as medidas verdadeiras do campo precisam caber na página", () => {
+  const item = (extra = {}) => ({
+    formato: "gabarito.camera/1",
+    id: "g0001",
+    pacote: "generico/pacote-1.0",
+    imagem: "g0001.jpg",
+    largura: 1280,
+    altura: 720,
+    camera: cameraExemplo().paraRotulo(),
+    origem: "simulador",
+    ...extra,
+  });
+  assert.deepEqual(conferir("gabarito", item()), []);
+  assert.deepEqual(conferir("gabarito", item({ campo: { comprimento: 100, largura: 64 } })), []);
+  for (const campo of [{ comprimento: 125, largura: 70 }, { comprimento: 95, largura: 95 }]) {
+    const erros = conferir("gabarito", item({ campo }));
+    assert.ok(erros.some((e) => e.includes("medidas do campo")), `${JSON.stringify(campo)} -> ${erros}`);
+  }
+});
+
 test("estrutura: tipos, limites, padrões e campos desconhecidos", () => {
   const casos = [
     [{ versao: 0 }, "versao: deve ser ≥ 1"],

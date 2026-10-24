@@ -1,7 +1,7 @@
 // Formatos dos arquivos — os mesmos de src/anotacao/formatos.py. A estrutura vem dos JSON Schemas
 // gerados pelo Python (web/esquemas/); as regras entre campos (os `model_validator`) estão aqui.
 
-import { construirCampo } from "./campo.js";
+import { construirCampo, erroNasMedidas } from "./campo.js";
 import { ladoCanonico } from "./camera.js";
 import { RE_GABARITO, RE_PARTIDA, RE_QUADRO } from "./convencoes.js";
 import { validarEsquema } from "./esquema.js";
@@ -103,6 +103,12 @@ const REGRAS = {
     for (const p of o.pontos_travados) if (!NOMES_PONTOS.has(p.ponto)) e.push(`ponto-chave desconhecido: ${p.ponto}`);
     for (const l of o.linhas_travadas) if (!NOMES_ELEMENTOS.has(l.elemento)) e.push(`elemento desconhecido: ${l.elemento}`);
     return e;
+  },
+  gabarito(o) {
+    const c = o.campo;
+    return c && erroNasMedidas(c.comprimento, c.largura)
+      ? ["medidas do campo fora do que a página aceita: comprimento de 90 a 120 m, largura de 45 a 90 m e mais comprido que largo"]
+      : [];
   },
   revisao(o) {
     const e = [];

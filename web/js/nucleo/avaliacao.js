@@ -62,6 +62,19 @@ function marcacoesCorrespondentes(moldeA, moldeB, passo = 1.0) {
   return [pa, pb];
 }
 
+/** Mediana e p90 da distância (ref. 960) entre os pontos PA vistos por `ca` e PB vistos por `cb`. */
+function medir(ca, cb, PA, PB, w, h) {
+  const d = [];
+  for (let i = 0; i < PA.length; i++) {
+    const pa = ca.projetar(PA[i]);
+    const pb = cb.projetar(PB[i]);
+    if (!pa || !pb) continue;
+    if (pa[0] < 0 || pa[0] >= w || pa[1] < 0 || pa[1] >= h) continue;
+    d.push(Math.hypot(pa[0] - pb[0], pa[1] - pb[1]) * (REF_W / w));
+  }
+  return d.length >= 4 ? [mediana(d), percentil(d, 90)] : null;
+}
+
 /**
  * Mediana e p90 da distância (ref. 960) entre as placas desenhadas pelas duas câmeras.
  *
@@ -69,22 +82,23 @@ function marcacoesCorrespondentes(moldeA, moldeB, passo = 1.0) {
  * molde, como no campo genérico), usa as marcações do campo, cada câmera com o molde do seu rótulo —
  * duas pessoas que esticaram o campo de jeitos diferentes desenham marcações diferentes. Devolve null
  * quando nem isso aparece.
+ *
+ * Sem placas no molde (o campo genérico), nada decide o lado: as marcações são simétricas pela
+ * rotação de 180°, e a câmera espelhada desenha o mesmo campo. Aí vale a mais perto das duas — quem
+ * anotou do lado espelhado acertou tanto quanto quem anotou do lado certo (ADR-0008).
  */
 export function distanciaCameras(a, b, pacote, moldeA, w, h, moldeB = moldeA) {
   const ca = Camera.deRotulo(a, w, h);
   const cb = Camera.deRotulo(b, w, h);
   const placas = amostrasPlacas(pacote);
-  for (const [PA, PB] of [[placas, placas], marcacoesCorrespondentes(moldeA, moldeB)]) {
-    if (!PA.length) continue;
-    const d = [];
-    for (let i = 0; i < PA.length; i++) {
-      const pa = ca.projetar(PA[i]);
-      const pb = cb.projetar(PB[i]);
-      if (!pa || !pb) continue;
-      if (pa[0] < 0 || pa[0] >= w || pa[1] < 0 || pa[1] >= h) continue;
-      d.push(Math.hypot(pa[0] - pb[0], pa[1] - pb[1]) * (REF_W / w));
-    }
-    if (d.length >= 4) return [mediana(d), percentil(d, 90)];
+  if (placas.length) {
+    const r = medir(ca, cb, placas, placas, w, h);
+    if (r) return r;
   }
-  return null;
+  const [PA, PB] = marcacoesCorrespondentes(moldeA, moldeB);
+  const direta = medir(ca, cb, PA, PB, w, h);
+  if (placas.length) return direta;
+  const espelhada = medir(ca.espelhada(), cb, PA, PB, w, h);
+  if (!direta || !espelhada) return direta ?? espelhada;
+  return espelhada[0] < direta[0] ? espelhada : direta;
 }

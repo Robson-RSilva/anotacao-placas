@@ -374,13 +374,30 @@ class RevisaoCamera(Modelo):
 class GabaritoCamera(Modelo):
     formato: Literal["gabarito.camera/1"] = "gabarito.camera/1"
     id: Annotated[str, Field(pattern=RE_GABARITO.pattern)]
-    pacote: PacoteRef
+    pacote: PacoteRef = Field(description="o molde com que o item abre (o campo genérico, ou o pacote de um estádio)")
     imagem: str
     largura: int = Field(gt=0)
     altura: int = Field(gt=0)
     camera: CameraRotulo
+    campo: CampoPacote | None = Field(
+        None,
+        description=(
+            "medidas verdadeiras do campo (m), quando não são as do pacote — por exemplo, um campo de "
+            "100 x 64 m que abre no molde genérico de 105 x 68 m; quem anota precisa ajustar as medidas"
+        ),
+    )
     origem: Literal["simulador", "arbitrado"]
     observacao: str = ""
+
+    @model_validator(mode="after")
+    def _medidas(self):
+        c = self.campo
+        if c is not None and not (90 <= c.comprimento <= 120 and 45 <= c.largura <= 90 and c.comprimento > c.largura):
+            raise ValueError(
+                "medidas do campo fora do que a página aceita: comprimento de 90 a 120 m, largura de 45 a 90 m "
+                "e mais comprido que largo"
+            )
+        return self
 
 
 # ----------------------------------------------------------------------------- esquemas

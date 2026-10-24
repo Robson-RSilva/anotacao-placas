@@ -104,7 +104,12 @@ estádio.
 Quando a pasta tem **gabarito** (quadros com a câmera exata, do simulador ou de rótulos arbitrados),
 quem começa é treinado e liberado por ele: a mediana dos últimos 10 itens precisa ficar em até 2 px.
 Depois, a cada 15 rótulos, um item do gabarito entra escondido na fila. Sem gabarito, todo mundo
-anota direto. Em ~10% dos quadros duas pessoas anotam do
+anota direto. Os **lotes de ouro** (`scripts/lotes_de_ouro.py`) são gabaritos prontos, do
+simulador: L1 para treino e liberação, L2 para as medidas do campo, L3 e L4 para controle de dia e à
+noite, cada um num .zip que entra por "Trazer arquivos de um .zip". Os itens abrem no campo
+genérico; os de um campo de outro tamanho só fecham com as medidas certas. Sem placas no molde, nada
+decide o lado do campo, e o gabarito aceita a câmera do lado espelhado ([ADR-0008](docs/adr/0008-gabarito-no-campo-generico.md)).
+Em ~10% dos quadros duas pessoas anotam do
 zero, às cegas, para medir a concordância; em outros ~10% a página começa sem previsão, para medir o
 viés de ancoragem.
 
@@ -144,9 +149,11 @@ anotacao unificar --pasta P                 # gera os conjuntos de treino
 anotacao esquemas DESTINO                   # exporta os JSON Schemas
 ```
 
-Para experimentar com dados do laboratório: `scripts/gabarito_do_laboratorio.py` gera itens do
-gabarito com o simulador, e `scripts/video_demo_do_laboratorio.py` monta um vídeo MP4 de demonstração
-a partir de uma transmissão sintética.
+Para experimentar com dados do laboratório: `scripts/lotes_de_ouro.py` gera os lotes de ouro
+(`--laboratorio ../placas-exposicao --saida lotes`: um .zip por lote, `indice.csv` e um mosaico de
+cada lote), `scripts/gabarito_do_laboratorio.py` gera itens do gabarito no estádio sintético, com
+placas, e `scripts/video_demo_do_laboratorio.py` monta um vídeo MP4 de demonstração a partir de uma
+transmissão sintética.
 
 ## Publicação
 

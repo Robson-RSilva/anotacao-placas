@@ -6,7 +6,7 @@ import pytest
 from pydantic import ValidationError
 
 from anotacao.camera import Camera
-from anotacao.formatos import DispositivoPessoa, Divisao, Projeto, RevisaoCamera, RotuloCamera
+from anotacao.formatos import DispositivoPessoa, Divisao, GabaritoCamera, Projeto, RevisaoCamera, RotuloCamera
 
 CAM = Camera.look_at([0.0, -58.0, 14.0], [5.0, 0.0, 0.0], 35.0, 1280, 720).para_rotulo()
 
@@ -62,6 +62,27 @@ def test_medidas_do_campo_no_rotulo():
     assert (r.campo.comprimento, r.campo.largura) == (100.5, 64.0)
     with pytest.raises(ValidationError, match="greater than 40"):
         rotulo(campo={"comprimento": 100, "largura": 30})
+
+
+def test_medidas_verdadeiras_no_item_do_gabarito():
+    def item(**kw):
+        base = dict(
+            id="g0001",
+            pacote="generico/pacote-1.0",
+            imagem="g0001.jpg",
+            largura=1280,
+            altura=720,
+            camera=CAM,
+            origem="simulador",
+        )
+        base.update(kw)
+        return GabaritoCamera(**base)
+
+    assert item().campo is None  # valem as do pacote
+    assert item(campo={"comprimento": 100, "largura": 64}).campo.comprimento == 100
+    for campo in ({"comprimento": 125, "largura": 70}, {"comprimento": 95, "largura": 95}):
+        with pytest.raises(ValidationError, match="fora do que a página aceita"):
+            item(campo=campo)
 
 
 def test_sem_marcacoes_sem_camera():

@@ -5,6 +5,28 @@ Formato de [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); versões
 
 ## [Não lançado]
 
+## [0.6.0] - 2026-10-24
+
+Lotes de ouro prontos e um gabarito que mede o que se faz hoje no campo genérico: esticar o molde
+e ajustar a câmera (ADR-0008).
+
+### Adicionado
+
+- `scripts/lotes_de_ouro.py`: os lotes de ouro do gabarito, gerados com o simulador do laboratório
+  e prontos para "Trazer arquivos de um .zip" — L1 (treino e liberação, 30 itens), L2 (medidas do
+  campo, 20), L3 (controle de dia, 60) e L4 (controle à noite, 30), com faixas de id separadas, um
+  filtro de quadro justo e a câmera de cada item conferida pelo modelo do `anotacao`. Sementes
+  fixas: o mesmo comando dá os mesmos lotes.
+- `campo` no item do gabarito (opcional): as medidas verdadeiras do campo quando não são as do
+  pacote. O item abre no molde do pacote (o campo genérico) e só fecha com as medidas certas.
+
+### Corrigido
+
+- Sem placas no molde (o campo genérico), o gabarito e a concordância dos rótulos cegos comparavam
+  as marcações de mesmo nome e davam como erro grande a câmera do lado espelhado, que desenha o mesmo
+  campo. Agora vale a menor distância entre a câmera e a espelhada dela. Com o pacote de um estádio,
+  o lado espelhado continua sendo erro.
+
 ## [0.5.0] - 2026-10-24
 
 Cada pessoa no seu computador: quem anota e quem revisa trabalham em computadores diferentes, ligados
