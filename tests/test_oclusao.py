@@ -3,6 +3,8 @@ formatos (rotulo.oclusao/1, revisao.oclusao/1, gabarito.oclusao/1)."""
 
 from __future__ import annotations
 
+import base64
+
 import cv2
 import numpy as np
 import pytest
@@ -28,6 +30,18 @@ def test_png_ida_e_volta_e_o_do_opencv():
     assert ok and np.array_equal(ler_png(cinza.tobytes()), m * 30)
     with pytest.raises(ValueError, match="não é um PNG"):
         ler_png(b"nada")
+
+
+def test_pngs_fixos_do_fixture_dizem_os_pixels_deles():
+    """Os PNGs do fixture do espelho têm os bytes fixos (o zlib de cada sistema comprime diferente): eles
+    continuam dizendo os mesmos pixels, e o `gravar_png` e o OpenCV de agora gravam PNGs com esses pixels."""
+    from anotacao.geracao import PNG_CINZA_B64, PNG_CINZA_INDICES, PNG_PALETA_B64, PNG_PALETA_INDICES
+
+    assert np.array_equal(ler_png(base64.b64decode(PNG_PALETA_B64)), PNG_PALETA_INDICES)
+    assert np.array_equal(ler_png(base64.b64decode(PNG_CINZA_B64)), PNG_CINZA_INDICES)
+    assert np.array_equal(ler_png(gravar_png(PNG_PALETA_INDICES, oclusao.PALETA)), PNG_PALETA_INDICES)
+    ok, cinza = cv2.imencode(".png", PNG_CINZA_INDICES)
+    assert ok and np.array_equal(ler_png(cinza.tobytes()), PNG_CINZA_INDICES)
 
 
 def test_faixas_reproduzem_o_estadio_do_laboratorio():

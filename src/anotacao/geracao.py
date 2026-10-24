@@ -5,7 +5,8 @@
 * `tests/fixtures/convencoes.json` e `tests/fixtures/pacote_generico.json` — as convenções e o campo
   genérico, para os testes dos espelhos em JavaScript;
 * `tests/fixtures/oclusao.json` — as faixas de placas, onde as placas caem em três câmeras, as contas
-  por placa, uma comparação de máscaras e PNGs do Python e do OpenCV, para o espelho da oclusão.
+  por placa, uma comparação de máscaras e dois PNGs (do Python e do OpenCV, com os bytes fixos), para o
+  espelho da oclusão.
 
 `python scripts/gerar_arquivos_web.py` grava todos; `tests/test_arquivos_gerados.py` falha quando
 algum fica desatualizado.
@@ -13,11 +14,9 @@ algum fica desatualizado.
 
 from __future__ import annotations
 
-import base64
 import json
 from pathlib import Path
 
-import cv2
 import numpy as np
 
 from . import __version__, oclusao
@@ -41,7 +40,6 @@ from .convencoes import (
     slug,
 )
 from .formatos import ESQUEMAS, Divisao, Equipe, Membro, esquema_json
-from .mascara import gravar_png
 from .pacote import pacote_generico, pacote_sintetico
 
 RAIZ = Path(__file__).resolve().parents[2]
@@ -99,6 +97,23 @@ def _rle(a) -> list[list[int]]:
     return [[int(v[i]), int(f - i)] for i, f in zip(inicios, fins, strict=True)]
 
 
+# Os dois PNGs do fixture ficam fixos aqui, e não são gerados a cada vez: o zlib de cada Python (e de
+# cada sistema) comprime do seu jeito, e o que o teste do espelho confere é a leitura, não os bytes.
+# Gerados uma vez com `gravar_png(PNG_PALETA_INDICES, oclusao.PALETA)` e com o OpenCV
+# (`cv2.imencode(".png", PNG_CINZA_INDICES)`); `tests/test_oclusao.py` confere que dizem esses pixels.
+PNG_PALETA_B64 = (
+    "iVBORw0KGgoAAAANSUhEUgAAAAcAAAAFCAMAAAC+RAbqAAAAGFBMVEUAAAA0mNvnTDzxxA+bWbbmfiIavJx/jI01gnpBAAAAH0lEQVR42mNgYGRiZmFl"
+    "Y2CHMBjYIAwGVgiDgQXCAAAI6AB0bj4AVwAAAABJRU5ErkJggg=="
+)
+PNG_CINZA_B64 = (
+    "iVBORw0KGgoAAAANSUhEUgAAACUAAAAXCAAAAACpR9l5AAAAhUlEQVQoFYXBLRcBUQBFUTcd4QZRFEVRFEVRnCiKoiiKoij6iViYefM+99aENmtK"
+    "k9GMFoPmNBjQgjrzpiVV5kMrKsyX1pSZH20oMn/aUmJ62lFgBtqTZwLqyDIhHcgwYzqSMhGdSJiYzsRMQhciJqUrYyZDN0ZMju4ETJ4eDEyBnvRMyQvn"
+    "LB8XNC4UJwAAAABJRU5ErkJggg=="
+)
+PNG_PALETA_INDICES = np.arange(7 * 5, dtype=np.uint8).reshape(5, 7) % 8
+PNG_CINZA_INDICES = (np.arange(37 * 23).reshape(23, 37) * 7 % 251).astype(np.uint8)
+
+
 def oclusao_para_teste() -> dict:
     """Geometria das placas, estatísticas e máscaras PNG calculadas aqui, para os testes do espelho em
     JavaScript acharem os mesmos pixels (`tests/js/oclusao.test.js`)."""
@@ -139,9 +154,6 @@ def oclusao_para_teste() -> dict:
                 "comparacao": oclusao.comparar_mascaras(mascara, oclusao.mascara_efetiva(outra, geo.roi), geo),
             }
         )
-    pequena = np.arange(7 * 5, dtype=np.uint8).reshape(5, 7) % 8
-    ok, cinza = cv2.imencode(".png", (np.arange(37 * 23).reshape(23, 37) * 7 % 251).astype(np.uint8))
-    assert ok
     return {
         "descricao": "Gerado por scripts/gerar_arquivos_web.py a partir de src/anotacao/oclusao.py; não editar à mão.",
         "largura": w,
@@ -151,16 +163,16 @@ def oclusao_para_teste() -> dict:
         "placas": placas,
         "casos": casos,
         "png_paleta": {
-            "base64": base64.b64encode(gravar_png(pequena, oclusao.PALETA)).decode(),
+            "base64": PNG_PALETA_B64,
             "largura": 7,
             "altura": 5,
-            "indices": pequena.ravel().tolist(),
+            "indices": PNG_PALETA_INDICES.ravel().tolist(),
         },
         "png_cinza": {
-            "base64": base64.b64encode(cinza.tobytes()).decode(),
+            "base64": PNG_CINZA_B64,
             "largura": 37,
             "altura": 23,
-            "indices": (np.arange(37 * 23) * 7 % 251).tolist(),
+            "indices": PNG_CINZA_INDICES.ravel().tolist(),
         },
     }
 
