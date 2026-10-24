@@ -1,12 +1,12 @@
 // Levar arquivos de uma pasta de trabalho para outra em .zip: para quem guarda no navegador (sem
 // pasta sincronizada) mandar o que fez, e para quem coordena trazer de volta. Nada é sobrescrito.
 
-import { RE_ARQUIVO, RE_ESTADIO, RE_GABARITO, RE_PARTIDA, RE_PESSOA, RE_QUADRO, RE_VERSAO_PACOTE } from "./convencoes.js";
+import { RE_ARQUIVO, RE_DISPOSITIVO, RE_ESTADIO, RE_GABARITO, RE_PARTIDA, RE_PESSOA, RE_QUADRO, RE_VERSAO_PACOTE } from "./convencoes.js";
 import { validar } from "./formatos.js";
 import { ArquivoExiste } from "./pasta.js";
 import { criarZip, lerZip } from "./zip.js";
 
-const TOPO = new Set(["equipe.json", "divisao.json", "projeto.json", "estadios", "partidas", "gabarito"]);
+const TOPO = new Set(["equipe.json", "divisao.json", "projeto.json", "estadios", "partidas", "gabarito", "pessoas"]);
 
 /** Tipo de arquivo (formatos.js) pelo caminho; "jpg" para imagens; null quando não é da pasta de trabalho. */
 export function tipoDoCaminho(caminho) {
@@ -25,6 +25,9 @@ export function tipoDoCaminho(caminho) {
     }
     if (p.length === 4 && p[1] === "rotulos" && p[2] === "camera" && RE_ARQUIVO.test(p[3]) && p[3].startsWith("g")) return "rotulo";
     return null;
+  }
+  if (p[0] === "pessoas") {
+    return p.length === 3 && RE_PESSOA.test(p[1]) && p[2].endsWith(".json") && RE_DISPOSITIVO.test(p[2].slice(0, -5)) ? "dispositivo" : null;
   }
   if (p[0] === "partidas" && p.length >= 3 && RE_PARTIDA.test(p[1])) {
     if (p.length === 3) return { "manifesto.json": "manifesto", "fila.json": "fila", "tomadas.json": "tomadas" }[p[2]] ?? null;
@@ -64,11 +67,11 @@ export async function exportarZip(pasta, filtro = () => true, aoProgresso = () =
   return { blob: await criarZip(entradas), n: entradas.length };
 }
 
-/** Os arquivos de uma pessoa: rótulos e revisões com o código dela no nome. */
+/** Os arquivos de uma pessoa: rótulos e revisões com o código dela no nome, e os registros do código. */
 export function soDaPessoa(pessoa) {
   if (!RE_PESSOA.test(pessoa)) throw new Error(`código de pessoa inválido: ${pessoa}`);
   const re = new RegExp(`__${pessoa}__v\\d+\\.json$`);
-  return (caminho) => re.test(caminho);
+  return (caminho) => re.test(caminho) || caminho.startsWith(`pessoas/${pessoa}/`);
 }
 
 /** O arquivo da pasta tem exatamente estes bytes? */

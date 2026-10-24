@@ -2,7 +2,7 @@
 // (#/, #/camera, #/revisao, #/importar, #/coordenacao). Uma página só porque a permissão da pasta
 // vale para a aba aberta: trocar de vista não pede de novo.
 
-import { VERSAO, codigoPessoa } from "../nucleo/convencoes.js";
+import { RE_DISPOSITIVO, VERSAO, codigoPessoa } from "../nucleo/convencoes.js";
 import { carregarEsquemas } from "../nucleo/formatos.js";
 import { Indice } from "../nucleo/indice.js";
 import { Pasta } from "../nucleo/pasta.js";
@@ -25,6 +25,8 @@ const ctx = {
   modo: null,
   lembrada: null,
   importacao: null, // {worker, etapa, frac, resultado, erro, ouvintes:Set}
+  /** De quanto em quanto tempo (ms) uma página parada, sem nada a fazer, confere se chegou algo (de outro computador). */
+  intervaloAtualizar: 15_000,
 
   usar({ alca, modo }) {
     this.pasta = new Pasta(alca);
@@ -53,6 +55,45 @@ const ctx = {
 
   definirPessoa(codigo) {
     local.gravar("pessoa", codigo || null);
+  },
+
+  /** Este navegador: um identificador aleatório, guardado nele (o mesmo em todas as abas). */
+  dispositivo() {
+    if (!this._dispositivo) {
+      let id = local.ler("dispositivo");
+      if (!RE_DISPOSITIVO.test(id ?? "")) {
+        id = crypto.randomUUID();
+        local.gravar("dispositivo", id);
+      }
+      this._dispositivo = id;
+    }
+    return this._dispositivo;
+  },
+
+  /** Registra, uma vez, que o código é usado neste navegador (sem atrapalhar quem anota se falhar). */
+  async registrarCodigo(codigo) {
+    if (!this.pasta || !codigo) return;
+    try {
+      await this.pasta.registrarDispositivo(codigo, this.dispositivo());
+    } catch {
+      // a pasta ainda sincronizando, por exemplo: tenta de novo na próxima vez
+    }
+  },
+
+  /** Os outros navegadores em que o código já foi usado: [{dispositivo, criado_em}]. */
+  async outrosComputadores(codigo) {
+    if (!this.pasta || !codigo) return [];
+    const meu = this.dispositivo();
+    return (await this.pasta.dispositivosDoCodigo(codigo)).filter((d) => d.dispositivo !== meu);
+  },
+
+  /** A pessoa disse que o código usado em outro computador é ela mesma. */
+  codigoConfirmado(codigo) {
+    return local.ler(`codigo-confirmado.${codigo}`) === "1";
+  },
+
+  confirmarCodigo(codigo) {
+    local.gravar(`codigo-confirmado.${codigo}`, "1");
   },
 
   ir(hash) {

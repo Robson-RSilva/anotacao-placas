@@ -21,6 +21,7 @@ O mesmo layout existe nas páginas (`web/js/nucleo/pasta.js`).
         rotulos/<tarefa>/<quadro>__<anotador>__v<n>.json
         revisoes/<tarefa>/<quadro>__<revisor>__v<n>.json
       gabarito/itens/<g0001>.json|.jpg, gabarito/rotulos/<tarefa>/...
+      pessoas/<codigo>/<dispositivo>.json           em que computadores cada código é usado
       conjuntos/<data-hora>/                        saída do unificar
 """
 
@@ -129,6 +130,10 @@ class Pasta:
     @property
     def projeto_path(self) -> Path:
         return self.raiz / "projeto.json"
+
+    @property
+    def pessoas(self) -> Path:
+        return self.raiz / "pessoas"
 
     @property
     def estadios(self) -> Path:

@@ -6,7 +6,7 @@ import pytest
 from pydantic import ValidationError
 
 from anotacao.camera import Camera
-from anotacao.formatos import Divisao, Projeto, RevisaoCamera, RotuloCamera
+from anotacao.formatos import DispositivoPessoa, Divisao, Projeto, RevisaoCamera, RotuloCamera
 
 CAM = Camera.look_at([0.0, -58.0, 14.0], [5.0, 0.0, 0.0], 35.0, 1280, 720).para_rotulo()
 
@@ -90,6 +90,14 @@ def test_revisao_regras():
     with pytest.raises(ValidationError):
         RevisaoCamera(decisao="devolver", motivo="outro", **base)
     RevisaoCamera(decisao="corrigir", nova_versao="t0000012340__A02__v1.json", **base)
+
+
+def test_registro_do_codigo_num_computador():
+    d = DispositivoPessoa(codigo="AB", dispositivo="3f2a6c1e-8b9d-4e2f-a1b3-c4d5e6f70812", criado_em=datetime.now(UTC))
+    assert d.formato == "pessoa.dispositivo/1"
+    for ruim in ({"codigo": "ab"}, {"dispositivo": "../../x"}, {"dispositivo": "3F2A6C1E-8B9D-4E2F-A1B3-C4D5E6F70812"}):
+        with pytest.raises(ValidationError):
+            DispositivoPessoa(**{**d.model_dump(), **ruim})
 
 
 def test_divisao_sem_sobreposicao():

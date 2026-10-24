@@ -25,15 +25,14 @@ RE_QUADRO = re.compile(r"^t\d{10}$")
 RE_GABARITO = re.compile(r"^g\d{4}$")
 RE_PESSOA = re.compile(r"^[A-Z][A-Z0-9]{1,9}$")
 RE_PACOTE_REF = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*/pacote-\d+\.\d+$")
+#: Navegador de um computador (um identificador aleatório, guardado no próprio navegador).
+RE_DISPOSITIVO = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 
 #: Nome da "partida" que guarda os itens do gabarito (nunca entra nos conjuntos de treino).
 PARTIDA_GABARITO = "gabarito"
 
 #: Pacote do campo genérico (105 x 68 m, sem placas), para anotar sem o levantamento do estádio.
 REF_PACOTE_GENERICO = "generico/pacote-1.0"
-
-#: Começo do comentário do MP4 baixado por `anotacao baixar`, seguido do JSON da origem.
-PREFIXO_ORIGEM = "anotacao/1 "
 
 
 def slug(texto: str) -> str:

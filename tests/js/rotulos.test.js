@@ -179,4 +179,9 @@ test("tipo de arquivo pelo caminho", () => {
   assert.equal(tipoDoCaminho("gabarito/rotulos/camera/g0001__A01__v1.json"), "rotulo");
   assert.equal(tipoDoCaminho("partidas/x/fila.json"), null);
   assert.equal(tipoDoCaminho("conjuntos/2026/camera.parquet"), null);
+  const disp = "pessoas/AB/3f2a6c1e-8b9d-4e2f-a1b3-c4d5e6f70812.json";
+  assert.equal(tipoDoCaminho(disp), "dispositivo");
+  assert.equal(tipoDoCaminho("pessoas/ab/3f2a6c1e-8b9d-4e2f-a1b3-c4d5e6f70812.json"), null);
+  assert.equal(tipoDoCaminho("pessoas/AB/qualquer.json"), null);
+  assert.ok(soDaPessoa("AB")(disp) && !soDaPessoa("CD")(disp));
 });

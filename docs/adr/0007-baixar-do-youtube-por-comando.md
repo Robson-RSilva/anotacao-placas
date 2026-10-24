@@ -1,6 +1,7 @@
 # ADR-0007 — Baixar do YouTube por um comando no computador, não pela página
 
-**Situação:** aceita (24/10/2026).
+**Situação:** revogada (24/10/2026), no mesmo dia: o download saiu na 0.5.0 e os vídeos voltaram a ser
+importados do computador, como antes. Fica o registro de por que a página não baixa do YouTube.
 
 ## Contexto
 

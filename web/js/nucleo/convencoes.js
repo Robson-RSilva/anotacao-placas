@@ -8,7 +8,7 @@
 // 4. Métricas em pixels na referência 960 x 540.
 
 /** Versão da ferramenta, gravada em cada arquivo (igual a `anotacao.__version__`). */
-export const VERSAO = "0.4.0";
+export const VERSAO = "0.5.0";
 
 export const REF_W = 960;
 export const REF_H = 540;
@@ -23,6 +23,8 @@ export const RE_QUADRO = /^t\d{10}$/;
 export const RE_GABARITO = /^g\d{4}$/;
 export const RE_PESSOA = /^[A-Z][A-Z0-9]{1,9}$/;
 export const RE_PACOTE_REF = /^[a-z0-9]+(?:-[a-z0-9]+)*\/pacote-\d+\.\d+$/;
+/** Navegador de um computador (um identificador aleatório, guardado no próprio navegador). */
+export const RE_DISPOSITIVO = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 export const RE_ARQUIVO = /^(t\d{10}|g\d{4})__([A-Z][A-Z0-9]{1,9})__v(\d+)\.json$/;
 
 /** Nome da "partida" que guarda os itens do gabarito (nunca entra nos conjuntos de treino). */
@@ -30,27 +32,6 @@ export const PARTIDA_GABARITO = "gabarito";
 
 /** Pacote do campo genérico (105 x 68 m, sem placas), para anotar sem o levantamento do estádio. */
 export const REF_PACOTE_GENERICO = "generico/pacote-1.0";
-
-/** Começo do comentário do MP4 baixado por `anotacao baixar`, seguido do JSON da origem. */
-export const PREFIXO_ORIGEM = "anotacao/1 ";
-
-/**
- * A origem que o `anotacao baixar` grava no comentário do MP4: {fonte, id, url, trechos} — trechos
- * em segundos do vídeo original quando o arquivo tem só eles, senão null. Sem origem, null.
- */
-export function lerOrigem(comentario) {
-  if (typeof comentario !== "string" || !comentario.startsWith(PREFIXO_ORIGEM)) return null;
-  let d;
-  try {
-    d = JSON.parse(comentario.slice(PREFIXO_ORIGEM.length));
-  } catch {
-    return null;
-  }
-  if (!d || typeof d !== "object" || typeof d.fonte !== "string" || typeof d.id !== "string") return null;
-  const valido = (t) => Array.isArray(t) && t.length === 2 && t.every(Number.isFinite) && t[1] > t[0];
-  const trechos = Array.isArray(d.trechos) && d.trechos.length && d.trechos.every(valido) ? d.trechos : null;
-  return { fonte: d.fonte.slice(0, 40), id: d.id.slice(0, 200), url: typeof d.url === "string" ? d.url.slice(0, 500) : "", trechos };
-}
 
 /** Tarefas com rótulos por arquivo. */
 export const TAREFAS = Object.freeze(["camera"]);

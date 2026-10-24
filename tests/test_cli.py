@@ -10,10 +10,10 @@ import numpy as np
 from anotacao.camera import Camera
 from anotacao.campo import Campo
 from anotacao.cli import main
-from anotacao.formatos import ESQUEMAS, GabaritoCamera, Previsao
-from anotacao.pasta import Pasta, ler_json
+from anotacao.formatos import ESQUEMAS, DispositivoPessoa, GabaritoCamera, Previsao
+from anotacao.pasta import Pasta, escrever_json, ler_json
 
-from conftest import PARTIDA, criar_partida, gravar_revisao, gravar_rotulo
+from conftest import AGORA, PARTIDA, criar_partida, gravar_revisao, gravar_rotulo
 from sintetico import renderizar
 
 
@@ -42,6 +42,18 @@ def test_validar_aponta_problemas(pasta, capsys):
     saida = capsys.readouterr().out
     assert "2 quadro(s) da fila sem imagem" in saida
     assert "__A01__v1.json" in saida
+
+
+def test_validar_registros_dos_codigos(pasta, capsys):
+    """pessoas/<codigo>/<dispositivo>.json: em que computadores cada código é usado."""
+    dispositivo = "3f2a6c1e-8b9d-4e2f-a1b3-c4d5e6f70812"
+    certo = DispositivoPessoa(codigo="AB", dispositivo=dispositivo, criado_em=AGORA)
+    escrever_json(pasta.pessoas / "AB" / f"{dispositivo}.json", certo)
+    assert main(["validar", "--pasta", str(pasta.raiz)]) == 0
+    capsys.readouterr()
+    escrever_json(pasta.pessoas / "CD" / f"{dispositivo}.json", certo)  # o código não bate com a pasta
+    assert main(["validar", "--pasta", str(pasta.raiz)]) == 1
+    assert f"pessoas/CD/{dispositivo}.json: o conteúdo não bate" in capsys.readouterr().out
 
 
 def test_validar_partida_incompleta(pasta, capsys):

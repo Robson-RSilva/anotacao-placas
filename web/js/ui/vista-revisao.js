@@ -8,6 +8,7 @@ import { ForaDaFila, salvarRevisao } from "../nucleo/rotulos.js";
 import { Editor } from "./editor.js";
 import { ligarMedidas } from "./medidas.js";
 import { TempoAtivo } from "./tempo.js";
+import { vigiar } from "./vigia.js";
 import { el, formatarTempo, imagemDoArquivo, mensagemDeErro, numero } from "./util.js";
 
 export const CLASSE = "pagina-editor";
@@ -152,6 +153,7 @@ export async function montar(raiz, ctx) {
     try {
       await salvarRevisao(indice, feito.pessoa, feito.arquivo, { ...decisao, segundos_ativos: tempo.segundos() });
       atual = null; // gravada: daqui não se decide de novo este rótulo
+      ctx.registrarCodigo(feito.pessoa); // o código passa a constar como usado neste computador
       await abrirProximo();
     } catch (e) {
       if (e instanceof ForaDaFila) {
@@ -235,9 +237,12 @@ export async function montar(raiz, ctx) {
   window.addEventListener("keydown", teclas);
 
   await abrirProximo();
+  // sem nada para revisar, a página confere sozinha se chegou algo (de outro computador, pelo Drive)
+  const vigia = vigiar(ctx, () => !atual && !enviando && !$("vazio").hidden, abrirProximo);
 
   return {
     desmontar() {
+      vigia.parar();
       window.removeEventListener("keydown", teclas);
       window.removeEventListener("storage", aoTrocarPessoa);
       tempo.destruir();

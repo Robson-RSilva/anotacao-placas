@@ -6,6 +6,7 @@ import { calcularPlacar } from "../nucleo/placar.js";
 import { exportarZip, importarZip, soDaPessoa } from "../nucleo/transferencia.js";
 import { espaco } from "./armazenamento.js";
 import { baixar, carimbo, celula, el, formatarTempo, linhaVazia, mensagemDeErro, numero } from "./util.js";
+import { vigiar } from "./vigia.js";
 
 const porcento = (a, b) => (b ? `${a} (${Math.round((100 * a) / b)}%)` : String(a));
 
@@ -36,8 +37,8 @@ export async function montar(raiz, ctx) {
     $("conteudo-central").hidden = true;
     $("pessoa").disabled = true;
     $("nome-vazia").textContent = ctx.modo === "navegador"
-      ? "O armazenamento deste navegador está vazio. Crie a pasta e traga os arquivos num .zip, ou comece pelo exemplo."
-      : `A pasta «${pasta.nome}» ainda não tem os arquivos da anotação. Se for a pasta da equipe no Drive, confira se ele terminou de sincronizar; se for uma pasta nova, crie a pasta de trabalho.`;
+      ? "O armazenamento deste navegador está vazio. Crie a pasta, comece pelo exemplo, ou traga a cópia da pasta (.zip) que outra pessoa mandou."
+      : `A pasta «${pasta.nome}» ainda não tem os arquivos da anotação. Se for a pasta da equipe no Drive, espere ele terminar de sincronizar (a página percebe sozinha); se for uma pasta nova, crie a pasta de trabalho.`;
     $("criar-vazia").onclick = async () => {
       await pasta.criar();
       ctx.ir("#/");
@@ -47,7 +48,32 @@ export async function montar(raiz, ctx) {
       ctx.ir("#/");
     };
     $("trocar-vazia").onclick = () => ctx.trocarPasta();
-    return null;
+    $("trazer-zip-vazia").onchange = async (e) => {
+      const arquivo = e.target.files[0];
+      e.target.value = "";
+      if (!arquivo) return;
+      $("res-vazia").textContent = "lendo o .zip…";
+      try {
+        const r = await importarZip(pasta, arquivo, (f) => {
+          $("res-vazia").textContent = `lendo o .zip… ${Math.round(100 * f)}%`;
+        });
+        await pasta.criar(); // o que faltar para ser uma pasta de trabalho
+        $("res-vazia").textContent = `${r.gravados} arquivo(s) trazido(s).`;
+        recarregar();
+      } catch (erro) {
+        $("res-vazia").textContent = mensagemDeErro(erro);
+      }
+    };
+    // a pasta da equipe ainda sincronizando: quando o Drive trouxer os arquivos, a central aparece
+    const vigia = vigiar(ctx, () => true, async () => {
+      if (await pasta.ehPastaDeTrabalho()) recarregar();
+    });
+    return {
+      desmontar() {
+        vivo = false;
+        vigia.parar();
+      },
+    };
   }
 
   // ------------------------------------------------------------------ quem está anotando
@@ -65,6 +91,7 @@ export async function montar(raiz, ctx) {
     })));
   };
   sugerir(new Set(nomes.keys()));
+  let sugeridos = [...nomes.keys()].sort().join(",");
   $("form-pessoa").onsubmit = (e) => {
     e.preventDefault();
     campo.blur(); // o "change" confirma
@@ -98,24 +125,58 @@ export async function montar(raiz, ctx) {
   }
   if (projeto?.nome) raiz.querySelector(".barra h1").textContent = `Anotação · ${projeto.nome}`;
 
-  // ------------------------------------------------------------------ situação de cada tarefa
-  if (!pessoa) {
-    $("st-camera").textContent = "Digite o seu código no alto da página.";
-    $("st-revisao").textContent = "—";
-  } else {
-    situacaoAnotador(indice, pessoa).then((s) => {
+  // ------------------------------------------------------------------ o mesmo código em outro computador
+  // duas pessoas com o mesmo código gravariam os mesmos nomes de arquivo (o Drive guardaria só um) e
+  // uma não revisaria a outra; a mesma pessoa em dois computadores é normal — ela confirma uma vez
+  async function conferirCodigo() {
+    if (!pessoa) return;
+    const aviso = $("aviso-codigo");
+    try {
+      const outros = await ctx.outrosComputadores(pessoa);
       if (!vivo) return;
+      if (outros.length && !ctx.codigoConfirmado(pessoa)) {
+        const desde = outros.map((d) => d.criado_em).sort()[0];
+        $("texto-aviso-codigo").textContent = `O código ${pessoa} também é usado em outro computador (desde ${new Date(desde).toLocaleDateString("pt-BR")}). `
+          + "Se é outra pessoa, escolha outro código no alto da página: com o mesmo código, as duas gravariam os mesmos arquivos e uma não revisaria a outra. "
+          + "Se é você em outro computador, tudo bem — só não anote nos dois ao mesmo tempo.";
+        aviso.hidden = false;
+        return; // não registra este computador até a pessoa confirmar (ou salvar algo com o código)
+      }
+      aviso.hidden = true;
+      await ctx.registrarCodigo(pessoa);
+    } finally {
+      aviso.dataset.codigo = pessoa; // conferido (os testes esperam por isto)
+    }
+  }
+  $("sou-eu").onclick = async () => {
+    ctx.confirmarCodigo(pessoa);
+    $("aviso-codigo").hidden = true;
+    await ctx.registrarCodigo(pessoa);
+  };
+
+  // ------------------------------------------------------------------ situação de cada tarefa
+  async function atualizarSituacao() {
+    if (!pessoa) {
+      $("st-camera").textContent = "Digite o seu código no alto da página.";
+      $("st-revisao").textContent = "—";
+      return;
+    }
+    const [sit, pend] = await Promise.allSettled([situacaoAnotador(indice, pessoa), pendentesRevisao(indice, pessoa)]);
+    if (!vivo) return;
+    if (sit.status === "fulfilled") {
+      const s = sit.value;
       $("st-camera").textContent = s.liberado
         ? s.gabarito_total ? `Liberado (gabarito: ${numero(s.mediana_px, 1)} px).` : "Pode anotar."
         : `Em treino: ${s.motivo}.`;
-    }, (e) => {
-      $("st-camera").textContent = mensagemDeErro(e);
-    });
-    pendentesRevisao(indice, pessoa).then((p) => {
-      if (vivo) $("st-revisao").textContent = p.length ? `${p.length} rótulo(s) de outras pessoas esperando revisão.` : "Nada esperando revisão.";
-    }, (e) => {
-      $("st-revisao").textContent = mensagemDeErro(e);
-    });
+    } else {
+      $("st-camera").textContent = mensagemDeErro(sit.reason);
+    }
+    if (pend.status === "fulfilled") {
+      const n = pend.value.length;
+      $("st-revisao").textContent = n ? `${n} rótulo(s) de outras pessoas esperando revisão.` : "Nada esperando revisão.";
+    } else {
+      $("st-revisao").textContent = mensagemDeErro(pend.reason);
+    }
   }
 
   // ------------------------------------------------------------------ importação em curso
@@ -140,17 +201,25 @@ export async function montar(raiz, ctx) {
   const tPlacar = $("placar").querySelector("tbody");
   linhaVazia(tPartidas, 7, "calculando…");
   linhaVazia(tPlacar, 9, "calculando…");
-  calcularPlacar(indice).then(async (pl) => {
+  async function preencherTabelas() {
+    let pl;
+    try {
+      pl = await calcularPlacar(indice);
+    } catch (e) {
+      if (!vivo) return;
+      tPartidas.replaceChildren();
+      linhaVazia(tPartidas, 7, mensagemDeErro(e));
+      return;
+    }
     if (!vivo) return;
-    tPartidas.replaceChildren();
-    if (!pl.partidas.length && !pl.problemas.length) linhaVazia(tPartidas, 7, "Nenhuma partida importada ainda.");
+    const linhasPartidas = [];
     for (const p of pl.problemas) {
       // incompleta (ainda sincronizando) ou com arquivo inválido: fica fora das filas até se resolver
       const aviso = celula(`fora das filas: ${p.erro}`, "erro");
       aviso.colSpan = 6;
       const tr = document.createElement("tr");
       tr.append(celula(p.partida), aviso);
-      tPartidas.append(tr);
+      linhasPartidas.push(tr);
     }
     for (const g of [...pl.partidas].reverse()) {
       const c = (await indice.manifesto(g.partida)).cadastro;
@@ -164,11 +233,18 @@ export async function montar(raiz, ctx) {
         celula(porcento(g.aprovados, g.sorteados), "num"),
         celula(String(g.pendentes_revisao), "num"),
       );
-      tPartidas.append(tr);
+      linhasPartidas.push(tr);
     }
-    tPlacar.replaceChildren();
-    if (!pl.pessoas.length) linhaVazia(tPlacar, 9, "Ninguém anotou ainda.");
-    sugerir(new Set([...nomes.keys(), ...pl.pessoas.map((x) => x.pessoa)])); // quem já anotou nesta pasta
+    if (!vivo) return;
+    tPartidas.replaceChildren(...linhasPartidas);
+    if (!linhasPartidas.length) linhaVazia(tPartidas, 7, "Nenhuma partida importada ainda.");
+    const linhasPlacar = [];
+    const codigos = new Set([...nomes.keys(), ...pl.pessoas.map((x) => x.pessoa)]); // quem já anotou nesta pasta
+    const chave = [...codigos].sort().join(",");
+    if (chave !== sugeridos) {
+      sugeridos = chave;
+      sugerir(codigos); // só quando muda: trocar as sugestões fecharia a lista aberta de quem está digitando
+    }
     for (const p of pl.pessoas) {
       const tr = document.createElement("tr");
       const gab = p.gabarito_n ? `${numero(p.gabarito_mediana_px, 1)} px (${p.gabarito_n})` : "—";
@@ -183,12 +259,16 @@ export async function montar(raiz, ctx) {
         celula(String(p.dias_seguidos), "num"),
         celula(p.marcos.join(", ") || "—"),
       );
-      tPlacar.append(tr);
+      linhasPlacar.push(tr);
     }
-  }, (e) => {
-    tPartidas.replaceChildren();
-    linhaVazia(tPartidas, 7, mensagemDeErro(e));
-  });
+    tPlacar.replaceChildren(...linhasPlacar);
+    if (!linhasPlacar.length) linhaVazia(tPlacar, 9, "Ninguém anotou ainda.");
+  }
+
+  // o que outras pessoas fazem nos computadores delas chega pela pasta sincronizada
+  const atualizar = () => Promise.allSettled([atualizarSituacao(), preencherTabelas(), conferirCodigo()]);
+  atualizar();
+  const vigia = vigiar(ctx, () => true, atualizar);
 
   // ------------------------------------------------------------------ pasta de trabalho
   if (ctx.modo === "navegador") {
@@ -237,6 +317,7 @@ export async function montar(raiz, ctx) {
   return {
     desmontar() {
       vivo = false;
+      vigia.parar();
       if (ouvinte) imp.ouvintes.delete(ouvinte);
     },
   };

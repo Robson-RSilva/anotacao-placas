@@ -68,10 +68,16 @@
           <button type="button" class="primario" id="criar-vazia">Criar pasta de trabalho</button>
           <button type="button" id="criar-exemplo">Criar com o exemplo (estádio sintético)</button>
           <button type="button" id="trocar-vazia">Escolher outra pasta</button>
+          <label class="botao">Trazer a cópia de um .zip<input type="file" id="trazer-zip-vazia" accept=".zip,application/zip" hidden></label>
         </div>
+        <p class="sutil" id="res-vazia" role="status"></p>
       </section>
 
       <div id="conteudo-central">
+        <section id="aviso-codigo" class="cartao alerta" role="alert" hidden>
+          <p id="texto-aviso-codigo"></p>
+          <div class="botoes"><button type="button" id="sou-eu">Sou eu, em outro computador</button></div>
+        </section>
         <section class="cartoes">
           <article class="cartao">
             <h2>Câmera do quadro</h2>
@@ -341,14 +347,6 @@
           </label>
           <label class="largo">Observações <input name="observacoes" autocomplete="off"></label>
           <label class="largo">Vídeo <input name="video" type="file" accept="video/mp4,video/quicktime,.mp4,.mov,.m4v" required></label>
-          <details class="largo youtube" id="youtube">
-            <summary>Vídeo do YouTube</summary>
-            <p class="sutil">A página não consegue baixar do YouTube: quem importa baixa com o comando abaixo, num terminal do computador (Prompt de Comando, PowerShell ou Terminal), e escolhe o arquivo em Vídeo. Com os trechos preenchidos, baixa só eles — e o arquivo já vem com os trechos aplicados.</p>
-            <label>Link do vídeo <input id="link-youtube" type="url" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://www.youtube.com/watch?v=…"></label>
-            <div class="comando"><code id="comando-youtube"></code><button type="button" id="copiar-comando">Copiar</button></div>
-            <p class="sutil" id="estado-copiar" role="status"></p>
-            <p class="sutil">Na primeira vez, instale o comando (precisa do Python 3.11 ou mais novo): <code>pip install "anotacao-placas[baixar] @ git+https://github.com/Robson-RSilva/anotacao-placas"</code></p>
-          </details>
           <div class="largo botoes">
             <button type="submit" class="primario" id="processar">Processar</button>
             <button type="button" id="cancelar" hidden>Cancelar</button>

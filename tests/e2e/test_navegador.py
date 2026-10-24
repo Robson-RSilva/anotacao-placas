@@ -210,13 +210,13 @@ def _ajustar_molde(pagina, cam_v: Camera, registro: str) -> None:
 
 
 def _escolher_pessoa(pagina, url: str, codigo: str) -> None:
-    """Digita o código no alto da página central (não há equipe cadastrada)."""
+    """Digita o código no alto da página central (não há equipe cadastrada) e espera a central dele."""
     pagina.goto(url + "#/")
     pagina.wait_for_selector("#pessoa:not([disabled])")
     pagina.fill("#pessoa", codigo)
     pagina.press("#pessoa", "Enter")
     pagina.wait_for_function(f"localStorage.getItem('anotacao.pessoa') === '{codigo}'")
-    pagina.wait_for_selector("#st-camera")
+    pagina.wait_for_selector(f"#aviso-codigo[data-codigo='{codigo}']", state="attached")
 
 
 def _proximo(pagina, pessoa: str) -> dict:
@@ -364,6 +364,206 @@ def test_importar_anotar_revisar_e_unificar(site, video, navegador, capturas, tm
     assert not erros, erros
 
 
+# ---------------------------------------------------------------- duas pessoas, dois computadores
+
+
+def _arquivos(pagina) -> dict[str, bytes]:
+    """Todos os arquivos da pasta de trabalho deste navegador: caminho -> conteúdo."""
+    lista = pagina.evaluate(
+        """async () => {
+            const out = [];
+            async function andar(alca, prefixo) {
+                for await (const [nome, h] of alca.entries()) {
+                    const caminho = prefixo ? `${prefixo}/${nome}` : nome;
+                    if (h.kind === "directory") { await andar(h, caminho); continue; }
+                    if (nome.endsWith(".crswap")) continue;
+                    const b = new Uint8Array(await (await h.getFile()).arrayBuffer());
+                    let s = "";
+                    for (let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode(...b.subarray(i, i + 0x8000));
+                    out.push([caminho, btoa(s)]);
+                }
+            }
+            await andar(anotacao.pasta.raiz, "");
+            return out;
+        }"""
+    )
+    return {c: base64.b64decode(b) for c, b in lista}
+
+
+def _sincronizar(origem, destino) -> int:
+    """Faz o papel do Drive: o que é novo ou mudou na pasta de um computador chega na do outro."""
+    no_destino = _arquivos(destino)
+    novos = [[c, base64.b64encode(d).decode()] for c, d in _arquivos(origem).items() if no_destino.get(c) != d]
+    destino.evaluate(
+        """async (arquivos) => {
+            for (const [caminho, b64] of arquivos) {
+                const s = atob(b64);
+                const b = new Uint8Array(s.length);
+                for (let i = 0; i < s.length; i++) b[i] = s.charCodeAt(i);
+                await anotacao.pasta.escrever(caminho, b, { sobrescrever: true });
+            }
+        }""",
+        novos,
+    )
+    return len(novos)
+
+
+def _sem_marcacoes(pagina) -> None:
+    """Salva o quadro aberto como "sem marcações suficientes" (rápido, sem ajustar o molde)."""
+    pagina.wait_for_selector("#painel:not([hidden])")
+    antes = pagina.evaluate("editor && editor.img.src")
+    pagina.check("input[name=situacao][value=sem_marcacoes]")
+    pagina.click("#salvar")
+    pagina.wait_for_function(
+        "(antes) => document.querySelector('#erro').textContent === '' && (!window.editor || editor.img.src !== antes)",
+        arg=antes,
+    )
+
+
+def test_dois_computadores_na_pasta_sincronizada(site, video, navegador, capturas):
+    """Cada pessoa no seu computador, com a mesma pasta sincronizada (aqui, dois navegadores separados
+    e o papel do Drive feito à mão): Ana anota, Bruno revisa no dele e devolve, Ana recebe de volta. As
+    páginas paradas sem nada a fazer pegam sozinhas o que chega."""
+    caminho, _ = video
+    erros: list[str] = []
+    ana = _pagina(navegador, erros)
+    bruno = _pagina(navegador, erros)
+    _importar(ana, site, caminho)
+    ana.evaluate("anotacao.intervaloAtualizar = 300")  # nos testes, a página parada confere a cada 0,3 s
+    # o computador do Bruno abre a pasta antes de o Drive terminar de trazer os arquivos
+    bruno.goto(site)
+    bruno.evaluate("anotacao.intervaloAtualizar = 300")
+    bruno.click("#btn-navegador")
+    bruno.wait_for_selector("#aviso-vazia", state="visible")
+    assert _sincronizar(ana, bruno) > 0
+    _escolher_pessoa(bruno, site, "B02")  # a central aparece sozinha quando a pasta chega
+    assert bruno.is_hidden("#aviso-codigo")
+    bruno.goto(site + "#/revisao")
+    bruno.wait_for_selector("#vazio:has-text('Nenhum rótulo')")
+    # a Ana anota os três quadros da partida
+    ana.goto(site + "#/camera")
+    for _ in range(3):
+        _sem_marcacoes(ana)
+    ana.wait_for_selector("#vazio:has-text('Nada na sua fila')")
+    assert len(_listar(ana, f"partidas/{PARTIDA}/rotulos/camera")) == 3
+    # chegam no computador do Bruno: a revisão, parada, acha os rótulos sem recarregar
+    _sincronizar(ana, bruno)
+    bruno.wait_for_selector("#devolver", state="visible", timeout=10_000)
+    assert "A01" not in bruno.inner_text("main")
+    devolvido = bruno.evaluate("document.querySelector('#pendentes').textContent")
+    assert devolvido.startswith("3")
+    bruno.click("#devolver")
+    bruno.select_option("#motivo", "outro")
+    bruno.fill("#comentario-dev", "confira o quadro")
+    bruno.click("#confirmar-devolver")
+    bruno.wait_for_function("document.querySelector('#pendentes').textContent.startsWith('2')")
+    revisoes = _listar(bruno, f"partidas/{PARTIDA}/revisoes/camera")
+    assert len(revisoes) == 1 and "__B02__v1" in revisoes[0]
+    # a decisão volta para a Ana: a página da câmera, parada, mostra o devolvido
+    _sincronizar(bruno, ana)
+    ana.wait_for_selector("#devolvido:not([hidden])", timeout=10_000)
+    assert "confira o quadro" in ana.inner_text("#devolvido")
+    ana.screenshot(path=str(capturas / "e2e_8_devolvido_de_outro_computador.png"))
+    # e o placar dos dois computadores conta igual
+    _sincronizar(ana, bruno)
+    for p in (ana, bruno):
+        p.goto(site + "#/")
+        p.wait_for_function("document.querySelectorAll('#placar tbody tr td').length > 1")
+    linhas = [p.eval_on_selector_all("#placar tbody tr", "trs => trs.map(tr => tr.textContent)") for p in (ana, bruno)]
+    assert linhas[0] == linhas[1]
+    assert not erros, erros
+
+
+def test_mesmo_codigo_em_dois_computadores(site, navegador, capturas):
+    """Duas pessoas com o mesmo código gravariam uma por cima da outra e uma não revisaria a outra: a
+    página avisa quando o código já é usado em outro computador."""
+    erros: list[str] = []
+    ana = _pagina(navegador, erros)
+    bruno = _pagina(navegador, erros)
+    ana.goto(site)
+    ana.click("#btn-navegador")
+    ana.click("#criar-vazia")
+    _escolher_pessoa(ana, site, "AB")
+    assert ana.is_hidden("#aviso-codigo")
+    assert len(_listar(ana, "pessoas/AB")) == 1  # o computador da Ana usa o código AB
+    bruno.goto(site)
+    bruno.evaluate("anotacao.intervaloAtualizar = 300")
+    bruno.click("#btn-navegador")
+    bruno.wait_for_selector("#aviso-vazia", state="visible")
+    _sincronizar(ana, bruno)
+    _escolher_pessoa(bruno, site, "AB")
+    assert bruno.is_visible("#aviso-codigo")
+    assert "também é usado em outro computador" in bruno.inner_text("#aviso-codigo")
+    bruno.screenshot(path=str(capturas / "e2e_9_mesmo_codigo.png"))
+    assert len(_listar(bruno, "pessoas/AB")) == 1  # o Bruno ainda não conta como usando o AB
+    # era engano: com outro código, o aviso some, e o computador da Ana não fica sabendo do engano
+    _escolher_pessoa(bruno, site, "BR")
+    assert bruno.is_hidden("#aviso-codigo")
+    _sincronizar(bruno, ana)
+    ana.reload()
+    ana.wait_for_selector("#aviso-codigo[data-codigo='AB']", state="attached")
+    assert ana.is_hidden("#aviso-codigo")
+    # a mesma pessoa em dois computadores: "sou eu" e o aviso não volta
+    _escolher_pessoa(bruno, site, "AB")
+    assert bruno.is_visible("#aviso-codigo")
+    bruno.click("#sou-eu")
+    assert bruno.is_hidden("#aviso-codigo")
+    bruno.reload()
+    bruno.wait_for_selector("#aviso-codigo[data-codigo='AB']", state="attached")
+    assert bruno.is_hidden("#aviso-codigo")
+    assert len(_listar(bruno, "pessoas/AB")) == 2
+    assert not erros, erros
+
+
+def test_dois_computadores_por_zip(site, video, navegador, tmp_path):
+    """Sem pasta sincronizada: quem importou manda a cópia da pasta, a outra pessoa revisa e devolve
+    só os arquivos dela."""
+    caminho, _ = video
+    erros: list[str] = []
+    ana = _pagina(navegador, erros)
+    bruno = _pagina(navegador, erros)
+    _importar(ana, site, caminho)
+    ana.goto(site + "#/camera")
+    _sem_marcacoes(ana)
+    ana.goto(site + "#/")
+    with ana.expect_download() as baixado:
+        ana.click("#baixar-tudo")
+    copia = tmp_path / "pasta-da-ana.zip"
+    baixado.value.save_as(copia)
+    # o Bruno começa com o armazenamento vazio e traz a cópia direto
+    bruno.goto(site)
+    bruno.click("#btn-navegador")
+    bruno.wait_for_selector("#aviso-vazia", state="visible")
+    bruno.set_input_files("#trazer-zip-vazia", str(copia))
+    bruno.wait_for_selector("#conteudo-central:not([hidden])", timeout=20_000)
+    _escolher_pessoa(bruno, site, "B02")
+    bruno.goto(site + "#/revisao")
+    bruno.wait_for_selector("#aprovar", state="visible")
+    bruno.click("#aprovar")
+    bruno.wait_for_selector("#vazio", state="visible")
+    bruno.goto(site + "#/")
+    bruno.wait_for_selector("#baixar-meus:not([disabled])")
+    with bruno.expect_download() as baixado:
+        bruno.click("#baixar-meus")
+    do_bruno = tmp_path / "do-bruno.zip"
+    baixado.value.save_as(do_bruno)
+    with zipfile.ZipFile(do_bruno) as z:
+        nomes = z.namelist()
+    assert any("/revisoes/camera/" in n and "__B02__" in n for n in nomes)
+    assert not any("/quadros/" in n or "__A01__" in n for n in nomes), nomes  # só o que é dele
+    # a Ana traz os arquivos do Bruno: a revisão conta no placar dela
+    ana.set_input_files("#trazer-zip", str(do_bruno))
+    ana.wait_for_function("document.querySelector('#res-pasta').textContent.includes('novo')")
+    assert "conflito" not in ana.inner_text("#res-pasta")
+    # a central se refaz com o que chegou: o rótulo da Ana aprovado pelo Bruno
+    ana.wait_for_function(
+        """() => [...document.querySelectorAll('#placar tbody tr')]
+            .some((tr) => tr.children[0]?.textContent.startsWith('A01') && tr.children[2]?.textContent === '1')""",
+        timeout=20_000,
+    )
+    assert not erros, erros
+
+
 def test_quadros_marcados_como_chave_sem_ser(site, video, navegador, tmp_path):
     """O MP4 marca como chave quadros que não são (como os quadros I de H.264 que não são IDR) e o
     navegador recusa começar a decodificar neles: a leitura começa no primeiro que ele aceita, e a
@@ -409,59 +609,6 @@ def test_trecho_que_comeca_numa_chave_falsa(site, video, navegador, tmp_path):
     assert par["quadros_nao_extraidos"] == 0 and par["quadros_sem_chave_no_inicio"] == 0
     assert fila.itens and all(55 <= it.i <= 94 for it in fila.itens)
     _bate_com_o_video(pagina, fila, origem.parent / "quadros")
-    assert not erros, erros
-
-
-def test_baixar_e_importar(site, video, navegador, tmp_path):
-    """O vídeo que o `anotacao baixar` trouxe só com uns trechos entra na página com a origem no manifesto,
-    sem aplicar os trechos de novo; e a página monta o comando de baixar a partir do link e dos trechos."""
-    pytest.importorskip("yt_dlp")
-    from anotacao.baixar import baixar
-
-    from servidor_video import ServidorDeVideo
-
-    caminho, _ = video  # 6 s a 25 quadros/s, quadro-chave a cada 1 s
-    with ServidorDeVideo(caminho.parent) as base:
-        arquivo = baixar(base + caminho.name, tmp_path, [(1.3, 2.6), (4.2, 5.5)], avisar=lambda _: None)
-    erros: list[str] = []
-    pagina = _pagina(navegador, erros)
-    pagina.goto(site)
-    pagina.click("#btn-navegador")
-    pagina.click("#criar-exemplo")
-    _escolher_pessoa(pagina, site, "A01")
-    pagina.click("#ir-importar")
-    pagina.click("#youtube summary")
-    assert pagina.is_disabled("#copiar-comando")
-    pagina.fill("#link-youtube", "https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=5s")
-    pagina.fill("input[name=trechos]", "4:12-5:30, 1:18-2:36")
-    assert pagina.inner_text("#comando-youtube") == (
-        'anotacao baixar "https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=5s" --trechos "1:18-2:36, 4:12-5:30"'
-    )
-    assert pagina.is_enabled("#copiar-comando")
-    pagina.fill("input[name=trechos]", "")
-    assert pagina.inner_text("#comando-youtube").endswith('dQw4w9WgXcQ&t=5s"')
-    # outros trechos num vídeo que já veio cortado: avisa antes de ler
-    _preencher_importacao(pagina, arquivo, "0:01-0:02")
-    assert "foi baixado só com os trechos 0:01.3-0:02.6, 0:04.2-0:05.5" in _processar(pagina)
-    pagina.fill("input[name=trechos]", "0:01.3-0:02.6, 0:04.2-0:05.5")  # os mesmos: tudo bem
-    assert _processar(pagina) == ""
-    man = Manifesto.model_validate_json(_ler(pagina, f"partidas/{PARTIDA}/manifesto.json"))
-    fila = Fila.model_validate_json(_ler(pagina, f"partidas/{PARTIDA}/fila.json"))
-    par = man.pre_processamento.parametros
-    assert par["origem"] == "generic:jogo" and par["origem_url"].endswith("/jogo.mp4")
-    assert par["origem_trechos"] == "1.3-2.6;4.2-5.5" and "trechos" not in par
-    assert par["quadros_perdidos"] == 0 and par["quadros_nao_extraidos"] == 0
-    assert man.video.nome_original == "jogo [jogo] trechos.mp4"
-    # cada quadro sorteado é um quadro do vídeo original de dentro dos pedaços baixados (do quadro-chave
-    # antes de cada trecho até o fim dele)
-    quadros = caminho.parent / "quadros"
-    originais = sorted(quadros.glob("*.png"))
-    assert fila.itens
-    for it in fila.itens:
-        jpg = _bytes(pagina, f"partidas/{PARTIDA}/quadros/{it.quadro}.jpg")
-        img = cv2.imdecode(np.frombuffer(jpg, np.uint8), cv2.IMREAD_COLOR)
-        k = max(range(len(originais)), key=lambda j: cv2.PSNR(img, cv2.imread(str(originais[j]))))
-        assert 25 <= k <= 67 or 100 <= k <= 140, (it.quadro, k)
     assert not erros, erros
 
 

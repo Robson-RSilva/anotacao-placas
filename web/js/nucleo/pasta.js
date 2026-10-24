@@ -16,14 +16,17 @@
 //       rotulos/<tarefa>/<quadro>__<anotador>__v<n>.json
 //       revisoes/<tarefa>/<quadro>__<revisor>__v<n>.json
 //     gabarito/itens/<g0001>.json|.jpg, gabarito/rotulos/<tarefa>/...
+//     pessoas/<codigo>/<dispositivo>.json   em que computadores cada código é usado
 //     conjuntos/<data-hora>/            saída do unificar (Python)
 
 import {
   PARTIDA_GABARITO,
   REF_PACOTE_GENERICO,
+  RE_DISPOSITIVO,
   RE_ESTADIO,
   RE_GABARITO,
   RE_PARTIDA,
+  RE_PESSOA,
   RE_QUADRO,
   RE_VERSAO_PACOTE,
   TAREFAS,
@@ -75,6 +78,11 @@ export class Pasta {
   static EQUIPE = "equipe.json";
   static DIVISAO = "divisao.json";
   static PROJETO = "projeto.json";
+
+  /** Registro de um código num navegador (um arquivo por computador: o Drive nunca entra em conflito). */
+  dispositivo(codigo, dispositivo) {
+    return `pessoas/${checar(RE_PESSOA, codigo, "código")}/${checar(RE_DISPOSITIVO, dispositivo, "dispositivo")}.json`;
+  }
 
   pacote(estadio, versao) {
     checar(RE_ESTADIO, estadio, "estádio");
@@ -336,6 +344,30 @@ export class Pasta {
 
   async lerProjeto() {
     return (await this.existe(Pasta.PROJETO)) ? this.ler("projeto", Pasta.PROJETO) : { formato: "projeto/1", nome: "", manual_url: "" };
+  }
+
+  /** Os navegadores em que o código já foi usado: [{dispositivo, criado_em}] (os registros inválidos ficam de fora). */
+  async dispositivosDoCodigo(codigo) {
+    const out = [];
+    for (const item of await this.listar(`pessoas/${checar(RE_PESSOA, codigo, "código")}`)) {
+      const id = item.nome.slice(0, -5);
+      if (item.tipo !== "arquivo" || !item.nome.endsWith(".json") || !RE_DISPOSITIVO.test(id)) continue;
+      try {
+        const d = await this.ler("dispositivo", `pessoas/${codigo}/${item.nome}`);
+        if (d.codigo === codigo && d.dispositivo === id) out.push(d);
+      } catch {
+        // registro quebrado (ou ainda sincronizando): não conta
+      }
+    }
+    return out;
+  }
+
+  /** Registra que o código é usado neste navegador (uma vez; o arquivo nunca muda depois). */
+  async registrarDispositivo(codigo, dispositivo, agora = new Date()) {
+    const caminho = this.dispositivo(codigo, dispositivo);
+    if (await this.existe(caminho)) return false;
+    await this.gravar("dispositivo", caminho, { formato: "pessoa.dispositivo/1", codigo, dispositivo, criado_em: agora.toISOString() });
+    return true;
   }
 
   async lerDivisao() {

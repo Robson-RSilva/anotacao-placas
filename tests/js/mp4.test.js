@@ -3,7 +3,6 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
-import { lerOrigem } from "../../web/js/nucleo/convencoes.js";
 import { ErroVideo, abrirMp4, apresentacao } from "../../web/js/video/mp4.js";
 import { FIXTURES, lerJson } from "./apoio.js";
 
@@ -66,22 +65,4 @@ test("arquivo sem índice ou que não é MP4", async () => {
   await assert.rejects(abrirMp4(leitor(semMoov)), ErroVideo);
   const mkv = new Uint8Array([0x1a, 0x45, 0xdf, 0xa3, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x23, 0x42, 0x86]);
   await assert.rejects(abrirMp4(leitor(mkv)), /não parece um arquivo MP4/);
-});
-
-test("o comentário do MP4 traz a origem gravada pelo anotacao baixar", async () => {
-  const abrir = async (nome) => abrirMp4(leitor(new Uint8Array(readFileSync(new URL(nome, PASTA)))));
-  const baixado = await abrir("h264_baixado.mp4");
-  const origem = lerOrigem(baixado.comentario);
-  assert.deepEqual(origem, {
-    fonte: "youtube",
-    id: "dQw4w9WgXcQ",
-    url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
-    trechos: [[300, 3000], [3900, 6600.25]],
-  });
-  for (const nome of ["h264_b.mp4", "h264_inicio.mp4", "av1.mp4"]) assert.equal(lerOrigem((await abrir(nome)).comentario), null, nome);
-  // comentário de outro programa, ou quebrado: não é origem
-  assert.equal(lerOrigem("gravado no celular"), null);
-  assert.equal(lerOrigem('anotacao/1 {"fonte":"youtube"'), null);
-  assert.equal(lerOrigem('anotacao/1 {"fonte":"youtube","id":"x","trechos":[[5,1]]}').trechos, null);
-  assert.equal(lerOrigem('anotacao/1 {"fonte":"youtube","id":"x","trechos":[]}').trechos, null);
 });

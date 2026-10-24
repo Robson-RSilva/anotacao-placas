@@ -17,6 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from .camera import canonical_side
 from .campo import Campo
 from .convencoes import (
+    RE_DISPOSITIVO,
     RE_ESTADIO,
     RE_GABARITO,
     RE_PACOTE_REF,
@@ -93,6 +94,19 @@ class Projeto(Modelo):
     formato: Literal["projeto/1"] = "projeto/1"
     nome: str = ""
     manual_url: Annotated[str, Field(pattern=r"^(https://\S+)?$", description="link do Manual de anotação")] = ""
+
+
+class DispositivoPessoa(Modelo):
+    """Um código usado num navegador: `pessoas/<codigo>/<dispositivo>.json`, um arquivo por computador.
+
+    Serve para avisar quando duas pessoas escolhem o mesmo código em computadores diferentes — elas
+    gravariam os mesmos nomes de arquivo e uma não revisaria a outra.
+    """
+
+    formato: Literal["pessoa.dispositivo/1"] = "pessoa.dispositivo/1"
+    codigo: Pessoa
+    dispositivo: Annotated[str, Field(pattern=RE_DISPOSITIVO.pattern)]
+    criado_em: datetime
 
 
 class Membro(Modelo):
@@ -382,6 +396,7 @@ ESQUEMAS: dict[str, type[Modelo]] = {
     "rotulo.camera.json": RotuloCamera,
     "revisao.camera.json": RevisaoCamera,
     "gabarito.camera.json": GabaritoCamera,
+    "pessoa.dispositivo.json": DispositivoPessoa,
 }
 
 

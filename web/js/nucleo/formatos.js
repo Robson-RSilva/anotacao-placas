@@ -19,6 +19,7 @@ export const ESQUEMAS = Object.freeze({
   rotulo: "rotulo.camera.json",
   revisao: "revisao.camera.json",
   gabarito: "gabarito.camera.json",
+  dispositivo: "pessoa.dispositivo.json",
 });
 
 export const SITUACOES = Object.freeze(["ok", "sem_marcacoes", "impossivel_transicao", "impossivel_borrao", "duvida"]);

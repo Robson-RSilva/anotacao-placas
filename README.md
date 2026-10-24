@@ -36,12 +36,36 @@ próprio navegador. Os arquivos entram por "Trazer arquivos de um .zip" e saem p
 arquivos (.zip)", na página central, para quem coordena juntar na pasta da equipe. O Firefox e o
 Safari só funcionam assim.
 
+## Cada pessoa no seu computador
+
+Quem anota e quem revisa trabalham cada um no próprio computador, e nada passa pelo site: o que
+liga os dois é a pasta de trabalho.
+
+- **Com a pasta da equipe no Google Drive** (o jeito normal): cada pessoa instala o Google Drive para
+  computador, abre o site e escolhe a **mesma pasta** da equipe. Cada um digita o **seu** código. O
+  rótulo de uma pessoa é um arquivo dela, que o Drive leva para o computador da outra; a revisão
+  volta do mesmo jeito. As páginas paradas sem nada a fazer — a revisão sem rótulos, a câmera sem
+  quadros, a central — conferem sozinhas a cada 15 segundos (e quando você volta para a aba) e
+  mostram o que chegou, sem recarregar. Uma partida importada por uma pessoa aparece para as outras
+  assim que o Drive termina de sincronizar os quadros.
+- **Sem pasta sincronizada**, pelo armazenamento do navegador e arquivos .zip: quem importou a
+  partida e anotou manda **Baixar cópia da pasta (.zip)**; a outra pessoa, com o armazenamento
+  vazio, usa **Trazer a cópia de um .zip**, digita o código dela e revisa; depois manda de volta
+  **Baixar os meus arquivos (.zip)** (só as revisões e correções dela), e quem anotou traz com
+  **Trazer arquivos de um .zip**. O placar dos dois fica igual.
+
+**Cada pessoa com um código diferente.** Com o mesmo código, duas pessoas gravariam os mesmos nomes
+de arquivo (o Drive guardaria um só) e uma não revisaria a outra. A página guarda em que computador
+cada código é usado (`pessoas/<código>/`) e avisa quando o código digitado já é usado em outro; se for
+você mesmo em outro computador, é só confirmar uma vez ("Sou eu, em outro computador") — e não anotar
+nos dois ao mesmo tempo.
+
 ## O fluxo
 
 Não é preciso cadastrar equipe nem levantar o estádio antes: basta importar a partida e anotar.
 
 1. **Importar a partida.** Escreva o nome do estádio e os dados do jogo e escolha o vídeo (MP4 ou MOV
-   em H.264, H.265, VP9 ou AV1; do YouTube, veja [abaixo](#vídeos-do-youtube)). Em **Trechos do vídeo** dá para escolher só as partes que interessam
+   em H.264, H.265, VP9 ou AV1). Em **Trechos do vídeo** dá para escolher só as partes que interessam
    — por exemplo `0:05:00-0:50:00, 1:05:00-1:50:00` para os dois tempos sem o intervalo; vazio, vale o
    vídeo inteiro. O vídeo é lido no navegador com o decodificador do próprio navegador (WebCodecs):
    hash, relógio de cada quadro (PTS), cortes e transições (regras do laboratório, só para organizar o
@@ -84,44 +108,6 @@ anota direto. Em ~10% dos quadros duas pessoas anotam do
 zero, às cegas, para medir a concordância; em outros ~10% a página começa sem previsão, para medir o
 viés de ancoragem.
 
-## Vídeos do YouTube
-
-A página não consegue baixar do YouTube (o navegador não deixa uma página ler o vídeo de outro site),
-então quem importa baixa com um comando, no próprio computador, e escolhe o arquivo na página. Na
-primeira vez, com o Python 3.11 ou mais novo:
-
-```bash
-pip install "anotacao-placas[baixar] @ git+https://github.com/Robson-RSilva/anotacao-placas"
-```
-
-Isso traz o [yt-dlp](https://github.com/yt-dlp/yt-dlp), o Deno (que o yt-dlp usa nos desafios do
-YouTube) e um ffmpeg — nada para instalar à parte. Depois, para cada jogo:
-
-```bash
-anotacao baixar "https://www.youtube.com/watch?v=..."                                       # o vídeo inteiro
-anotacao baixar "https://www.youtube.com/watch?v=..." --trechos "0:05:00-0:50:00, 1:05:00-1:50:00"
-```
-
-Em **Importar partida → Vídeo do YouTube**, a página monta esse comando a partir do link e dos
-trechos, para copiar. O arquivo vai para a pasta em que o terminal está (ou `--pasta`), com o nome
-`<título> [<id>].mp4`, e tem só a imagem, sem som, em MP4 com H.264 até 1080p (`--altura-max` muda),
-que o Chrome e o Edge decodificam pela placa de vídeo.
-
-- **Com trechos**, baixa só eles: cada um do quadro-chave antes do início (alguns segundos antes)
-  até o fim, sem recodificar, e junta tudo num arquivo só. O arquivo guarda no comentário do MP4 de
-  onde veio e quais trechos tem: na página, deixe o campo Trechos vazio (ou com os mesmos trechos) —
-  outros trechos são recusados, porque contariam o tempo do arquivo como se fosse o do vídeo
-  original. O manifesto da partida registra a origem (`origem`, `origem_url`, `origem_trechos`).
-- **Sem trechos**, baixa o vídeo inteiro, e os trechos podem ser escolhidos na página.
-- Se o YouTube pedir para confirmar que não é um robô, rode de novo com
-  `--cookies-do-navegador firefox` (ou o navegador em que você está logado no YouTube).
-- O YouTube muda com frequência; quando o download parar de funcionar, `pip install -U yt-dlp`
-  costuma resolver.
-
-O download por trechos é feito pelo ffmpeg, e o vídeo inteiro pelo próprio yt-dlp. Se os trechos
-vierem lentos, baixe o vídeo inteiro e escolha os trechos na página. O direito de uso das transmissões
-vale também para essa cópia (veja [Dados e privacidade](#dados-e-privacidade)).
-
 ## Pasta de trabalho
 
 ```text
@@ -136,6 +122,7 @@ trabalho/                                   a pasta da equipe, sincronizada com 
     rotulos/camera/<quadro>__<código>__v<n>.json
     revisoes/camera/<quadro>__<código>__v<n>.json
   gabarito/itens/, gabarito/rotulos/          nunca entram no treino
+  pessoas/<código>/<navegador>.json           em que computadores cada código é usado
   conjuntos/<data-hora>/                      saída do unificar
 ```
 
@@ -150,7 +137,6 @@ python -m venv .venv && source .venv/bin/activate     # no Windows: .venv\Script
 pip install -e .
 
 anotacao exemplo trabalho                   # pasta de exemplo: estádio sintético e os nomes de A01/A02
-anotacao baixar LINK [--trechos T]          # baixa do YouTube para importar (extra [baixar], acima)
 anotacao gabarito ORIGEM --pasta P          # importa itens do gabarito (<id>.json + JPEG)
 anotacao prever --pasta P --previsor pacote.modulo:objeto   # câmera prevista para o molde abrir perto
 anotacao validar --pasta P                  # confere todos os arquivos
@@ -171,7 +157,7 @@ vez só, no repositório: **Settings → Pages → Build and deployment → Sour
 ## Desenvolvimento
 
 ```bash
-pip install -e ".[dev,baixar]"
+pip install -e ".[dev]"
 python -m http.server 8000 --bind 127.0.0.1 --directory web   # http://127.0.0.1:8000
 ruff check . && ruff format --check .
 pytest                                    # Python
@@ -189,6 +175,7 @@ em [docs/arquitetura.md](docs/arquitetura.md) e decisões em [docs/adr/](docs/ad
 
 ## Próximos passos
 
+- Baixar o vídeo pela própria página (depende de onde os vídeos vêm).
 - Página de oclusão nas placas (máscara por classe, a fração livre calculada dela).
 - Previsor com o detector do laboratório (`anotacao prever --previsor pacote.modulo:objeto`).
 - Indicador ao vivo da distância entre o molde e as linhas que a rede encontrou.

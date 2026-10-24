@@ -23,6 +23,11 @@ GitHub Pages (site estático)          navegador de cada pessoa                 
 - **Sem banco de dados:** a verdade são os arquivos JSON na pasta. Filas, placar e conjuntos são
   sempre recalculados deles (com cache por data de modificação e tamanho), e dão o mesmo resultado em
   qualquer máquina. Nada que várias pessoas escrevam vai para um arquivo só.
+- **Cada pessoa no seu computador:** o que liga quem anota a quem revisa é a pasta sincronizada — um
+  arquivo por pessoa e por versão, que o Drive leva de um computador para o outro (ou um .zip, sem
+  Drive). As páginas paradas sem nada a fazer (`ui/vigia.js`) conferem a pasta de tempos em tempos e
+  quando a pessoa volta para a aba, e mostram o que chegou sem recarregar. `pessoas/<código>/` diz em
+  que computadores cada código é usado, para avisar duas pessoas que escolheram o mesmo.
 - **Sem cadastro prévio:** ninguém precisa estar numa equipe nem o estádio precisa estar levantado.
   Cada pessoa digita um código, que só separa os arquivos e conta o placar; as filas são abertas
   (quem chega pega o próximo, cada código começa num ponto diferente da fila). O molde é o campo
@@ -60,7 +65,7 @@ GitHub Pages (site estático)          navegador de cada pessoa                 
 | `video/mp4.js` | índice do MP4: codec e tabela de amostras |
 | `video/descritores.js`, `video/cortes.js`, `video/sorteio.js` | do vídeo aos quadros sorteados (as contas da v0.1) |
 | `video/importar.js`, `video/trabalhador.js` | a importação, num worker |
-| `ui/` | as vistas (central, câmera, revisão, importar, coordenação), o editor e a escolha da pasta |
+| `ui/` | as vistas (central, câmera, revisão, importar, coordenação), o editor, a escolha da pasta e a vigia que pega o que chega de outros computadores |
 
 `nucleo/` e as contas de `video/` não dependem da página: rodam no Node (`node --test`) e no worker.
 
@@ -73,7 +78,6 @@ GitHub Pages (site estático)          navegador de cada pessoa                 
 | `pasta.py`, `indice.py` | layout da pasta, escrita atômica, índice |
 | `pacote.py` | validação do pacote, o campo genérico e o estádio sintético |
 | `gabarito.py`, `previsores.py` | importar o gabarito; previsões do modelo para o molde |
-| `baixar.py`, `trechos.py` | baixar do YouTube (inteiro ou só os trechos) para importar na página |
 | `unificar.py` | conjuntos de treino em Parquet |
 | `geracao.py` | arquivos que as páginas leem e saem do Python (esquemas, exemplo, convenções) |
 | `cli.py` | linha de comando |
@@ -81,8 +85,7 @@ GitHub Pages (site estático)          navegador de cada pessoa                 
 ## Segurança e privacidade
 
 - A página só fala com o próprio site: a CSP (`connect-src 'self'`) impede que ela mande dados para
-  outro endereço, e o service worker só guarda os arquivos do site. Por isso o download do YouTube
-  é um comando no computador de quem importa, e não a página (ADR-0007).
+  outro endereço, e o service worker só guarda os arquivos do site.
 - O acesso à pasta é o que o navegador concede: só a pasta escolhida, com permissão confirmada pela
   pessoa. Todos os caminhos passam pela validação dos IDs (nada de `../`).
 - A página não mostra a partida, o quadro nem o autor do que está anotando ou revisando, para o

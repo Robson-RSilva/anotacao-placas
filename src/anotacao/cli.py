@@ -4,7 +4,6 @@ As páginas de anotação rodam no navegador (GitHub Pages) e gravam na pasta de
 comandos trabalham sobre a mesma pasta:
 
 anotacao exemplo trabalho/                  cria uma pasta de trabalho de exemplo
-anotacao baixar LINK [--trechos "0:05:00-0:50:00, 1:05:00-1:50:00"]   baixa do YouTube para importar
 anotacao gabarito ORIGEM --pasta trabalho/  importa itens do gabarito
 anotacao prever --pasta trabalho/ --previsor pacote.modulo:objeto   previsões para o molde
 anotacao validar --pasta trabalho/          confere todos os arquivos
@@ -21,15 +20,13 @@ import sys
 from pathlib import Path
 
 from . import __version__
-from .baixar import ErroBaixar, baixar
-from .formatos import Divisao, exportar_esquemas
+from .formatos import DispositivoPessoa, Divisao, exportar_esquemas
 from .gabarito import importar as importar_gabarito
 from .geracao import equipe_exemplo
 from .indice import Indice
 from .pacote import pacote_sintetico, validar_geometria
-from .pasta import Pasta, escrever_json
+from .pasta import Pasta, escrever_json, ler_json
 from .previsores import carregar_previsor, prever
-from .trechos import ErroTrechos, ler_trechos
 from .unificar import unificar
 
 
@@ -79,6 +76,13 @@ def cmd_validar(a: argparse.Namespace) -> int:
         problemas += [f"{p.relative_to(pasta.raiz)}: {e}" for p, e in ip.invalidos]
     gab = indice.partida("gabarito")
     problemas += [f"{p.relative_to(pasta.raiz)}: {e}" for p, e in gab.invalidos]
+    for registro in sorted(pasta.pessoas.glob("*/*.json")):  # em que computadores cada código é usado
+        try:
+            d = ler_json(registro, DispositivoPessoa)
+            if d.codigo != registro.parent.name or d.dispositivo != registro.stem:
+                raise ValueError("o conteúdo não bate com o nome do arquivo")
+        except (ValueError, OSError) as e:
+            problemas.append(f"{registro.relative_to(pasta.raiz)}: {e}")
     for linha in problemas:
         print(linha)
     print(f"{len(problemas)} problema(s) em {len(pasta.listar_partidas())} partida(s)")
@@ -106,22 +110,6 @@ def cmd_prever(a: argparse.Namespace) -> int:
     previsor = carregar_previsor(a.previsor)
     n = prever(Pasta(a.pasta), previsor, a.partida or None, refazer=a.refazer)
     print(f"{n} previsões gravadas ({previsor.nome}@{previsor.versao})")
-    return 0
-
-
-def cmd_baixar(a: argparse.Namespace) -> int:
-    try:
-        trechos = ler_trechos(a.trechos)
-        arquivo = baixar(a.link, a.pasta, trechos, a.altura_max, a.cookies_do_navegador)
-    except (ErroTrechos, ErroBaixar) as e:
-        print(f"erro: {e}", file=sys.stderr)
-        return 1
-    print(f"Pronto: {arquivo}")
-    if trechos:
-        print("Na página, em Importar partida, escolha este arquivo. Ele já tem só os trechos: o campo Trechos")
-        print("fica vazio (ou com os mesmos trechos).")
-    else:
-        print("Na página, em Importar partida, escolha este arquivo (e, se quiser, os trechos).")
     return 0
 
 
@@ -161,18 +149,6 @@ def construir_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("unificar", help="gera os conjuntos de treino")
     p.add_argument("--pasta", default=_pasta_padrao())
     p.set_defaults(func=cmd_unificar)
-
-    p = sub.add_parser("baixar", help="baixa um vídeo do YouTube (inteiro ou só os trechos) para importar na página")
-    p.add_argument("link", help="o endereço do vídeo, entre aspas")
-    p.add_argument("--trechos", help='como na página: "0:05:00-0:50:00, 1:05:00-1:50:00" (sem: o vídeo inteiro)')
-    p.add_argument("--pasta", default=".", help="onde gravar o arquivo (padrão: a pasta atual)")
-    p.add_argument("--altura-max", type=int, default=1080, help="resolução máxima, em linhas (padrão: 1080)")
-    p.add_argument(
-        "--cookies-do-navegador",
-        metavar="NAVEGADOR",
-        help="usa o login do YouTube deste navegador (firefox, chrome, edge…) quando ele pede para provar que é gente",
-    )
-    p.set_defaults(func=cmd_baixar)
 
     p = sub.add_parser("esquemas", help="exporta os JSON Schemas dos formatos")
     p.add_argument("destino")

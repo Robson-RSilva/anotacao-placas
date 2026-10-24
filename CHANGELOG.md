@@ -5,6 +5,32 @@ Formato de [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); versões
 
 ## [Não lançado]
 
+## [0.5.0] - 2026-10-24
+
+Cada pessoa no seu computador: quem anota e quem revisa trabalham em computadores diferentes, ligados
+pela pasta sincronizada (ou por .zip). Sai o download do YouTube.
+
+### Removido
+
+- `anotacao baixar`, o extra `baixar` e o "Vídeo do YouTube" da importação (ADR-0007 revogada): os
+  vídeos voltam a ser importados do computador, como na 0.3.0, com os trechos escolhidos na página.
+
+### Adicionado
+
+- As páginas paradas sem nada a fazer — a revisão sem rótulos, a câmera sem quadros, a central —
+  conferem a pasta a cada 15 segundos e quando a pessoa volta para a aba, e mostram o que chegou de
+  outro computador sem recarregar. Uma pasta que ainda está sincronizando vira pasta de trabalho
+  sozinha quando os arquivos chegam.
+- Aviso quando o código digitado já é usado em outro computador (`pessoas/<código>/<navegador>.json`,
+  um arquivo por computador): duas pessoas com o mesmo código gravariam os mesmos arquivos e uma não
+  revisaria a outra. A mesma pessoa em dois computadores confirma uma vez ("Sou eu, em outro
+  computador"). O `anotacao validar` confere esses registros.
+- "Trazer a cópia de um .zip" com o armazenamento ainda vazio: quem recebe a pasta de outra pessoa
+  começa direto por ela, sem conflitos com uma pasta recém-criada.
+- Testes de ponta a ponta com duas pessoas em dois navegadores separados: pela pasta sincronizada (o
+  rótulo vai, a devolução volta, o placar fica igual) e por .zip.
+- No CI, cada teste do Python que falha vira uma anotação do trabalho.
+
 ## [0.4.0] - 2026-10-24
 
 Vídeos do YouTube: baixar o jogo inteiro ou só os trechos que interessam, e importar na página

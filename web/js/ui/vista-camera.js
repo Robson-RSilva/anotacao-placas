@@ -9,6 +9,7 @@ import { salvarRotulo } from "../nucleo/rotulos.js";
 import { Editor } from "./editor.js";
 import { ligarMedidas } from "./medidas.js";
 import { TempoAtivo } from "./tempo.js";
+import { vigiar } from "./vigia.js";
 import { el, formatarTempo, imagemDoArquivo, mensagemDeErro, numero } from "./util.js";
 
 export const CLASSE = "pagina-editor";
@@ -203,6 +204,7 @@ export async function montar(raiz, ctx) {
         segundos_ativos: tempo.segundos(),
       });
       item = null; // gravado: daqui não se salva de novo este quadro
+      ctx.registrarCodigo(feito.pessoa); // o código passa a constar como usado neste computador
       if (feito.treino) {
         const g = (await indice.itensGabarito()).find((x) => x.id === feito.quadro);
         const d = await compararComGabarito(indice, rotulo.camera, g, rotulo.campo);
@@ -270,9 +272,12 @@ export async function montar(raiz, ctx) {
   window.addEventListener("keydown", teclas);
 
   await abrirProximo();
+  // sem nada na fila, a página confere sozinha se chegou algo (um devolvido, uma partida nova)
+  const vigia = vigiar(ctx, () => !item && !salvando && !$("vazio").hidden && $("modal").hidden, abrirProximo);
 
   return {
     desmontar() {
+      vigia.parar();
       window.removeEventListener("keydown", teclas);
       window.removeEventListener("storage", aoTrocarPessoa);
       tempo.destruir();

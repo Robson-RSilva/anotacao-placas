@@ -124,3 +124,23 @@ test("arquivo vazio (escrita interrompida ou sincronizando) conta como ausente e
   assert.deepEqual(await p.lerJson("a/b.json"), { x: 1 });
   await assert.rejects(p.escreverJson("a/b.json", { x: 2 }), ArquivoExiste);
 });
+
+test("em que computadores cada código é usado: um registro por navegador, gravado uma vez", async () => {
+  const pasta = new Pasta(new PastaMemoria());
+  await pasta.criar();
+  const meu = "3f2a6c1e-8b9d-4e2f-a1b3-c4d5e6f70812";
+  const outro = "0b1c2d3e-4f50-4617-8899-aabbccddeeff";
+  assert.equal(pasta.dispositivo("AB", meu), `pessoas/AB/${meu}.json`);
+  assert.throws(() => pasta.dispositivo("ab", meu), /código/);
+  assert.throws(() => pasta.dispositivo("AB", "../x"), /dispositivo/);
+  assert.deepEqual(await pasta.dispositivosDoCodigo("AB"), []);
+  assert.equal(await pasta.registrarDispositivo("AB", meu, new Date("2026-10-23T10:00:00Z")), true);
+  assert.equal(await pasta.registrarDispositivo("AB", meu), false); // uma vez só: o arquivo nunca muda
+  await pasta.registrarDispositivo("AB", outro, new Date("2026-10-24T09:00:00Z"));
+  await pasta.registrarDispositivo("CD", outro);
+  await pasta.escrever(`pessoas/AB/${"f".repeat(8)}-0000-0000-0000-000000000000.json`, "{ quebrado"); // sincronizando
+  await pasta.escrever("pessoas/AB/notas.txt", "não é registro");
+  const ab = await pasta.dispositivosDoCodigo("AB");
+  assert.deepEqual(ab.map((d) => d.dispositivo).sort(), [meu, outro].sort());
+  assert.equal(ab.find((d) => d.dispositivo === meu).criado_em, "2026-10-23T10:00:00.000Z");
+});

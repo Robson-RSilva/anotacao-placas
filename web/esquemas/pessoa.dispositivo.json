@@ -1,0 +1,34 @@
+{
+  "additionalProperties": false,
+  "description": "Um código usado num navegador: `pessoas/<codigo>/<dispositivo>.json`, um arquivo por computador.\n\nServe para avisar quando duas pessoas escolhem o mesmo código em computadores diferentes — elas\ngravariam os mesmos nomes de arquivo e uma não revisaria a outra.",
+  "properties": {
+    "codigo": {
+      "pattern": "^[A-Z][A-Z0-9]{1,9}$",
+      "title": "Codigo",
+      "type": "string"
+    },
+    "criado_em": {
+      "format": "date-time",
+      "title": "Criado Em",
+      "type": "string"
+    },
+    "dispositivo": {
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+      "title": "Dispositivo",
+      "type": "string"
+    },
+    "formato": {
+      "const": "pessoa.dispositivo/1",
+      "default": "pessoa.dispositivo/1",
+      "title": "Formato",
+      "type": "string"
+    }
+  },
+  "required": [
+    "codigo",
+    "dispositivo",
+    "criado_em"
+  ],
+  "title": "DispositivoPessoa",
+  "type": "object"
+}
