@@ -3,10 +3,21 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
-import { ErroTrechos, formatarTempo, formatarTrechos, lerTempo, lerTrechos } from "../../web/js/nucleo/trechos.js";
+import {
+  ErroTrechos,
+  formatarTempo,
+  formatarTrechos,
+  lerTempo,
+  lerTrechos,
+  mesmosTrechos,
+  tempoExato,
+  trechosParaTexto,
+} from "../../web/js/nucleo/trechos.js";
 import { gruposDaPassada, planejarTrechos } from "../../web/js/video/importar.js";
 import { abrirMp4, apresentacao } from "../../web/js/video/mp4.js";
-import { FIXTURES } from "./apoio.js";
+import { FIXTURES, lerJson } from "./apoio.js";
+
+const ref = lerJson(new URL("convencoes.json", FIXTURES));
 
 test("tempo: h:mm:ss, mm:ss ou segundos, com fração", () => {
   assert.equal(lerTempo("1:05:00"), 3900);
@@ -31,6 +42,20 @@ test("trechos: separadores, ordem, junção dos que se sobrepõem e vazio = o v�
   assert.deepEqual(lerTrechos("5:00 até 6:00"), [[300, 360]]); // "é" escrito com acento combinado
   assert.deepEqual(lerTrechos("10-20, 15-30, 30-40, 50-60"), [[10, 40], [50, 60]]);
   assert.deepEqual(lerTrechos("0-10, 2-3"), [[0, 10]]);
+});
+
+test("os trechos e os tempos exatos dão o mesmo que no Python (o comando de baixar lê o que a página escreve)", () => {
+  for (const [texto, esperado] of ref.trechos) {
+    if (esperado === "erro") assert.throws(() => lerTrechos(texto), ErroTrechos, JSON.stringify(texto));
+    else assert.deepEqual(lerTrechos(texto), esperado, JSON.stringify(texto));
+  }
+  for (const [s, texto] of ref.tempo_exato) assert.equal(tempoExato(s), texto, String(s));
+  const t = [[2.2, 3.8], [300, 3000], [3900, 6600.25]];
+  assert.equal(trechosParaTexto(t), "0:02.2-0:03.8, 5:00-50:00, 1:05:00-1:50:00.25");
+  assert.deepEqual(lerTrechos(trechosParaTexto(t)), t);
+  assert.ok(mesmosTrechos(t, [[2.2, 3.8], [300, 3000], [3900, 6600.2504]]));
+  assert.ok(!mesmosTrechos(t, [[2.2, 3.8], [300, 3000]]));
+  assert.ok(!mesmosTrechos(t, [[2.2, 3.8], [300, 3001], [3900, 6600.25]]));
 });
 
 test("trechos que não dá para ler, ou ao contrário, dizem qual é", () => {

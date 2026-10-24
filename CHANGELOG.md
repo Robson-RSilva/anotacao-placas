@@ -5,6 +5,25 @@ Formato de [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); versões
 
 ## [Não lançado]
 
+## [0.4.0] - 2026-10-24
+
+Vídeos do YouTube: baixar o jogo inteiro ou só os trechos que interessam, e importar na página
+(ADR-0007).
+
+### Adicionado
+
+- `anotacao baixar LINK [--trechos ...]` (extra `baixar`: yt-dlp, Deno e ffmpeg pelo pip). Baixa só a
+  imagem, em MP4 com H.264 até 1080p; com trechos, baixa só eles (cada um do quadro-chave antes do
+  início até o fim, sem recodificar) e junta num arquivo só, em ordem. O arquivo guarda a origem no
+  comentário do MP4. Opções `--pasta`, `--altura-max` e `--cookies-do-navegador` (quando o YouTube
+  pede para confirmar que não é um robô).
+- Importar partida → Vídeo do YouTube: a página monta o comando a partir do link e dos trechos, para
+  copiar.
+- A importação lê a origem do arquivo baixado e registra no manifesto (`origem`, `origem_url`,
+  `origem_trechos`); num arquivo que já veio só com uns trechos, outros trechos são recusados antes de
+  ler o vídeo, e os mesmos não são aplicados de novo.
+- O mesmo leitor de trechos no Python e na página, testado com os mesmos casos.
+
 ## [0.3.0] - 2026-10-23
 
 Anotar sem cadastrar equipe nem levantar o estádio antes (ADR-0006), e importar só os trechos do

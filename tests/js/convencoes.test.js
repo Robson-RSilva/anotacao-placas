@@ -13,6 +13,7 @@ test("versão, referência, manual e regex iguais aos do Python", () => {
   assert.deepEqual({ ...c.MANUAL }, ref.manual);
   assert.equal(c.PARTIDA_GABARITO, ref.partida_gabarito);
   assert.equal(c.REF_PACOTE_GENERICO, ref.ref_pacote_generico);
+  assert.equal(c.PREFIXO_ORIGEM, ref.prefixo_origem);
   for (const [nome, padrao] of Object.entries(ref.regex)) assert.equal(c[nome].source, padrao.replaceAll("/", "\\/"), nome);
 });
 

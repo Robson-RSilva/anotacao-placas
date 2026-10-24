@@ -412,6 +412,59 @@ def test_trecho_que_comeca_numa_chave_falsa(site, video, navegador, tmp_path):
     assert not erros, erros
 
 
+def test_baixar_e_importar(site, video, navegador, tmp_path):
+    """O vídeo que o `anotacao baixar` trouxe só com uns trechos entra na página com a origem no manifesto,
+    sem aplicar os trechos de novo; e a página monta o comando de baixar a partir do link e dos trechos."""
+    pytest.importorskip("yt_dlp")
+    from anotacao.baixar import baixar
+
+    from servidor_video import ServidorDeVideo
+
+    caminho, _ = video  # 6 s a 25 quadros/s, quadro-chave a cada 1 s
+    with ServidorDeVideo(caminho.parent) as base:
+        arquivo = baixar(base + caminho.name, tmp_path, [(1.3, 2.6), (4.2, 5.5)], avisar=lambda _: None)
+    erros: list[str] = []
+    pagina = _pagina(navegador, erros)
+    pagina.goto(site)
+    pagina.click("#btn-navegador")
+    pagina.click("#criar-exemplo")
+    _escolher_pessoa(pagina, site, "A01")
+    pagina.click("#ir-importar")
+    pagina.click("#youtube summary")
+    assert pagina.is_disabled("#copiar-comando")
+    pagina.fill("#link-youtube", "https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=5s")
+    pagina.fill("input[name=trechos]", "4:12-5:30, 1:18-2:36")
+    assert pagina.inner_text("#comando-youtube") == (
+        'anotacao baixar "https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=5s" --trechos "1:18-2:36, 4:12-5:30"'
+    )
+    assert pagina.is_enabled("#copiar-comando")
+    pagina.fill("input[name=trechos]", "")
+    assert pagina.inner_text("#comando-youtube").endswith('dQw4w9WgXcQ&t=5s"')
+    # outros trechos num vídeo que já veio cortado: avisa antes de ler
+    _preencher_importacao(pagina, arquivo, "0:01-0:02")
+    assert "foi baixado só com os trechos 0:01.3-0:02.6, 0:04.2-0:05.5" in _processar(pagina)
+    pagina.fill("input[name=trechos]", "0:01.3-0:02.6, 0:04.2-0:05.5")  # os mesmos: tudo bem
+    assert _processar(pagina) == ""
+    man = Manifesto.model_validate_json(_ler(pagina, f"partidas/{PARTIDA}/manifesto.json"))
+    fila = Fila.model_validate_json(_ler(pagina, f"partidas/{PARTIDA}/fila.json"))
+    par = man.pre_processamento.parametros
+    assert par["origem"] == "generic:jogo" and par["origem_url"].endswith("/jogo.mp4")
+    assert par["origem_trechos"] == "1.3-2.6;4.2-5.5" and "trechos" not in par
+    assert par["quadros_perdidos"] == 0 and par["quadros_nao_extraidos"] == 0
+    assert man.video.nome_original == "jogo [jogo] trechos.mp4"
+    # cada quadro sorteado é um quadro do vídeo original de dentro dos pedaços baixados (do quadro-chave
+    # antes de cada trecho até o fim dele)
+    quadros = caminho.parent / "quadros"
+    originais = sorted(quadros.glob("*.png"))
+    assert fila.itens
+    for it in fila.itens:
+        jpg = _bytes(pagina, f"partidas/{PARTIDA}/quadros/{it.quadro}.jpg")
+        img = cv2.imdecode(np.frombuffer(jpg, np.uint8), cv2.IMREAD_COLOR)
+        k = max(range(len(originais)), key=lambda j: cv2.PSNR(img, cv2.imread(str(originais[j]))))
+        assert 25 <= k <= 67 or 100 <= k <= 140, (it.quadro, k)
+    assert not erros, erros
+
+
 def test_importar_so_os_trechos(site, video, navegador, capturas):
     """Só os trechos escolhidos são lidos e sorteados; trecho ilegível ou fora do vídeo avisa antes."""
     caminho, _ = video  # 6 s a 25 quadros/s, cortes em 2 s e 4 s

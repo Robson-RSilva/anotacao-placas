@@ -64,7 +64,28 @@ export function lerTrechos(texto) {
   return out;
 }
 
-/** [[300, 3000], [3900, 6600]] -> "0:05:00–0:50:00, 1:05:00–1:50:00" (para mostrar). */
+/** [[300, 3000], [3900, 6600]] -> "5:00–50:00, 1:05:00–1:50:00" (para mostrar, em segundos inteiros). */
 export function formatarTrechos(trechos) {
   return (trechos ?? []).map(([a, b]) => `${formatarTempo(a)}–${formatarTempo(b)}`).join(", ");
+}
+
+/** Segundos -> "1:05:00", "5:00" ou, com fração, "0:02.2" — sem perder nada (o mesmo do Python). */
+export function tempoExato(s) {
+  const ms = Math.floor(s * 1000 + 0.5);
+  const h = Math.floor(ms / 3_600_000);
+  const m = Math.floor((ms % 3_600_000) / 60_000);
+  const seg = Math.floor((ms % 60_000) / 1000);
+  const mil = ms % 1000;
+  const texto = String(seg).padStart(2, "0") + (mil ? `.${String(mil).padStart(3, "0")}`.replace(/0+$/, "") : "");
+  return h ? `${h}:${String(m).padStart(2, "0")}:${texto}` : `${m}:${texto}`;
+}
+
+/** Os trechos como `lerTrechos` (e o `anotacao baixar`) leem de volta: "5:00-50:00, 1:05:00-1:50:00". */
+export function trechosParaTexto(trechos) {
+  return (trechos ?? []).map(([a, b]) => `${tempoExato(a)}-${tempoExato(b)}`).join(", ");
+}
+
+/** Os mesmos trechos (a menos de um milissegundo)? */
+export function mesmosTrechos(a, b) {
+  return a.length === b.length && a.every(([x0, x1], k) => Math.abs(x0 - b[k][0]) < 1e-3 && Math.abs(x1 - b[k][1]) < 1e-3);
 }

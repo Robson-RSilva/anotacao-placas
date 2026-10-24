@@ -99,7 +99,7 @@ se o contêiner não tem relógio confiável, vale índice / fps e o manifesto r
 
 | Arquivo | Formato | O que tem |
 | --- | --- | --- |
-| `manifesto.json` | `manifesto.partida/1` | o molde (`pacote`: `generico/pacote-1.0` ou o de um estádio levantado; `cadastro.pacote_versao` fica `null` no genérico), cadastro (estádio, emissora, competição, data e hora com fuso, mandante, visitante, iluminação, chuva), vídeo (nome, sha256 do arquivo inteiro, duração, fps, resolução, quadros) e parâmetros da importação (sorteio, origem do PTS, codec, decodificador, cortes, quadros perdidos, quadros sem chave no início, quadros não extraídos, amostras além do fim de um arquivo cortado e, quando a importação foi só de uns trechos, `trechos` em segundos — `"300-3000;3900-6600"` — e `quadros_nos_trechos`). Gravado por último: a partida só existe quando o manifesto existe — e um manifesto vazio (escrita interrompida) não conta. |
+| `manifesto.json` | `manifesto.partida/1` | o molde (`pacote`: `generico/pacote-1.0` ou o de um estádio levantado; `cadastro.pacote_versao` fica `null` no genérico), cadastro (estádio, emissora, competição, data e hora com fuso, mandante, visitante, iluminação, chuva), vídeo (nome, sha256 do arquivo inteiro, duração, fps, resolução, quadros) e parâmetros da importação (sorteio, origem do PTS, codec, decodificador, cortes, quadros perdidos, quadros sem chave no início, quadros não extraídos, amostras além do fim de um arquivo cortado e, quando a importação foi só de uns trechos, `trechos` em segundos — `"300-3000;3900-6600"` — e `quadros_nos_trechos`; num vídeo baixado pelo `anotacao baixar`, `origem` — `"youtube:<id>"` —, `origem_url` e, se ele veio só com uns trechos, `origem_trechos`, em segundos do vídeo original). Gravado por último: a partida só existe quando o manifesto existe — e um manifesto vazio (escrita interrompida) não conta. |
 | `tomadas.json` | `tomadas.partida/1` | cortes, transições e tomadas (índices, PTS, zoom e grupo aproximados — só para o sorteio). `replay` fica `null`: replays são conferidos na solução assistida. Com trechos, o começo e o fim de cada trecho também são cortes, e os quadros de fora não são sorteados. |
 | `fila.json` | `fila.partida/1` | quadros sorteados e as marcas de dupla às cegas e de "sem previsão". A fila é aberta (`equipe` e `atribuido_a` vazios): um quadro precisa de um rótulo, ou de duas pessoas diferentes na dupla. Filas da 0.2 com `atribuido_a` preenchido continuam valendo como foram atribuídas. |
 | `quadros/<quadro>.jpg` | JPEG | os quadros sorteados, na resolução original do vídeo. |
@@ -126,3 +126,16 @@ do manual e da ferramenta, pacote e as condições do jogo.
 `manifesto.json` traz as contagens por conjunto e o hash do conteúdo; `problemas.json`, os arquivos
 inválidos e os quadros ainda sem rótulo aprovado. Um arquivo de rótulo ou revisão cujo conteúdo não
 bate com o nome (partida, quadro, pessoa ou versão) conta como inválido.
+
+## O vídeo baixado pelo `anotacao baixar`
+
+O comentário do MP4 (`moov/udta/meta/ilst/©cmt`) começa com `anotacao/1 ` seguido de um JSON:
+
+```json
+{"fonte": "youtube", "id": "dQw4w9WgXcQ", "url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+ "titulo": "Time A x Time B", "trechos": [[300, 3000], [3900, 6600]]}
+```
+
+`trechos` (em segundos do vídeo original, o início entra e o fim não) é `null` quando o arquivo é o
+vídeo inteiro. A página lê o comentário ao importar: guarda a origem no manifesto e, se o arquivo já
+tem só os trechos, não aceita outros.

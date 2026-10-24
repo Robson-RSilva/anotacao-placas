@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "anotacao-placas"
-version = "0.3.0"
-description = "Ferramentas da pasta de trabalho da anotação de dados de treino (exposição de placas): formatos, validar, unificar, gabarito e previsões."
+version = "0.4.0"
+description = "Ferramentas da pasta de trabalho da anotação de dados de treino (exposição de placas): formatos, validar, unificar, gabarito, previsões e baixar vídeos do YouTube."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "Todos os direitos reservados" }
@@ -21,6 +21,9 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=8", "ruff>=0.5"]
 e2e = ["playwright>=1.40"]
+# anotacao baixar: o yt-dlp (com os scripts dos desafios do YouTube), o Deno que roda esses scripts e
+# um ffmpeg — tudo pelo pip, sem instalar nada à parte
+baixar = ["yt-dlp[default]>=2026.10.21", "deno>=2.0", "imageio-ffmpeg>=0.6"]
 
 [project.scripts]
 anotacao = "anotacao.cli:main"
@@ -47,7 +50,7 @@ ignore = [
 "tests/*" = ["N"]
 
 [tool.ruff.lint.isort]
-known-local-folder = ["conftest", "sintetico", "previsor_teste"]
+known-local-folder = ["conftest", "sintetico", "previsor_teste", "servidor_video"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

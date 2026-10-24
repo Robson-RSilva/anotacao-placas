@@ -32,6 +32,9 @@ PARTIDA_GABARITO = "gabarito"
 #: Pacote do campo genérico (105 x 68 m, sem placas), para anotar sem o levantamento do estádio.
 REF_PACOTE_GENERICO = "generico/pacote-1.0"
 
+#: Começo do comentário do MP4 baixado por `anotacao baixar`, seguido do JSON da origem.
+PREFIXO_ORIGEM = "anotacao/1 "
+
 
 def slug(texto: str) -> str:
     """Texto livre -> identificador em minúsculas, sem acentos, com hífens."""

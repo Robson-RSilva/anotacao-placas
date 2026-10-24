@@ -2,7 +2,7 @@
 // quando a pessoa volta para a página central.
 
 import { REF_PACOTE_GENERICO, isoComFuso, partesPacote, slug } from "../nucleo/convencoes.js";
-import { ErroTrechos, lerTrechos } from "../nucleo/trechos.js";
+import { ErroTrechos, lerTrechos, trechosParaTexto } from "../nucleo/trechos.js";
 import { el, mensagemDeErro, numero } from "./util.js";
 
 function iniciarImportacao(ctx, mensagem) {
@@ -71,9 +71,47 @@ export async function montar(raiz, ctx) {
     $("processar").disabled = true;
   }
 
+  // vídeo do YouTube: o comando que baixa (só os trechos, quando há), para copiar e rodar no terminal
+  const campoTrechos = form.querySelector("input[name=trechos]");
+  function atualizarComando() {
+    const link = $("link-youtube").value.trim();
+    let texto = "";
+    let pronto = false;
+    if (!link) {
+      texto = "cole o link do vídeo acima";
+    } else if (!/^https?:\/\/\S+$/i.test(link)) {
+      texto = "o link começa com https:// (copie da barra de endereço do vídeo)";
+    } else {
+      let trechos = null;
+      try {
+        trechos = lerTrechos(campoTrechos.value);
+        texto = `anotacao baixar "${link}"${trechos ? ` --trechos "${trechosParaTexto(trechos)}"` : ""}`;
+        pronto = true;
+      } catch (erro) {
+        if (!(erro instanceof ErroTrechos)) throw erro;
+        texto = `corrija os trechos: ${erro.message}`;
+      }
+    }
+    $("comando-youtube").textContent = texto;
+    $("comando-youtube").classList.toggle("sutil", !pronto);
+    $("copiar-comando").disabled = !pronto || Boolean(ctx.importacao?.worker);
+    $("estado-copiar").textContent = "";
+  }
+  $("link-youtube").addEventListener("input", atualizarComando);
+  campoTrechos.addEventListener("input", atualizarComando);
+  $("copiar-comando").onclick = async () => {
+    try {
+      await navigator.clipboard.writeText($("comando-youtube").textContent);
+      $("estado-copiar").textContent = "Copiado. Cole no terminal; o arquivo fica na pasta em que o terminal está (ou use --pasta).";
+    } catch {
+      $("estado-copiar").textContent = "Não deu para copiar daqui: selecione o comando e copie.";
+    }
+  };
+
   function mostrar(job) {
     const rodando = Boolean(job?.worker);
     for (const campo of form.elements) if (campo.id !== "cancelar") campo.disabled = rodando || (campo.id === "processar" && !suportado);
+    atualizarComando();
     $("cancelar").hidden = !rodando;
     $("progresso").hidden = !job;
     if (!job) return;
@@ -102,6 +140,7 @@ export async function montar(raiz, ctx) {
     mostrar(job);
   };
   if (ctx.importacao) acompanhar(ctx.importacao);
+  else atualizarComando();
 
   form.onsubmit = (e) => {
     e.preventDefault();

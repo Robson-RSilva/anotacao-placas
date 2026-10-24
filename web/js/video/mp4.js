@@ -63,6 +63,20 @@ function caminho(b, caixa, tipos) {
   return atual;
 }
 
+/** O comentário do arquivo (moov/udta/meta/ilst/©cmt/data), ou null: o `anotacao baixar` guarda nele a origem. */
+function comentarioDoMoov(b, cmoov) {
+  const udta = achar(cmoov, "udta");
+  const meta = udta && achar(filhos(b, udta.ini, udta.fim), "meta");
+  if (!meta || meta.fim - meta.ini < 12) return null;
+  // no MP4 a caixa "meta" tem versão e flags antes das filhas; no QuickTime, não
+  const ini = tipo4(b, meta.ini + 4) === "hdlr" ? meta.ini : meta.ini + 4;
+  const ilst = achar(filhos(b, ini, meta.fim), "ilst");
+  const cmt = ilst && achar(filhos(b, ilst.ini, ilst.fim), "\u00a9cmt");
+  const data = cmt && achar(filhos(b, cmt.ini, cmt.fim), "data");
+  if (!data || data.fim - data.ini < 8) return null;
+  return new TextDecoder().decode(b.subarray(data.ini + 8, data.fim)); // tipo e idioma vêm antes do texto
+}
+
 /** Caixas do nível de cima do arquivo, lendo só os cabeçalhos. */
 async function caixasDoTopo(leitor) {
   const out = [];
@@ -321,7 +335,7 @@ function amostrasDoMoof(b, inicioMoof, moof, id, padroesPorFaixa, dtsAnterior) {
 
 /**
  * Abre um MP4/MOV e devolve a faixa de vídeo: {codec, descricao, largura, altura, timescale,
- * inicioMidia, amostras: [{offset, tamanho, dts, cts, sync}], cortadas, fragmentado}.
+ * inicioMidia, amostras: [{offset, tamanho, dts, cts, sync}], cortadas, fragmentado, comentario}.
  */
 export async function abrirMp4(leitor) {
   const topo = await caixasDoTopo(leitor);
@@ -409,6 +423,7 @@ export async function abrirMp4(leitor) {
     amostras,
     cortadas,
     fragmentado: Boolean(mvex && moofs.length),
+    comentario: comentarioDoMoov(b, cmoov),
   };
 }
 

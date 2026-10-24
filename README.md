@@ -41,7 +41,7 @@ Safari só funcionam assim.
 Não é preciso cadastrar equipe nem levantar o estádio antes: basta importar a partida e anotar.
 
 1. **Importar a partida.** Escreva o nome do estádio e os dados do jogo e escolha o vídeo (MP4 ou MOV
-   em H.264, H.265, VP9 ou AV1). Em **Trechos do vídeo** dá para escolher só as partes que interessam
+   em H.264, H.265, VP9 ou AV1; do YouTube, veja [abaixo](#vídeos-do-youtube)). Em **Trechos do vídeo** dá para escolher só as partes que interessam
    — por exemplo `0:05:00-0:50:00, 1:05:00-1:50:00` para os dois tempos sem o intervalo; vazio, vale o
    vídeo inteiro. O vídeo é lido no navegador com o decodificador do próprio navegador (WebCodecs):
    hash, relógio de cada quadro (PTS), cortes e transições (regras do laboratório, só para organizar o
@@ -84,6 +84,44 @@ anota direto. Em ~10% dos quadros duas pessoas anotam do
 zero, às cegas, para medir a concordância; em outros ~10% a página começa sem previsão, para medir o
 viés de ancoragem.
 
+## Vídeos do YouTube
+
+A página não consegue baixar do YouTube (o navegador não deixa uma página ler o vídeo de outro site),
+então quem importa baixa com um comando, no próprio computador, e escolhe o arquivo na página. Na
+primeira vez, com o Python 3.11 ou mais novo:
+
+```bash
+pip install "anotacao-placas[baixar] @ git+https://github.com/Robson-RSilva/anotacao-placas"
+```
+
+Isso traz o [yt-dlp](https://github.com/yt-dlp/yt-dlp), o Deno (que o yt-dlp usa nos desafios do
+YouTube) e um ffmpeg — nada para instalar à parte. Depois, para cada jogo:
+
+```bash
+anotacao baixar "https://www.youtube.com/watch?v=..."                                       # o vídeo inteiro
+anotacao baixar "https://www.youtube.com/watch?v=..." --trechos "0:05:00-0:50:00, 1:05:00-1:50:00"
+```
+
+Em **Importar partida → Vídeo do YouTube**, a página monta esse comando a partir do link e dos
+trechos, para copiar. O arquivo vai para a pasta em que o terminal está (ou `--pasta`), com o nome
+`<título> [<id>].mp4`, e tem só a imagem, sem som, em MP4 com H.264 até 1080p (`--altura-max` muda),
+que o Chrome e o Edge decodificam pela placa de vídeo.
+
+- **Com trechos**, baixa só eles: cada um do quadro-chave antes do início (alguns segundos antes)
+  até o fim, sem recodificar, e junta tudo num arquivo só. O arquivo guarda no comentário do MP4 de
+  onde veio e quais trechos tem: na página, deixe o campo Trechos vazio (ou com os mesmos trechos) —
+  outros trechos são recusados, porque contariam o tempo do arquivo como se fosse o do vídeo
+  original. O manifesto da partida registra a origem (`origem`, `origem_url`, `origem_trechos`).
+- **Sem trechos**, baixa o vídeo inteiro, e os trechos podem ser escolhidos na página.
+- Se o YouTube pedir para confirmar que não é um robô, rode de novo com
+  `--cookies-do-navegador firefox` (ou o navegador em que você está logado no YouTube).
+- O YouTube muda com frequência; quando o download parar de funcionar, `pip install -U yt-dlp`
+  costuma resolver.
+
+O download por trechos é feito pelo ffmpeg, e o vídeo inteiro pelo próprio yt-dlp. Se os trechos
+vierem lentos, baixe o vídeo inteiro e escolha os trechos na página. O direito de uso das transmissões
+vale também para essa cópia (veja [Dados e privacidade](#dados-e-privacidade)).
+
 ## Pasta de trabalho
 
 ```text
@@ -112,6 +150,7 @@ python -m venv .venv && source .venv/bin/activate     # no Windows: .venv\Script
 pip install -e .
 
 anotacao exemplo trabalho                   # pasta de exemplo: estádio sintético e os nomes de A01/A02
+anotacao baixar LINK [--trechos T]          # baixa do YouTube para importar (extra [baixar], acima)
 anotacao gabarito ORIGEM --pasta P          # importa itens do gabarito (<id>.json + JPEG)
 anotacao prever --pasta P --previsor pacote.modulo:objeto   # câmera prevista para o molde abrir perto
 anotacao validar --pasta P                  # confere todos os arquivos
@@ -132,7 +171,7 @@ vez só, no repositório: **Settings → Pages → Build and deployment → Sour
 ## Desenvolvimento
 
 ```bash
-pip install -e ".[dev]"
+pip install -e ".[dev,baixar]"
 python -m http.server 8000 --bind 127.0.0.1 --directory web   # http://127.0.0.1:8000
 ruff check . && ruff format --check .
 pytest                                    # Python
@@ -150,7 +189,6 @@ em [docs/arquitetura.md](docs/arquitetura.md) e decisões em [docs/adr/](docs/ad
 
 ## Próximos passos
 
-- Baixar o vídeo pela própria página (depende de onde os vídeos vêm).
 - Página de oclusão nas placas (máscara por classe, a fração livre calculada dela).
 - Previsor com o detector do laboratório (`anotacao prever --previsor pacote.modulo:objeto`).
 - Indicador ao vivo da distância entre o molde e as linhas que a rede encontrou.

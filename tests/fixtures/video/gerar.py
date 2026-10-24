@@ -70,6 +70,22 @@ CASOS = {
         "-movflags",
         "frag_keyframe+empty_moov+omit_tfhd_offset",
     ],
+    # como o `anotacao baixar` grava: só a imagem, com a origem no comentário do MP4
+    "h264_baixado.mp4": [
+        "-c:v",
+        "libx264",
+        "-preset",
+        "veryfast",
+        "-bf",
+        "2",
+        "-g",
+        "8",
+        "-pix_fmt",
+        "yuv420p",
+        "-metadata",
+        'comment=anotacao/1 {"fonte":"youtube","id":"dQw4w9WgXcQ","url":"https://www.youtube.com/watch?v=dQw4w9WgXcQ",'
+        '"titulo":"Time A x Time B","trechos":[[300,3000],[3900,6600.25]]}',
+    ],
     # AV1 (o Chromium dos testes de ponta a ponta decodifica AV1, não H.264)
     "av1.mp4": ["-vf", "scale=96:64", "-c:v", "libaom-av1", "-cpu-used", "8", "-g", "10", "-pix_fmt", "yuv420p"],
 }

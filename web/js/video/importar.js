@@ -11,11 +11,11 @@
 // 6. tomadas, fila e manifesto — o manifesto por último: partida sem manifesto não existe.
 
 import { Aleatorio } from "../nucleo/aleatorio.js";
-import { REF_PACOTE_GENERICO, VERSAO, arredondarPar, idPartida, partesPacote } from "../nucleo/convencoes.js";
+import { REF_PACOTE_GENERICO, VERSAO, arredondarPar, idPartida, lerOrigem, partesPacote } from "../nucleo/convencoes.js";
 import { arredondar, mediana } from "../nucleo/estatistica.js";
 import { validar } from "../nucleo/formatos.js";
 import { Sha256 } from "../nucleo/hash.js";
-import { formatarTempo } from "../nucleo/trechos.js";
+import { formatarTempo, mesmosTrechos, trechosParaTexto } from "../nucleo/trechos.js";
 import { agrupar, corrigirPts, detectarCortes, detectarGraduais, montarTomadas } from "./cortes.js";
 import { ALTURA, LARGURA, descrever, distanciaEstrutura, qui2 } from "./descritores.js";
 import { ErroVideo, abrirMp4, apresentacao, leitorDeArquivo } from "./mp4.js";
@@ -566,6 +566,17 @@ async function importarComMarca({ pasta, arquivo, cadastro, trechos, alvo, aoPro
   aoProgresso("abrindo o vídeo", 0);
   const leitor = leitorDeArquivo(arquivo);
   const faixa = await abrirMp4(leitor);
+  // vídeo baixado pelo `anotacao baixar`: diz de onde veio e, se veio só com uns trechos, eles já
+  // estão aplicados (outros trechos aqui contariam o tempo do arquivo como se fosse o do original)
+  const origem = lerOrigem(faixa.comentario);
+  if (origem?.trechos && trechos?.length) {
+    if (!mesmosTrechos(trechos, origem.trechos)) {
+      throw new ErroVideo(
+        `este vídeo foi baixado só com os trechos ${trechosParaTexto(origem.trechos)}: deixe o campo Trechos vazio (ou com esses mesmos trechos)`,
+      );
+    }
+    trechos = null; // já aplicados no download
+  }
   const ap = apresentacao(faixa);
   const n = ap.ordem.length;
   const config = await configuracaoDecodificador(faixa);
@@ -691,6 +702,11 @@ async function importarComMarca({ pasta, arquivo, cadastro, trechos, alvo, aoPro
   if (plano) {
     parametros.trechos = trechos.map(([a, b]) => `${arredondar(a, 1)}-${arredondar(b, 1)}`).join(";");
     parametros.quadros_nos_trechos = plano.n_dentro;
+  }
+  if (origem) {
+    parametros.origem = `${origem.fonte}:${origem.id}`;
+    if (origem.url) parametros.origem_url = origem.url;
+    if (origem.trechos) parametros.origem_trechos = origem.trechos.map(([a, b]) => `${arredondar(a, 3)}-${arredondar(b, 3)}`).join(";");
   }
   await pasta.gravar("manifesto", pasta.manifesto(pid), {
     formato: "manifesto.partida/1",

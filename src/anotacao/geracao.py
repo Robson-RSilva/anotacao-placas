@@ -18,6 +18,7 @@ from . import __version__
 from .convencoes import (
     MANUAL,
     PARTIDA_GABARITO,
+    PREFIXO_ORIGEM,
     RE_ESTADIO,
     RE_GABARITO,
     RE_PACOTE_REF,
@@ -34,6 +35,7 @@ from .convencoes import (
 )
 from .formatos import ESQUEMAS, Divisao, Equipe, Membro, esquema_json
 from .pacote import pacote_generico, pacote_sintetico
+from .trechos import ErroTrechos, ler_trechos, tempo_exato
 
 RAIZ = Path(__file__).resolve().parents[2]
 
@@ -77,7 +79,40 @@ def convencoes_para_teste() -> dict:
         "slug": [[t, slug(t)] for t in textos],
         "id_quadro": [[p, id_quadro(p)] for p in pts],
         "id_partida": [[*a, id_partida(*a)] for a in partidas],
+        "prefixo_origem": PREFIXO_ORIGEM,
+        "trechos": [[t, _trechos_ou_erro(t)] for t in CASOS_TRECHOS],
+        "tempo_exato": [[s, tempo_exato(s)] for s in (0, 2.2, 59.999, 300, 3599.5, 3900, 6600.25, 36000)],
     }
+
+
+#: Casos de trechos que a página e o Python precisam ler igual.
+CASOS_TRECHOS = [
+    "",
+    "  ,; \n",
+    "0:05:00-0:50:00, 1:05:00-1:50:00",
+    "1:05:00 – 1:50:00; 0:05:00 — 0:50:00",
+    "5:00 a 50:00\n65:00 até 110:00",
+    "5:00 ATÉ 6:00",
+    "5:00 ate\u0301 6:00",
+    "10-20, 15-30, 30-40, 50-60",
+    "0:02.2-0:03.8",
+    "90:00-95:30.5",
+    "0:05:00",
+    "5:00-50:00, primeiro tempo",
+    "5:00a50:00",
+    "1:70-2:00",
+    "50:00-5:00",
+    "5:00-5:00",
+    "١٢-١٣",
+]
+
+
+def _trechos_ou_erro(texto: str) -> list | str | None:
+    try:
+        t = ler_trechos(texto)
+    except ErroTrechos:
+        return "erro"
+    return None if t is None else [list(x) for x in t]
 
 
 def arquivos_gerados() -> dict[str, str]:
