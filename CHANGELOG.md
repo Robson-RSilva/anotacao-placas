@@ -5,6 +5,47 @@ Formato de [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); versões
 
 ## [Não lançado]
 
+## [0.7.0] - 2026-10-24
+
+A segunda tarefa do Manual: pintar o que cobre as placas — com revisão cruzada, gabarito próprio,
+lotes de ouro de máscaras e o conjunto da oclusão no `unificar` (ADR-0009).
+
+### Adicionado
+
+- Página "Oclusão nas placas" (`#/oclusao`): os quadros com a câmera aprovada, com o contorno das
+  placas desenhado pela câmera, para pintar o que está na frente — pessoa, bola, rede, grafismo,
+  objeto e, nas faixas, "não é placa". Pincel e laço (à mão, fechando ao soltar, ou clique a
+  clique), só dentro das placas; desfazer e refazer; "Ir às placas"; esconder a pintura, os contornos
+  ou mostrar as linhas do campo. A pintura aparece listrada, para se ver mesmo em cima de uma camisa
+  da cor da classe. Placa mais baixa que 10 px (ref. 960) fica de fora; "Câmera errada" quando o
+  contorno não fecha.
+- Faixas de placas no campo genérico: distância da linha, altura, comprimento e vão no meio, as
+  laterais juntas e os fundos juntos, ajustados no primeiro quadro da partida e herdados pelos
+  seguintes. Com um pacote que tem as placas do levantamento, valem as placas do pacote.
+- Revisão da oclusão (`#/revisao-oclusao`), às cegas: aprovar, corrigir (a pintura e as faixas) ou
+  devolver com motivo, com "Ir às placas" (`Z`) e `H` para ver a imagem sem a pintura. O devolvido
+  volta com a pintura anterior.
+- `rotulo.oclusao/1` com a máscara PNG (8 bits, paleta, uma classe por pixel) ao lado, de mesmo nome,
+  e o que ela diz de cada placa; `revisao.oclusao/1`; `gabarito.oclusao/1` com as placas exatas e a
+  máscara verdadeira. Pré-pintura de um modelo em `previsoes/oclusao/<quadro>.png`, por
+  `anotacao prever --tarefa oclusao`.
+- Gabarito da oclusão com liberação própria (mediana dos últimos 5 até 5% de cada placa diferente da
+  resposta, com 1 px de tolerância na borda), resultado e resposta na hora no treino, e um item
+  escondido a cada 15 pinturas.
+- Lotes de ouro L5 (oclusão de dia, 20 itens, g0401–g0420) e L6 (à noite, 10 itens, g0501–g0510),
+  com a verdade tirada do renderizador do laboratório, em `scripts/lotes_de_ouro.py`.
+- Placar da oclusão (botões "Câmera" e "Oclusão") e a coluna "Oclusão" nas partidas: pinturas
+  aprovadas dos quadros com a câmera aprovada, e quantos voltaram com "câmera errada".
+- `anotacao unificar`: `oclusao.parquet` (um quadro por linha, com a máscara) e
+  `oclusao_placas.parquet` (uma placa por linha, com o retângulo para recortar); o manifesto passa a
+  `conjuntos/2`, com a seção `oclusao`. `anotacao validar` confere as máscaras e as contas de cada
+  pintura; `anotacao gabarito` importa os itens da oclusão com a máscara.
+
+### Corrigido
+
+- Uma leitura da pasta que terminava depois de a pessoa trocar de página mexia na página seguinte (e
+  podia mostrar um erro nela): cada página fica agora no seu próprio invólucro.
+
 ## [0.6.0] - 2026-10-24
 
 Lotes de ouro prontos e um gabarito que mede o que se faz hoje no campo genérico: esticar o molde

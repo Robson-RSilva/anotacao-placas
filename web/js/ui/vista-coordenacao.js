@@ -4,6 +4,7 @@ import { RE_GABARITO, codigoPessoa } from "../nucleo/convencoes.js";
 import { ErroFormato, conferir, conjuntoDe, validar } from "../nucleo/formatos.js";
 import { validarGeometria } from "../nucleo/pacote.js";
 import { ArquivoExiste } from "../nucleo/pasta.js";
+import { ehPng } from "../nucleo/png.js";
 import { celula, el, linhaVazia, mensagemDeErro } from "./util.js";
 
 const CONJUNTOS = { treino: "treino", validacao: "validação", teste_congelado: "teste congelado", teste_externo: "teste externo" };
@@ -123,10 +124,17 @@ export async function montar(raiz, ctx) {
 
   // ------------------------------------------------------------------ gabarito
   async function contarGabarito() {
-    const itens = await indice.itensGabarito();
-    $("st-gabarito").textContent = itens.length
-      ? `${itens.length} itens no gabarito. Quem começa anota até a mediana dos últimos 10 ficar em até 2 px; depois, um escondido a cada 15 rótulos.`
-      : "Sem gabarito: ninguém passa por treino antes dos dados reais.";
+    const itens = await indice.itensGabarito("camera");
+    const oclusao = await indice.itensGabarito("oclusao");
+    const partes = [
+      itens.length
+        ? `Câmera: ${itens.length} itens. Quem começa anota até a mediana dos últimos 10 ficar em até 2 px; depois, um escondido a cada 15 rótulos.`
+        : "Câmera: sem gabarito, ninguém passa por treino antes dos dados reais.",
+      oclusao.length
+        ? `Oclusão: ${oclusao.length} itens. Quem começa pinta até a mediana dos últimos 5 ficar em até 5% de cada placa diferente da resposta (com 1 px de tolerância na borda); depois, um escondido a cada 15 pinturas.`
+        : "Oclusão: sem gabarito, ninguém passa por treino antes dos quadros reais.",
+    ];
+    $("st-gabarito").textContent = partes.join(" ");
   }
   await contarGabarito();
   $("arquivos-gabarito").onchange = async (e) => {
@@ -138,16 +146,24 @@ export async function montar(raiz, ctx) {
     let novos = 0;
     for (const a of arquivos.filter((x) => /^g\d{4}\.json$/.test(x.name))) {
       try {
-        const g = validar("gabarito", await lerJsonDoArquivo(a));
+        const bruto = await lerJsonDoArquivo(a);
+        const tipo = bruto?.formato === "gabarito.oclusao/1" ? "gabarito_oclusao" : "gabarito";
+        const g = validar(tipo, bruto);
         if (!RE_GABARITO.test(g.id) || `${g.id}.json` !== a.name) throw new Error("o nome do arquivo precisa ser o id do item");
         const img = porNome.get(g.imagem);
         if (!img) throw new Error(`falta a imagem ${g.imagem}`);
         const cabeca = new Uint8Array(await img.slice(0, 3).arrayBuffer());
         if (!(cabeca[0] === 0xff && cabeca[1] === 0xd8 && cabeca[2] === 0xff)) throw new Error(`${g.imagem} precisa ser JPEG`);
+        const mascara = tipo === "gabarito_oclusao" ? porNome.get(g.mascara) : null;
+        if (tipo === "gabarito_oclusao") {
+          if (!mascara) throw new Error(`falta a máscara ${g.mascara}`);
+          if (!ehPng(new Uint8Array(await mascara.slice(0, 8).arrayBuffer()))) throw new Error(`${g.mascara} precisa ser PNG`);
+        }
         if (!(await pasta.existe(pasta.pacoteRef(g.pacote)))) throw new Error(`o pacote ${g.pacote} não está na pasta`);
         if (await pasta.existe(pasta.itemGabarito(g.id))) continue;
         await pasta.escrever(pasta.quadro("gabarito", g.id), img, { sobrescrever: true });
-        await pasta.gravar("gabarito", pasta.itemGabarito(g.id), { ...g, imagem: `${g.id}.jpg` });
+        if (mascara) await pasta.escrever(pasta.mascaraGabarito(g.id), mascara, { sobrescrever: true });
+        await pasta.gravar(tipo, pasta.itemGabarito(g.id), { ...g, imagem: `${g.id}.jpg`, ...(mascara ? { mascara: `${g.id}.png` } : {}) });
         novos += 1;
       } catch (erro) {
         problemas.push(`${a.name}: ${erro instanceof ErroFormato ? erro.erros.join("; ") : mensagemDeErro(erro)}`);

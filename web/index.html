@@ -91,7 +91,12 @@
           </article>
           <article class="cartao">
             <h2>Oclusão nas placas</h2>
-            <p class="sutil">Chega numa próxima versão: primeiro câmera e revisão cruzada.</p>
+            <p id="st-oclusao" class="sutil">—</p>
+            <p id="st-revisao-oclusao" class="sutil"></p>
+            <div class="botoes">
+              <a class="botao primario" href="#/oclusao" id="ir-oclusao">Pintar</a>
+              <a class="botao" href="#/revisao-oclusao" id="ir-revisao-oclusao">Revisar</a>
+            </div>
           </article>
         </section>
 
@@ -100,18 +105,26 @@
             <h2>Partidas</h2>
             <a class="botao" href="#/importar" id="ir-importar">Importar partida</a>
           </div>
-          <table class="tabela" id="partidas">
-            <thead><tr><th>Partida</th><th>Emissora</th><th>Condições</th><th>Sorteados</th><th>Anotados</th><th>Aprovados</th><th>Revisão pendente</th></tr></thead>
-            <tbody></tbody>
-          </table>
+          <div class="rolavel">
+            <table class="tabela" id="partidas">
+              <thead><tr><th>Partida</th><th>Emissora</th><th>Condições</th><th>Sorteados</th><th>Anotados</th><th>Aprovados</th><th>Revisão pendente</th><th title="Pinturas aprovadas, dos quadros com a câmera aprovada">Oclusão</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
         </section>
 
         <section>
-          <h2>Placar</h2>
+          <div class="titulo-secao">
+            <h2>Placar</h2>
+            <div class="botoes alternar" role="group" aria-label="Tarefa do placar">
+              <button type="button" data-placar="camera" aria-pressed="true">Câmera</button>
+              <button type="button" data-placar="oclusao" aria-pressed="false">Oclusão</button>
+            </div>
+          </div>
           <p class="sutil">Ponto só conta depois de aprovado na revisão cruzada.</p>
           <div class="rolavel">
             <table class="tabela" id="placar">
-              <thead><tr><th>Pessoa</th><th>Aprovados na semana</th><th>Aprovados</th><th>Taxa de aprovação</th><th>Tempo mediano</th><th>Concordância (cegos)</th><th>Gabarito</th><th>Dias seguidos</th><th>Marcos</th></tr></thead>
+              <thead><tr><th>Pessoa</th><th>Aprovados na semana</th><th>Aprovados</th><th>Taxa de aprovação</th><th>Tempo mediano</th><th id="th-concordancia">Concordância (cegos)</th><th>Gabarito</th><th>Dias seguidos</th><th>Marcos</th></tr></thead>
               <tbody></tbody>
             </table>
           </div>
@@ -320,6 +333,257 @@
     </main>
   </template>
 
+  <!-- ================================================================== oclusão -->
+  <template id="tpl-oclusao">
+    <header class="barra">
+      <a href="#/" class="voltar">← Central</a>
+      <h1>Oclusão nas placas</h1>
+      <span id="dica" class="dica"></span>
+      <span class="tempo" title="Tempo ativo neste quadro">⏱ <span id="tempo">0:00</span></span>
+    </header>
+
+    <main class="editor">
+      <div class="tela" id="area"><canvas id="tela" aria-label="Quadro com as placas e a pintura"></canvas>
+        <div id="vazio" class="vazio" hidden></div>
+      </div>
+
+      <aside class="painel" id="painel" hidden>
+        <section id="treino" class="faixa treino" hidden>
+          Treino com gabarito: ao salvar, aparece a diferença para a máscara verdadeira, e dá para ver a resposta.
+        </section>
+        <section id="devolvido" class="faixa devolvido" hidden></section>
+        <section id="partiu" class="faixa" hidden></section>
+
+        <section id="resultado" class="faixa resultado" hidden>
+          <h2 id="resultado-titulo"></h2>
+          <p id="resultado-texto"></p>
+          <ul id="resultado-placas" class="pinos"></ul>
+          <div class="botoes">
+            <button id="ver-resposta" type="button">Ver a resposta <kbd>R</kbd></button>
+            <button id="proximo" class="primario" type="button">Próximo <kbd>N</kbd></button>
+          </div>
+        </section>
+
+        <div id="edicao" class="secoes">
+        <section>
+          <h2>Pintar</h2>
+          <div class="botoes alternar" role="group" aria-label="Ferramenta">
+            <button type="button" data-ferramenta="pincel" aria-pressed="true">Pincel <kbd>B</kbd></button>
+            <button type="button" data-ferramenta="laco" aria-pressed="false">Laço <kbd>L</kbd></button>
+          </div>
+          <label class="tamanho">Pincel <input id="raio" type="range" min="1" max="40" value="6" aria-label="Tamanho do pincel, em pixels da imagem"> <span id="raio-valor">6 px</span> <kbd>[</kbd> <kbd>]</kbd></label>
+          <div class="classes" role="radiogroup" aria-label="O que cobre a placa">
+            <label><input type="radio" name="classe" value="2" checked><span class="amostra" data-classe="2"></span> Pessoa <kbd>1</kbd></label>
+            <label><input type="radio" name="classe" value="3"><span class="amostra" data-classe="3"></span> Bola <kbd>2</kbd></label>
+            <label><input type="radio" name="classe" value="4"><span class="amostra" data-classe="4"></span> Rede do gol <kbd>3</kbd></label>
+            <label><input type="radio" name="classe" value="5"><span class="amostra" data-classe="5"></span> Grafismo da emissora <kbd>4</kbd></label>
+            <label><input type="radio" name="classe" value="6"><span class="amostra" data-classe="6"></span> Objeto (trave, câmera, banco…) <kbd>5</kbd></label>
+            <label><input type="radio" name="classe" value="7"><span class="amostra" data-classe="7"></span> Não é placa (vão na faixa) <kbd>6</kbd></label>
+            <label><input type="radio" name="classe" value="1"><span class="amostra" data-classe="1"></span> Apagar (placa livre) <kbd>E</kbd></label>
+          </div>
+          <div class="botoes">
+            <button id="desfazer" type="button">Desfazer <kbd>Ctrl Z</kbd></button>
+            <button id="refazer" type="button">Refazer</button>
+          </div>
+          <div class="camadas">
+            <label><input type="checkbox" id="ver-pintura" checked> pintura <kbd>H</kbd></label>
+            <label><input type="checkbox" id="ver-contornos" checked> contornos <kbd>O</kbd></label>
+            <label><input type="checkbox" id="ver-molde"> linhas do campo <kbd>M</kbd></label>
+          </div>
+        </section>
+
+        <section>
+          <h2>Placas no quadro <span id="n-placas" class="contagem"></span></h2>
+          <ul id="lista-placas" class="pinos"></ul>
+          <div class="botoes"><button id="enquadrar" type="button" title="Aproxima a vista das placas que se pintam">Ir às placas <kbd>Z</kbd></button></div>
+        </section>
+
+        <section>
+          <h2>Pronto quando</h2>
+          <ul class="checagem">
+            <li id="ck-pintaveis">há placa para pintar (as pequenas demais ficam de fora)</li>
+            <li><label><input type="checkbox" id="ck-conferi"> conferi cada placa: o contorno e o que a cobre</label></li>
+          </ul>
+        </section>
+
+        <section>
+          <h2>Situação</h2>
+          <div class="situacoes">
+            <label><input type="radio" name="situacao" value="ok" checked> Pintado</label>
+            <label><input type="radio" name="situacao" value="sem_placas"> Nenhuma placa para pintar</label>
+            <label><input type="radio" name="situacao" value="camera_errada"> Câmera errada (o contorno não fecha com as placas)</label>
+            <label><input type="radio" name="situacao" value="duvida"> Dúvida (com comentário)</label>
+          </div>
+          <textarea id="comentario" rows="2" placeholder="Comentário (obrigatório em dúvida)"></textarea>
+        </section>
+
+        <button id="salvar" class="primario" type="button">Salvar <kbd>S</kbd></button>
+
+        <details id="secao-faixas" class="secao-faixas" hidden>
+          <summary><h2>Faixas de placas <span id="resumo-faixas" class="contagem"></span></h2></summary>
+          <div class="faixas">
+            <span></span><b>Laterais</b><b>Fundos</b>
+            <span class="sutil">da linha (m)</span>
+            <input id="lat-distancia" type="number" min="0.5" max="30" step="0.1" inputmode="decimal" aria-label="Distância das placas laterais até a lateral, em metros">
+            <input id="fun-distancia" type="number" min="0.5" max="30" step="0.1" inputmode="decimal" aria-label="Distância das placas de fundo até a linha de fundo, em metros">
+            <span class="sutil">altura (m)</span>
+            <input id="lat-altura" type="number" min="0.2" max="5" step="0.05" inputmode="decimal" aria-label="Altura das placas laterais, em metros">
+            <input id="fun-altura" type="number" min="0.2" max="5" step="0.05" inputmode="decimal" aria-label="Altura das placas de fundo, em metros">
+            <span class="sutil">comprimento (m)</span>
+            <input id="lat-comprimento" type="number" min="2" max="200" step="1" inputmode="decimal" placeholder="inteira" aria-label="Comprimento da faixa lateral, centrada no meio do lado, em metros (vazio: de canto a canto)">
+            <input id="fun-comprimento" type="number" min="2" max="200" step="1" inputmode="decimal" placeholder="inteira" aria-label="Comprimento da faixa de fundo, centrada atrás do gol, em metros (vazio: de canto a canto)">
+            <span class="sutil">vão no meio (m)</span>
+            <input id="lat-vao" type="number" min="0" max="100" step="0.5" inputmode="decimal" aria-label="Vão sem placas no meio das laterais, em metros">
+            <input id="fun-vao" type="number" min="0" max="100" step="0.5" inputmode="decimal" aria-label="Vão sem placas atrás do gol, em metros">
+            <span class="sutil">tem placas</span>
+            <input type="checkbox" id="lat-ligada" aria-label="Há placas nas laterais">
+            <input type="checkbox" id="fun-ligada" aria-label="Há placas atrás dos gols">
+          </div>
+          <p class="sutil">Sem o levantamento do estádio, as placas são uma faixa em cada lado do campo. Ajuste até o contorno fechar com as placas da imagem; os próximos quadros da partida já abrem com estas medidas. Vão que sobrar dentro da faixa: pinte “não é placa”.</p>
+        </details>
+
+        <details class="ajuda">
+          <summary>Como usar</summary>
+          <ul>
+            <li><b>Confira o contorno</b> de cada placa. Sem o levantamento, ajuste as faixas até ele fechar; se nem assim fecha (as linhas do campo, <kbd>M</kbd>, também não batem), é “câmera errada”.</li>
+            <li><b>Pinte só o que está na frente da placa</b>: pessoa, bola, rede, grafismo ou objeto. O que fica fora dos contornos não muda. Sombra, reflexo e brilho não cobrem: deixe livre.</li>
+            <li><b>Pincel</b> (<kbd>B</kbd>): arraste. <b>Laço</b> (<kbd>L</kbd>): arraste em volta, ou clique ponto a ponto e feche no primeiro ponto, com dois cliques ou <kbd>Enter</kbd>.</li>
+            <li><kbd>1</kbd>–<kbd>6</kbd> escolhem o que pintar; <kbd>E</kbd> apaga. <kbd>[</kbd> <kbd>]</kbd> mudam o pincel.</li>
+            <li><b>Roda do mouse</b> aproxima; botão direito (ou espaço) e arrastar move a vista. <kbd>Z</kbd> vai às placas, <kbd>0</kbd> volta a vista.</li>
+            <li><kbd>H</kbd> esconde a pintura para ver a imagem; <kbd>O</kbd> os contornos; <kbd>M</kbd> mostra as linhas do campo.</li>
+          </ul>
+        </details>
+        </div>
+        <p id="erro" class="erro" role="alert"></p>
+      </aside>
+    </main>
+  </template>
+
+  <!-- ================================================================== revisão da oclusão -->
+  <template id="tpl-revisao-oclusao">
+    <header class="barra">
+      <a href="#/" class="voltar">← Central</a>
+      <h1>Revisão da oclusão</h1>
+      <span id="dica" class="dica"></span>
+      <span class="contagem-barra" id="pendentes"></span>
+      <span class="tempo" title="Tempo ativo nesta revisão">⏱ <span id="tempo">0:00</span></span>
+    </header>
+
+    <main class="editor">
+      <div class="tela" id="area"><canvas id="tela" aria-label="Quadro com a pintura em revisão"></canvas>
+        <div id="vazio" class="vazio" hidden></div>
+      </div>
+
+      <aside class="painel" id="painel" hidden>
+        <section class="faixa">Você não vê quem pintou. Confira o contorno das placas e o que a pintura cobre: a roda do mouse aproxima, <kbd>Z</kbd> vai às placas e <kbd>H</kbd> esconde a pintura para ver a imagem.</section>
+
+        <section>
+          <h2>A pintura</h2>
+          <dl class="ficha">
+            <dt>Situação</dt><dd id="r-situacao"></dd>
+            <dt>Placas</dt><dd id="r-placas"></dd>
+            <dt>Partiu de</dt><dd id="r-partiu"></dd>
+            <dt>Comentário</dt><dd id="r-comentario"></dd>
+          </dl>
+          <ul id="lista-placas" class="pinos"></ul>
+          <div class="botoes"><button id="enquadrar" type="button" title="Aproxima a vista das placas que se pintam">Ir às placas <kbd>Z</kbd></button></div>
+        </section>
+
+        <section id="decidir">
+          <h2>Decisão</h2>
+          <div class="botoes">
+            <button id="aprovar" class="primario" type="button">Aprovar <kbd>A</kbd></button>
+            <button id="corrigir" type="button">Corrigir <kbd>C</kbd></button>
+            <button id="devolver" type="button">Devolver <kbd>D</kbd></button>
+          </div>
+          <p class="sutil">Borda a até 1 px da silhueta não se corrige: aprove.</p>
+        </section>
+
+        <section id="secao-devolver" hidden>
+          <h2>Devolver</h2>
+          <select id="motivo" aria-label="Motivo da devolução">
+            <option value="pintura_fora_da_tolerancia">Pintura fora da tolerância</option>
+            <option value="classe_errada">Classe errada</option>
+            <option value="faixa_fora_das_placas">Faixas fora das placas</option>
+            <option value="camera_errada">Deveria ser “câmera errada”</option>
+            <option value="outro">Outro (com comentário)</option>
+          </select>
+          <textarea id="comentario-dev" rows="2" placeholder="Comentário"></textarea>
+          <div class="botoes">
+            <button id="confirmar-devolver" type="button" class="primario">Confirmar devolução</button>
+            <button type="button" data-voltar>Voltar</button>
+          </div>
+        </section>
+
+        <section id="secao-corrigir" hidden>
+          <h2>Corrigir</h2>
+          <p class="sutil">Pinte como na página da oclusão. A correção vira uma versão nova, com a sua autoria.</p>
+          <div class="secoes">
+        <section>
+          <h2 class="sutil">Pintar</h2>
+          <div class="botoes alternar" role="group" aria-label="Ferramenta">
+            <button type="button" data-ferramenta="pincel" aria-pressed="true">Pincel <kbd>B</kbd></button>
+            <button type="button" data-ferramenta="laco" aria-pressed="false">Laço <kbd>L</kbd></button>
+          </div>
+          <label class="tamanho">Pincel <input id="raio" type="range" min="1" max="40" value="6" aria-label="Tamanho do pincel, em pixels da imagem"> <span id="raio-valor">6 px</span> <kbd>[</kbd> <kbd>]</kbd></label>
+          <div class="classes" role="radiogroup" aria-label="O que cobre a placa">
+            <label><input type="radio" name="classe" value="2" checked><span class="amostra" data-classe="2"></span> Pessoa <kbd>1</kbd></label>
+            <label><input type="radio" name="classe" value="3"><span class="amostra" data-classe="3"></span> Bola <kbd>2</kbd></label>
+            <label><input type="radio" name="classe" value="4"><span class="amostra" data-classe="4"></span> Rede do gol <kbd>3</kbd></label>
+            <label><input type="radio" name="classe" value="5"><span class="amostra" data-classe="5"></span> Grafismo da emissora <kbd>4</kbd></label>
+            <label><input type="radio" name="classe" value="6"><span class="amostra" data-classe="6"></span> Objeto (trave, câmera, banco…) <kbd>5</kbd></label>
+            <label><input type="radio" name="classe" value="7"><span class="amostra" data-classe="7"></span> Não é placa (vão na faixa) <kbd>6</kbd></label>
+            <label><input type="radio" name="classe" value="1"><span class="amostra" data-classe="1"></span> Apagar (placa livre) <kbd>E</kbd></label>
+          </div>
+          <div class="botoes">
+            <button id="desfazer" type="button">Desfazer <kbd>Ctrl Z</kbd></button>
+            <button id="refazer" type="button">Refazer</button>
+          </div>
+          <div class="camadas">
+            <label><input type="checkbox" id="ver-pintura" checked> pintura <kbd>H</kbd></label>
+            <label><input type="checkbox" id="ver-contornos" checked> contornos <kbd>O</kbd></label>
+            <label><input type="checkbox" id="ver-molde"> linhas do campo <kbd>M</kbd></label>
+          </div>
+        </section>
+        <details id="secao-faixas" class="secao-faixas" hidden>
+          <summary><h2>Faixas de placas <span id="resumo-faixas" class="contagem"></span></h2></summary>
+          <div class="faixas">
+            <span></span><b>Laterais</b><b>Fundos</b>
+            <span class="sutil">da linha (m)</span>
+            <input id="lat-distancia" type="number" min="0.5" max="30" step="0.1" inputmode="decimal" aria-label="Distância das placas laterais até a lateral, em metros">
+            <input id="fun-distancia" type="number" min="0.5" max="30" step="0.1" inputmode="decimal" aria-label="Distância das placas de fundo até a linha de fundo, em metros">
+            <span class="sutil">altura (m)</span>
+            <input id="lat-altura" type="number" min="0.2" max="5" step="0.05" inputmode="decimal" aria-label="Altura das placas laterais, em metros">
+            <input id="fun-altura" type="number" min="0.2" max="5" step="0.05" inputmode="decimal" aria-label="Altura das placas de fundo, em metros">
+            <span class="sutil">comprimento (m)</span>
+            <input id="lat-comprimento" type="number" min="2" max="200" step="1" inputmode="decimal" placeholder="inteira" aria-label="Comprimento da faixa lateral, centrada no meio do lado, em metros (vazio: de canto a canto)">
+            <input id="fun-comprimento" type="number" min="2" max="200" step="1" inputmode="decimal" placeholder="inteira" aria-label="Comprimento da faixa de fundo, centrada atrás do gol, em metros (vazio: de canto a canto)">
+            <span class="sutil">vão no meio (m)</span>
+            <input id="lat-vao" type="number" min="0" max="100" step="0.5" inputmode="decimal" aria-label="Vão sem placas no meio das laterais, em metros">
+            <input id="fun-vao" type="number" min="0" max="100" step="0.5" inputmode="decimal" aria-label="Vão sem placas atrás do gol, em metros">
+            <span class="sutil">tem placas</span>
+            <input type="checkbox" id="lat-ligada" aria-label="Há placas nas laterais">
+            <input type="checkbox" id="fun-ligada" aria-label="Há placas atrás dos gols">
+          </div>
+          <p class="sutil">Sem o levantamento do estádio, as placas são uma faixa em cada lado do campo. Ajuste até o contorno fechar com as placas da imagem; os próximos quadros da partida já abrem com estas medidas. Vão que sobrar dentro da faixa: pinte “não é placa”.</p>
+        </details>
+          </div>
+          <select id="situacao-corr" aria-label="Situação da correção">
+            <option value="ok">Pintado</option>
+            <option value="sem_placas">Nenhuma placa para pintar</option>
+            <option value="camera_errada">Câmera errada</option>
+          </select>
+          <textarea id="comentario-corr" rows="2" placeholder="Comentário"></textarea>
+          <div class="botoes">
+            <button id="salvar-correcao" class="primario" type="button">Salvar correção</button>
+            <button type="button" data-voltar>Voltar</button>
+          </div>
+        </section>
+        <p id="erro" class="erro" role="alert"></p>
+      </aside>
+    </main>
+  </template>
+
   <!-- ================================================================== importar -->
   <template id="tpl-importar">
     <header class="barra">
@@ -404,7 +668,8 @@
       <section class="cartao">
         <h2>Gabarito</h2>
         <p id="st-gabarito" class="sutil"></p>
-        <label class="botao">Importar itens (g0001.json + imagem)<input type="file" id="arquivos-gabarito" accept=".json,.jpg,.jpeg,.png" multiple hidden></label>
+        <label class="botao">Importar itens (g0001.json + imagem; na oclusão, + a máscara .png)<input type="file" id="arquivos-gabarito" accept=".json,.jpg,.jpeg,.png" multiple hidden></label>
+        <p class="sutil">Os lotes de ouro em .zip entram pela página central: “Trazer arquivos de um .zip”.</p>
         <p class="erro" id="erro-gabarito" role="alert"></p>
       </section>
 

@@ -28,7 +28,10 @@ test("caminhos validados e com o layout do Python", () => {
   assert.equal(p.previsao(PARTIDA, "t0000001000"), `partidas/${PARTIDA}/previsoes/t0000001000.json`);
   assert.throws(() => p.partida("../fora"));
   assert.throws(() => p.quadro(PARTIDA, "g0001"));
-  assert.throws(() => p.rotulos(PARTIDA, "oclusao"));
+  assert.equal(p.rotulos(PARTIDA, "oclusao"), `partidas/${PARTIDA}/rotulos/oclusao`);
+  assert.equal(p.previsaoOclusao(PARTIDA, "t0000001000"), `partidas/${PARTIDA}/previsoes/oclusao/t0000001000.png`);
+  assert.equal(p.mascaraGabarito("g0401"), "gabarito/itens/g0401.png");
+  assert.throws(() => p.rotulos(PARTIDA, "jogadores"));
   assert.throws(() => partes("a/../b"));
   assert.throws(() => partes("a//b"));
 });

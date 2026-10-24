@@ -1,8 +1,15 @@
-"""Lotes de ouro do gabarito: quadros sintéticos com a câmera exata, prontos para importar.
+"""Lotes de ouro do gabarito: quadros sintéticos com a resposta exata, prontos para importar.
 
 Gera com o simulador do laboratório os lotes que treinam e liberam quem começa e que medem quem
 anota (os itens escondidos na fila). Cada lote é um .zip com `gabarito/itens/gNNNN.json` +
-`gNNNN.jpg` (formato gabarito.camera/1), que a página central traz por "Trazer arquivos de um .zip".
+`gNNNN.jpg` (formato gabarito.camera/1; na oclusão, gabarito.oclusao/1 e mais a máscara verdadeira
+`gNNNN.png`), que a página central traz por "Trazer arquivos de um .zip".
+
+Oclusão: as placas do item são as do estádio do laboratório (os polígonos exatos), e a máscara
+verdadeira sai do renderizador — onde ele desenhou gente (pessoa), grafismo da emissora (grafismo),
+trave (objeto) e a bola (bola, desenhada depois da placa) por cima de cada placa, dentro das que se
+pintam (as de 10 px ou mais, ref. 960). A rede do gol não entra na máscara do renderizador: na
+fração livre ela conta como livre, então pintá-la ou não dá no mesmo.
 
 Os itens abrem no campo genérico, como os quadros reais sem o levantamento do estádio. Os de um
 campo de outro tamanho levam as medidas verdadeiras (`campo`): quem anota só acerta ajustando as
@@ -15,8 +22,10 @@ do próprio `anotacao`: os pontos-chave caem onde o simulador os desenhou.
 
 As faixas de id dos lotes não se sobrepõem: dá para importar um, alguns ou todos na mesma pasta. As
 sementes são fixas, então o mesmo comando gera sempre os mesmos lotes. Além dos .zip, `indice.csv`
-descreve cada item para quem coordena (domínio, câmera, campo de visão, medidas, pontos visíveis), e
-`mosaico-<lote>.jpg` mostra uma amostra de cada lote. Esses dois não vão para a pasta de quem anota.
+(câmera) e `indice-oclusao.csv` descrevem cada item para quem coordena (domínio, câmera, campo de
+visão, medidas, pontos visíveis; placas para pintar e cobertas), e `mosaico-<lote>.jpg` mostra uma
+amostra de cada lote (na oclusão, com a máscara verdadeira por cima). Esses não vão para a pasta de
+quem anota.
 """
 
 from __future__ import annotations
@@ -55,6 +64,21 @@ class Lote:
     k1_max: float | None = None  # distorção máxima (None: a do simulador)
     medidas_visiveis: bool = False  # exige o meio, a frente de uma grande área e uma lateral em todo item
     # (num campo de outro tamanho, isso é exigido sempre)
+
+
+@dataclass(frozen=True)
+class LoteOclusao:
+    nome: str
+    descricao: str
+    primeiro: int
+    n: int
+    semente: int
+    dominio: str
+    cameras: dict[str, float]
+    hfov: tuple[float, float]
+    min_placas: int  # placas para pintar (com 10 px ou mais, ref. 960)
+    min_coberta_px: int  # numa placa, pelo menos isto de gente na frente (px na ref. 960 x 540)
+    k1_max: float = 0.04
 
 
 LOTES = (
@@ -111,6 +135,34 @@ LOTES = (
         "mistas",
         4,
         0.30,
+    ),
+)
+
+
+LOTES_OCLUSAO = (
+    LoteOclusao(
+        "L5-oclusao",
+        "oclusão de dia: gente, trave e grafismo na frente das placas; câmeras principal, 16 m, baixa e reversa",
+        401,
+        20,
+        65_000,
+        "A",
+        {"principal": 0.30, "16m": 0.20, "baixa": 0.20, "fundo": 0.15, "reversa": 0.15},
+        (14.0, 42.0),
+        3,
+        120,
+    ),
+    LoteOclusao(
+        "L6-oclusao-noite",
+        "oclusão à noite: outro gramado, ruído mais forte e o LED mais claro que o resto; gente, trave e grafismo",
+        501,
+        10,
+        66_000,
+        "B",
+        {"principal": 0.35, "16m": 0.20, "baixa": 0.25, "fundo": 0.20},
+        (14.0, 42.0),
+        3,
+        120,
     ),
 )
 
@@ -267,29 +319,192 @@ def gerar_lote(lote: Lote, args, lab) -> list[dict]:
     return itens
 
 
+def placas_do_estadio(estadio) -> list[dict]:
+    """As placas do estádio do laboratório no formato do pacote (BL, BR, TR, TL vistos do campo)."""
+    return [
+        {"id": b.id, "tipo": b.kind, "lado": b.side, "vertices": [[float(v) for v in x] for x in b.V]}
+        for b in estadio.boards
+    ]
+
+
+def mascara_verdadeira(cena, gt: dict, camera, placas: list[dict]):
+    """A máscara verdadeira da oclusão: em cada pixel das placas que se pintam, o que o renderizador
+    desenhou por cima (a ordem: bola, trave, gente, grafismo da emissora — o último ganha)."""
+    from anotacao import oclusao
+
+    w, h = camera.w, camera.h
+    geo = oclusao.geometria(camera, placas, w, h)
+    roi = geo.roi
+    m = np.where(roi, oclusao.LIVRE, oclusao.FORA).astype(np.uint8)
+    if cena.ball is not None:  # a bola não está em nenhuma máscara do renderizador: o disco dela
+        P = np.array([[cena.ball[0], cena.ball[1], 0.11]])
+        pc, z = camera.project(P)
+        if np.isfinite(pc).all() and z[0] > 0.5:
+            r = max(0.11 * camera.f / z[0], 0.5)
+            yy, xx = np.mgrid[0:h, 0:w]
+            disco = (xx + 0.5 - pc[0, 0]) ** 2 + (yy + 0.5 - pc[0, 1]) ** 2 <= r * r
+            # o renderizador desenha da mais longe para a mais perto: a bola cobre a placa mais longe que ela
+            dist = float(np.linalg.norm(camera.C - P[0]))
+            depois = np.zeros(len(placas) + 1, bool)
+            for k, p in enumerate(placas):
+                depois[k + 1] = dist < float(np.linalg.norm(camera.C - np.mean(np.asarray(p["vertices"]), 0)))
+            m[roi & disco & depois[geo.regiao]] = oclusao.BOLA
+    m[roi & (gt["goal_mask"] > 0)] = oclusao.OBJETO
+    m[roi & (gt["person_mask"] > 0)] = oclusao.PESSOA
+    m[roi & (gt["overlay_mask"] > 0)] = oclusao.GRAFISMO
+    return geo, m
+
+
+def concordancia_com_o_renderizador(geo, m, gt: dict) -> float:
+    """Dos pixels que se pintam, em quantos "placa livre" bate com "o renderizador desenhou a placa ali"
+    (a diferença fica nas bordas: as duas rasterizações não são a mesma)."""
+    from anotacao import oclusao
+
+    livre = m == oclusao.LIVRE
+    desenhada = gt["board_map"].astype(np.int64) == geo.regiao.astype(np.int64)
+    ok = (livre == desenhada) | (m == oclusao.BOLA) | (m == oclusao.GRAFISMO)
+    return float(ok[geo.roi].mean()) if geo.roi.any() else 1.0
+
+
+def gerar_lote_oclusao(lote: LoteOclusao, args, lab) -> list[dict]:
+    from anotacao import oclusao
+    from anotacao.camera import Camera
+    from anotacao.formatos import GabaritoOclusao
+    from anotacao.mascara import gravar_png
+
+    w, h = args.largura, args.altura
+    n = lote.n if args.n is None else min(args.n, lote.n)
+    renderizador = lab.Renderer(2)
+    tipos = list(lote.cameras)
+    pesos = np.array([lote.cameras[t] for t in tipos], float)
+    pesos /= pesos.sum()
+    escala = (960 / w) ** 2
+    itens = []
+    tentativa = 0
+    while len(itens) < n:
+        semente = lote.semente + tentativa
+        tentativa += 1
+        if tentativa > 80 * n:
+            raise RuntimeError(f"{lote.nome}: poucos quadros passam no filtro ({len(itens)} de {n})")
+        rng = np.random.default_rng(semente)
+        tipo = str(rng.choice(tipos, p=pesos))
+        campo_lab = lab.FieldModel(L=PADRAO[0], W=PADRAO[1])
+        estadio = lab.default_stadium(*PADRAO, double_led_opo=bool(rng.random() < 0.3))
+        cena = lab.sample_scene(rng, lote.dominio, w, h, campo_lab, stadium=estadio, kind=tipo, hfov_range=lote.hfov)
+        if abs(cena.cam.k1) > lote.k1_max:
+            continue
+        img, gt = renderizador.render(cena)
+        c = gt["cam"]
+        camera = {
+            "hfov_graus": lab.hfov_from_f(c["f"], c["w"]),
+            "pan": c["pan"],
+            "tilt": c["tilt"],
+            "roll": c["roll"],
+            "C": [c["Cx"], c["Cy"], c["Cz"]],
+            "k1": c["k1"],
+        }
+        conferir_camera(camera, cena.cam, campo_lab, w, h)
+        placas = placas_do_estadio(estadio)
+        geo, mascara = mascara_verdadeira(cena, gt, Camera.de_rotulo(camera, w, h), placas)
+        est = oclusao.estatisticas(mascara, geo)
+        pintaveis = [p for p in est if not p["pequena"]]
+        coberto = lambda p: (p["area_px"] - p["livre_px"] - p["outra_placa_px"]) * escala  # noqa: E731
+        cobertas = [p for p in pintaveis if coberto(p) >= lote.min_coberta_px]
+        if len(pintaveis) < lote.min_placas or not cobertas:
+            continue
+        acordo = concordancia_com_o_renderizador(geo, mascara, gt)
+        if acordo < 0.97:  # uma placa que o renderizador desenhou diferente: o item não seria justo
+            continue
+        gid = f"g{lote.primeiro + len(itens):04d}"
+        item = GabaritoOclusao(
+            id=gid,
+            pacote=REF_GENERICO,
+            imagem=f"{gid}.jpg",
+            mascara=f"{gid}.png",
+            largura=w,
+            altura=h,
+            camera=camera,
+            placas=placas,
+            origem="simulador",
+            observacao=f"lote {lote.nome}; simulador do laboratório, domínio {lote.dominio}, semente {semente}",
+        )
+        ok, jpg = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 92])
+        assert ok
+        soma = {k: int(sum(p[k] for p in pintaveis)) for k in ("pessoa_px", "bola_px", "grafismo_px", "objeto_px")}
+        fracs = [p["livre_frac"] for p in pintaveis if p["livre_frac"] is not None]
+        itens.append(
+            {
+                "item": item,
+                "jpg": jpg.tobytes(),
+                "png": gravar_png(mascara, oclusao.PALETA),
+                "imagem": img,
+                "mascara": mascara,
+                "indice": {
+                    "lote": lote.nome,
+                    "id": gid,
+                    "dominio": lote.dominio,
+                    "iluminacao": cena.style.lighting,
+                    "camera": tipo,
+                    "hfov_graus": round(camera["hfov_graus"], 2),
+                    "placas_na_imagem": len(est),
+                    "placas_para_pintar": len(pintaveis),
+                    "placas_cobertas": len(cobertas),
+                    **soma,
+                    "livre_frac_minima": round(min(fracs), 3) if fracs else None,
+                    "concordancia_com_o_renderizador": round(acordo, 4),
+                    "semente": semente,
+                },
+            }
+        )
+        print(
+            f"{lote.nome} {gid}: {tipo}, {camera['hfov_graus']:.1f}°, {len(pintaveis)} placas para pintar, "
+            f"{len(cobertas)} cobertas (semente {semente})",
+            flush=True,
+        )
+    return itens
+
+
 def gravar_zip(destino: Path, itens: list[dict]) -> None:
     with zipfile.ZipFile(destino, "w") as z:
         for it in itens:
             gid = it["item"].id
             json_item = it["item"].model_dump_json(indent=2).encode() + b"\n"
-            for nome, dados, modo in (
+            partes = [
                 (f"gabarito/itens/{gid}.json", json_item, zipfile.ZIP_DEFLATED),
                 (f"gabarito/itens/{gid}.jpg", it["jpg"], zipfile.ZIP_STORED),  # o JPEG já é comprimido
-            ):
+            ]
+            if "png" in it:
+                partes.append((f"gabarito/itens/{gid}.png", it["png"], zipfile.ZIP_STORED))  # o PNG também
+            for nome, dados, modo in partes:
                 info = zipfile.ZipInfo(nome, date_time=DATA_ZIP)
                 info.compress_type = modo
                 info.external_attr = 0o644 << 16
                 z.writestr(info, dados)
 
 
-def gravar_mosaico(destino: Path, lote: Lote, itens: list[dict], colunas: int = 4, linhas: int = 3) -> None:
-    """Uma amostra do lote: até 12 quadros, com o id e o tipo de câmera."""
+def com_a_mascara(img: np.ndarray, mascara: np.ndarray) -> np.ndarray:
+    """O quadro com a máscara verdadeira por cima: as classes que cobrem coloridas, fora das placas mais
+    escuro."""
+    from anotacao import oclusao
+
+    cores = np.array([c[3][::-1] for c in oclusao.CLASSES], np.uint8)  # BGR
+    out = img.copy()
+    cobre = mascara >= oclusao.PESSOA
+    out[cobre] = (0.4 * out[cobre] + 0.6 * cores[mascara[cobre]]).astype(np.uint8)
+    fora = mascara == oclusao.FORA
+    out[fora] = (0.6 * out[fora]).astype(np.uint8)
+    return out
+
+
+def gravar_mosaico(destino: Path, lote, itens: list[dict], colunas: int = 4, linhas: int = 3) -> None:
+    """Uma amostra do lote: até 12 quadros, com o id e o tipo de câmera (na oclusão, com a máscara)."""
     escolha = [itens[round(k)] for k in np.linspace(0, len(itens) - 1, min(colunas * linhas, len(itens)))]
     tw, th = 320, 180
     tela = np.full((linhas * (th + 28) + 8, colunas * (tw + 8) + 8, 3), 250, np.uint8)
     for k, it in enumerate(escolha):
         y, x = 8 + (k // colunas) * (th + 28), 8 + (k % colunas) * (tw + 8)
-        tela[y : y + th, x : x + tw] = cv2.resize(it["imagem"], (tw, th), interpolation=cv2.INTER_AREA)
+        img = com_a_mascara(it["imagem"], it["mascara"]) if "mascara" in it else it["imagem"]
+        tela[y : y + th, x : x + tw] = cv2.resize(img, (tw, th), interpolation=cv2.INTER_AREA)
         ind = it["indice"]
         texto = f"{ind['id']}  {ind['camera']}  {ind['hfov_graus']:.0f} graus"
         cv2.putText(tela, texto, (x + 2, y + th + 19), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (40, 40, 40), 1, cv2.LINE_AA)
@@ -331,25 +546,30 @@ def main() -> None:
     lab = _Laboratorio(Path(args.laboratorio))
     saida = Path(args.saida)
     saida.mkdir(parents=True, exist_ok=True)
-    escolhidos = [lt for lt in LOTES if args.lotes is None or lt.nome in args.lotes]
+    todos = (*LOTES, *LOTES_OCLUSAO)
+    escolhidos = [lt for lt in todos if args.lotes is None or lt.nome in args.lotes]
     if not escolhidos:
-        ap.error(f"nenhum lote com esses nomes; os lotes são {', '.join(lt.nome for lt in LOTES)}")
-    linhas = []
+        ap.error(f"nenhum lote com esses nomes; os lotes são {', '.join(lt.nome for lt in todos)}")
+    linhas: dict[str, list[dict]] = {"indice.csv": [], "indice-oclusao.csv": []}
+    contagem = {}
     for lote in escolhidos:
-        itens = gerar_lote(lote, args, lab)
+        oclusao = isinstance(lote, LoteOclusao)
+        itens = gerar_lote_oclusao(lote, args, lab) if oclusao else gerar_lote(lote, args, lab)
         gravar_zip(saida / f"ouro-{lote.nome}.zip", itens)
         gravar_mosaico(saida / f"mosaico-{lote.nome}.jpg", lote, itens)
-        linhas += [it["indice"] for it in itens]
+        linhas["indice-oclusao.csv" if oclusao else "indice.csv"] += [it["indice"] for it in itens]
+        contagem[lote.nome] = len(itens)
         print(f"{lote.nome}: {len(itens)} itens, g{lote.primeiro:04d} a g{lote.primeiro + len(itens) - 1:04d}")
-    with (saida / "indice.csv").open("w", newline="", encoding="utf-8") as f:
-        escritor = csv.DictWriter(f, fieldnames=list(linhas[0]))
-        escritor.writeheader()
-        escritor.writerows(linhas)
-    contagem = {}
-    for linha in linhas:
-        contagem[linha["lote"]] = contagem.get(linha["lote"], 0) + 1
+    for nome, lista in linhas.items():
+        if not lista:
+            continue
+        with (saida / nome).open("w", newline="", encoding="utf-8") as f:
+            escritor = csv.DictWriter(f, fieldnames=list(lista[0]))
+            escritor.writeheader()
+            escritor.writerows(lista)
     resumo = {
         lt.nome: {
+            "tarefa": "oclusao" if isinstance(lt, LoteOclusao) else "camera",
             "descricao": lt.descricao,
             "itens": contagem[lt.nome],
             "ids": f"g{lt.primeiro:04d} a g{lt.primeiro + contagem[lt.nome] - 1:04d}",

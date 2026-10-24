@@ -8,13 +8,13 @@
 // 4. Métricas em pixels na referência 960 x 540.
 
 /** Versão da ferramenta, gravada em cada arquivo (igual a `anotacao.__version__`). */
-export const VERSAO = "0.6.0";
+export const VERSAO = "0.7.0";
 
 export const REF_W = 960;
 export const REF_H = 540;
 
 /** Versão do Manual de anotação que esta versão da ferramenta segue, por tarefa. */
-export const MANUAL = Object.freeze({ camera: "camera-0.1", revisao: "revisao-0.1" });
+export const MANUAL = Object.freeze({ camera: "camera-0.1", revisao: "revisao-0.1", oclusao: "oclusao-0.1" });
 
 export const RE_ESTADIO = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 export const RE_VERSAO_PACOTE = /^\d+\.\d+$/;
@@ -26,6 +26,8 @@ export const RE_PACOTE_REF = /^[a-z0-9]+(?:-[a-z0-9]+)*\/pacote-\d+\.\d+$/;
 /** Navegador de um computador (um identificador aleatório, guardado no próprio navegador). */
 export const RE_DISPOSITIVO = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 export const RE_ARQUIVO = /^(t\d{10}|g\d{4})__([A-Z][A-Z0-9]{1,9})__v(\d+)\.json$/;
+/** A máscara da oclusão, ao lado do rótulo: o mesmo nome, com .png. */
+export const RE_MASCARA = /^(t\d{10}|g\d{4})__([A-Z][A-Z0-9]{1,9})__v(\d+)\.png$/;
 
 /** Nome da "partida" que guarda os itens do gabarito (nunca entra nos conjuntos de treino). */
 export const PARTIDA_GABARITO = "gabarito";
@@ -34,7 +36,7 @@ export const PARTIDA_GABARITO = "gabarito";
 export const REF_PACOTE_GENERICO = "generico/pacote-1.0";
 
 /** Tarefas com rótulos por arquivo. */
-export const TAREFAS = Object.freeze(["camera"]);
+export const TAREFAS = Object.freeze(["camera", "oclusao"]);
 
 /** Arredonda como o `round` do Python: meio vai para o par. */
 export function arredondarPar(x) {
@@ -106,6 +108,17 @@ export function nomeArquivo(quadro, pessoa, versao) {
 export function lerNome(nome) {
   const m = RE_ARQUIVO.exec(nome);
   return m ? { quadro: m[1], pessoa: m[2], versao: Number(m[3]) } : null;
+}
+
+/** Nome da máscara da oclusão -> {quadro, pessoa, versao}, ou null. */
+export function lerNomeMascara(nome) {
+  const m = RE_MASCARA.exec(nome);
+  return m ? { quadro: m[1], pessoa: m[2], versao: Number(m[3]) } : null;
+}
+
+/** A máscara que acompanha um rótulo da oclusão: o mesmo nome, com .png. */
+export function mascaraDe(nomeRotulo) {
+  return nomeRotulo.replace(/\.json$/, ".png");
 }
 
 /** "2026-11-02T16:00" (hora local do formulário) -> "2026-11-02T16:00:00-03:00", sem trocar o dia. */

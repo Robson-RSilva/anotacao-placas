@@ -1,14 +1,29 @@
 // Levar arquivos de uma pasta de trabalho para outra em .zip: para quem guarda no navegador (sem
 // pasta sincronizada) mandar o que fez, e para quem coordena trazer de volta. Nada é sobrescrito.
 
-import { RE_ARQUIVO, RE_DISPOSITIVO, RE_ESTADIO, RE_GABARITO, RE_PARTIDA, RE_PESSOA, RE_QUADRO, RE_VERSAO_PACOTE } from "./convencoes.js";
+import {
+  RE_ARQUIVO,
+  RE_DISPOSITIVO,
+  RE_ESTADIO,
+  RE_GABARITO,
+  RE_MASCARA,
+  RE_PARTIDA,
+  RE_PESSOA,
+  RE_QUADRO,
+  RE_VERSAO_PACOTE,
+} from "./convencoes.js";
 import { validar } from "./formatos.js";
 import { ArquivoExiste } from "./pasta.js";
+import { ehPng } from "./png.js";
 import { criarZip, lerZip } from "./zip.js";
 
 const TOPO = new Set(["equipe.json", "divisao.json", "projeto.json", "estadios", "partidas", "gabarito", "pessoas"]);
 
-/** Tipo de arquivo (formatos.js) pelo caminho; "jpg" para imagens; null quando não é da pasta de trabalho. */
+/**
+ * Tipo de arquivo (formatos.js) pelo caminho; "jpg" e "png" para imagens e máscaras; null quando não é
+ * da pasta de trabalho. Um item do gabarito é "gabarito" pelo caminho; o formato dentro dele diz se é
+ * da câmera ou da oclusão.
+ */
 export function tipoDoCaminho(caminho) {
   const p = caminho.split("/");
   if (p.length === 1) return { "equipe.json": "equipe", "divisao.json": "divisao", "projeto.json": "projeto" }[p[0]] ?? null;
@@ -19,11 +34,15 @@ export function tipoDoCaminho(caminho) {
   }
   if (p[0] === "gabarito") {
     if (p.length === 3 && p[1] === "itens") {
-      const m = /^(g\d{4})\.(json|jpg)$/.exec(p[2]);
-      if (m && RE_GABARITO.test(m[1])) return m[2] === "json" ? "gabarito" : "jpg";
+      const m = /^(g\d{4})\.(json|jpg|png)$/.exec(p[2]);
+      if (m && RE_GABARITO.test(m[1])) return { json: "gabarito", jpg: "jpg", png: "png" }[m[2]];
       return null;
     }
-    if (p.length === 4 && p[1] === "rotulos" && p[2] === "camera" && RE_ARQUIVO.test(p[3]) && p[3].startsWith("g")) return "rotulo";
+    if (p.length === 4 && p[1] === "rotulos" && p[3].startsWith("g")) {
+      if (p[2] === "camera" && RE_ARQUIVO.test(p[3])) return "rotulo";
+      if (p[2] === "oclusao" && RE_ARQUIVO.test(p[3])) return "rotulo_oclusao";
+      if (p[2] === "oclusao" && RE_MASCARA.test(p[3])) return "png";
+    }
     return null;
   }
   if (p[0] === "pessoas") {
@@ -33,8 +52,13 @@ export function tipoDoCaminho(caminho) {
     if (p.length === 3) return { "manifesto.json": "manifesto", "fila.json": "fila", "tomadas.json": "tomadas" }[p[2]] ?? null;
     if (p.length === 4 && p[2] === "quadros") return /^t\d{10}\.jpg$/.test(p[3]) ? "jpg" : null;
     if (p.length === 4 && p[2] === "previsoes") return /^t\d{10}\.json$/.test(p[3]) && RE_QUADRO.test(p[3].slice(0, -5)) ? "previsao" : null;
+    if (p.length === 5 && p[2] === "previsoes" && p[3] === "oclusao") return /^t\d{10}\.png$/.test(p[4]) ? "png" : null;
     if (p.length === 5 && p[3] === "camera" && RE_ARQUIVO.test(p[4]) && p[4].startsWith("t")) {
       return { rotulos: "rotulo", revisoes: "revisao" }[p[2]] ?? null;
+    }
+    if (p.length === 5 && p[3] === "oclusao" && p[4].startsWith("t")) {
+      if (RE_ARQUIVO.test(p[4])) return { rotulos: "rotulo_oclusao", revisoes: "revisao_oclusao" }[p[2]] ?? null;
+      if (p[2] === "rotulos" && RE_MASCARA.test(p[4])) return "png";
     }
   }
   return null;
@@ -70,7 +94,7 @@ export async function exportarZip(pasta, filtro = () => true, aoProgresso = () =
 /** Os arquivos de uma pessoa: rótulos e revisões com o código dela no nome, e os registros do código. */
 export function soDaPessoa(pessoa) {
   if (!RE_PESSOA.test(pessoa)) throw new Error(`código de pessoa inválido: ${pessoa}`);
-  const re = new RegExp(`__${pessoa}__v\\d+\\.json$`);
+  const re = new RegExp(`__${pessoa}__v\\d+\\.(json|png)$`); // rótulos, revisões e as máscaras ao lado
   return (caminho) => re.test(caminho) || caminho.startsWith(`pessoas/${pessoa}/`);
 }
 
@@ -111,8 +135,14 @@ export async function importarZip(pasta, blob, aoProgresso = () => {}) {
       continue;
     }
     try {
-      if (tipo !== "jpg") validar(tipo, JSON.parse(decodificador.decode(e.dados)));
-      else if (!(e.dados[0] === 0xff && e.dados[1] === 0xd8)) throw new Error("não é um JPEG");
+      if (tipo === "jpg") {
+        if (!(e.dados[0] === 0xff && e.dados[1] === 0xd8)) throw new Error("não é um JPEG");
+      } else if (tipo === "png") {
+        if (!ehPng(e.dados)) throw new Error("não é um PNG");
+      } else {
+        const obj = JSON.parse(decodificador.decode(e.dados));
+        validar(tipo === "gabarito" && obj.formato === "gabarito.oclusao/1" ? "gabarito_oclusao" : tipo, obj);
+      }
       await pasta.escrever(caminho, e.dados);
       out.gravados += 1;
     } catch (erro) {

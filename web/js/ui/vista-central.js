@@ -1,11 +1,13 @@
 // Vista central: quem está anotando, filas, partidas, placar e a pasta de trabalho.
 
 import { codigoPessoa } from "../nucleo/convencoes.js";
+import { pendentesRevisaoOclusao, situacaoOclusao } from "../nucleo/filas-oclusao.js";
 import { pendentesRevisao, situacaoAnotador } from "../nucleo/filas.js";
 import { calcularPlacar } from "../nucleo/placar.js";
 import { exportarZip, importarZip, soDaPessoa } from "../nucleo/transferencia.js";
 import { espaco } from "./armazenamento.js";
-import { baixar, carimbo, celula, el, formatarTempo, linhaVazia, mensagemDeErro, numero } from "./util.js";
+import { diferenca } from "./painel-oclusao.js";
+import { baixar, carimbo, celula, el, formatarTempo, linhaVazia, local, mensagemDeErro, numero } from "./util.js";
 import { vigiar } from "./vigia.js";
 
 const porcento = (a, b) => (b ? `${a} (${Math.round((100 * a) / b)}%)` : String(a));
@@ -110,7 +112,7 @@ export async function montar(raiz, ctx) {
     setTimeout(recarregar, 0);
   };
   if (!pessoa) $("dica-pessoa").textContent = "digite o seu código para começar";
-  for (const id of ["ir-camera", "ir-revisao"]) {
+  for (const id of ["ir-camera", "ir-revisao", "ir-oclusao", "ir-revisao-oclusao"]) {
     $(id).classList.toggle("desligado", !pessoa);
     $(id).addEventListener("click", (e) => {
       if (e.currentTarget.classList.contains("desligado")) e.preventDefault();
@@ -159,10 +161,31 @@ export async function montar(raiz, ctx) {
     if (!pessoa) {
       $("st-camera").textContent = "Digite o seu código no alto da página.";
       $("st-revisao").textContent = "—";
+      $("st-oclusao").textContent = "—";
+      $("st-revisao-oclusao").textContent = "";
       return;
     }
-    const [sit, pend] = await Promise.allSettled([situacaoAnotador(indice, pessoa), pendentesRevisao(indice, pessoa)]);
+    const [sit, pend, sitOc, pendOc] = await Promise.allSettled([
+      situacaoAnotador(indice, pessoa),
+      pendentesRevisao(indice, pessoa),
+      situacaoOclusao(indice, pessoa),
+      pendentesRevisaoOclusao(indice, pessoa),
+    ]);
     if (!vivo) return;
+    if (sitOc.status === "fulfilled") {
+      const s = sitOc.value;
+      $("st-oclusao").textContent = s.liberado
+        ? s.gabarito_total ? `Liberado (gabarito: ${diferenca(s.mediana)} de diferença por placa, na mediana).` : "Pode pintar os quadros com a câmera aprovada."
+        : `Em treino: ${s.motivo}.`;
+    } else {
+      $("st-oclusao").textContent = mensagemDeErro(sitOc.reason);
+    }
+    if (pendOc.status === "fulfilled") {
+      const n = pendOc.value.length;
+      $("st-revisao-oclusao").textContent = n ? `${n} pintura(s) de outras pessoas esperando revisão.` : "Nenhuma pintura esperando revisão.";
+    } else {
+      $("st-revisao-oclusao").textContent = mensagemDeErro(pendOc.reason);
+    }
     if (sit.status === "fulfilled") {
       const s = sit.value;
       $("st-camera").textContent = s.liberado
@@ -199,8 +222,50 @@ export async function montar(raiz, ctx) {
   // ------------------------------------------------------------------ partidas e placar
   const tPartidas = $("partidas").querySelector("tbody");
   const tPlacar = $("placar").querySelector("tbody");
-  linhaVazia(tPartidas, 7, "calculando…");
+  linhaVazia(tPartidas, 8, "calculando…");
   linhaVazia(tPlacar, 9, "calculando…");
+  let ultimoPlacar = null;
+  let tarefaPlacar = local.ler("placar", "camera") === "oclusao" ? "oclusao" : "camera";
+
+  function mostrarPlacar() {
+    const pl = ultimoPlacar;
+    for (const b of raiz.querySelectorAll("[data-placar]")) b.setAttribute("aria-pressed", String(b.dataset.placar === tarefaPlacar));
+    if (!pl) return;
+    const oc = tarefaPlacar === "oclusao";
+    const dados = oc ? pl.oclusao : pl;
+    $("th-concordancia").textContent = oc ? "Concordância (cegos, % da placa)" : "Concordância (cegos)";
+    const linhasPlacar = [];
+    for (const p of dados.pessoas) {
+      if (oc && !p.rotulos && !p.revisoes_feitas && !p.gabarito_n) continue; // quem ainda não pintou nada
+      const tr = document.createElement("tr");
+      const gab = p.gabarito_n
+        ? `${oc ? diferenca(p.gabarito_mediana) : `${numero(p.gabarito_mediana_px, 1)} px`} (${p.gabarito_n})`
+        : "—";
+      const concordancia = oc ? diferenca(p.concordancia) : p.concordancia_px === null ? "—" : `${numero(p.concordancia_px, 1)} px`;
+      tr.append(
+        celula(`${p.pessoa}${p.nome ? ` · ${p.nome}` : ""}`),
+        celula(String(p.aprovados_semana), "num"),
+        celula(String(p.aprovados), "num"),
+        celula(p.taxa_aprovacao === null ? "—" : `${Math.round(100 * p.taxa_aprovacao)}%`, "num"),
+        celula(p.tempo_mediano_s === null ? "—" : formatarTempo(p.tempo_mediano_s), "num"),
+        celula(concordancia, "num"),
+        celula(gab + (p.liberado ? "" : " · em treino")),
+        celula(String(p.dias_seguidos), "num"),
+        celula(p.marcos.join(", ") || "—"),
+      );
+      linhasPlacar.push(tr);
+    }
+    tPlacar.replaceChildren(...linhasPlacar);
+    if (!linhasPlacar.length) linhaVazia(tPlacar, 9, oc ? "Ninguém pintou ainda." : "Ninguém anotou ainda.");
+  }
+  for (const b of raiz.querySelectorAll("[data-placar]")) {
+    b.onclick = () => {
+      tarefaPlacar = b.dataset.placar;
+      local.gravar("placar", tarefaPlacar);
+      mostrarPlacar();
+    };
+  }
+
   async function preencherTabelas() {
     let pl;
     try {
@@ -208,7 +273,7 @@ export async function montar(raiz, ctx) {
     } catch (e) {
       if (!vivo) return;
       tPartidas.replaceChildren();
-      linhaVazia(tPartidas, 7, mensagemDeErro(e));
+      linhaVazia(tPartidas, 8, mensagemDeErro(e));
       return;
     }
     if (!vivo) return;
@@ -216,13 +281,15 @@ export async function montar(raiz, ctx) {
     for (const p of pl.problemas) {
       // incompleta (ainda sincronizando) ou com arquivo inválido: fica fora das filas até se resolver
       const aviso = celula(`fora das filas: ${p.erro}`, "erro");
-      aviso.colSpan = 6;
+      aviso.colSpan = 7;
       const tr = document.createElement("tr");
       tr.append(celula(p.partida), aviso);
       linhasPartidas.push(tr);
     }
+    const oclusaoDe = new Map(pl.oclusao.partidas.map((g) => [g.partida, g]));
     for (const g of [...pl.partidas].reverse()) {
       const c = (await indice.manifesto(g.partida)).cadastro;
+      const oc = oclusaoDe.get(g.partida);
       const tr = document.createElement("tr");
       tr.append(
         celula(g.partida),
@@ -232,37 +299,21 @@ export async function montar(raiz, ctx) {
         celula(porcento(g.anotados, g.sorteados), "num"),
         celula(porcento(g.aprovados, g.sorteados), "num"),
         celula(String(g.pendentes_revisao), "num"),
+        celula(oc ? `${oc.aprovados} de ${oc.elegiveis}${oc.camera_errada ? ` · ${oc.camera_errada} câmera errada` : ""}` : "—", "num"),
       );
       linhasPartidas.push(tr);
     }
     if (!vivo) return;
     tPartidas.replaceChildren(...linhasPartidas);
-    if (!linhasPartidas.length) linhaVazia(tPartidas, 7, "Nenhuma partida importada ainda.");
-    const linhasPlacar = [];
+    if (!linhasPartidas.length) linhaVazia(tPartidas, 8, "Nenhuma partida importada ainda.");
     const codigos = new Set([...nomes.keys(), ...pl.pessoas.map((x) => x.pessoa)]); // quem já anotou nesta pasta
     const chave = [...codigos].sort().join(",");
     if (chave !== sugeridos) {
       sugeridos = chave;
       sugerir(codigos); // só quando muda: trocar as sugestões fecharia a lista aberta de quem está digitando
     }
-    for (const p of pl.pessoas) {
-      const tr = document.createElement("tr");
-      const gab = p.gabarito_n ? `${numero(p.gabarito_mediana_px, 1)} px (${p.gabarito_n})` : "—";
-      tr.append(
-        celula(`${p.pessoa}${p.nome ? ` · ${p.nome}` : ""}`),
-        celula(String(p.aprovados_semana), "num"),
-        celula(String(p.aprovados), "num"),
-        celula(p.taxa_aprovacao === null ? "—" : `${Math.round(100 * p.taxa_aprovacao)}%`, "num"),
-        celula(p.tempo_mediano_s === null ? "—" : formatarTempo(p.tempo_mediano_s), "num"),
-        celula(p.concordancia_px === null ? "—" : `${numero(p.concordancia_px, 1)} px`, "num"),
-        celula(gab + (p.liberado ? "" : " · em treino")),
-        celula(String(p.dias_seguidos), "num"),
-        celula(p.marcos.join(", ") || "—"),
-      );
-      linhasPlacar.push(tr);
-    }
-    tPlacar.replaceChildren(...linhasPlacar);
-    if (!linhasPlacar.length) linhaVazia(tPlacar, 9, "Ninguém anotou ainda.");
+    ultimoPlacar = pl;
+    mostrarPlacar();
   }
 
   // o que outras pessoas fazem nos computadores delas chega pela pasta sincronizada

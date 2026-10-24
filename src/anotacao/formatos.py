@@ -20,6 +20,7 @@ from .convencoes import (
     RE_DISPOSITIVO,
     RE_ESTADIO,
     RE_GABARITO,
+    RE_MASCARA,
     RE_PACOTE_REF,
     RE_PARTIDA,
     RE_PESSOA,
@@ -400,6 +401,186 @@ class GabaritoCamera(Modelo):
         return self
 
 
+# ----------------------------------------------------------------------------- oclusão nas placas
+class Faixa(Modelo):
+    distancia: float = Field(ge=0.5, le=30, description="m, da linha (lateral ou de fundo) até a frente das placas")
+    altura: float = Field(ge=0.2, le=5, description="m, do gramado ao topo das placas")
+    comprimento: float | None = Field(
+        None, ge=2, le=200, description="m, a faixa inteira, centrada no meio do lado; sem ele, de canto a canto"
+    )
+    vao: float = Field(
+        0.0, ge=0, le=100, description="m, um vão sem placas no meio da faixa (atrás do gol, por exemplo)"
+    )
+    ligada: bool = Field(True, description="há placas desses lados")
+
+    @model_validator(mode="after")
+    def _vao(self):
+        if self.comprimento is not None and self.vao >= self.comprimento:
+            raise ValueError("o vão precisa ser menor que o comprimento")
+        return self
+
+
+class Faixas(Modelo):
+    """As faixas de placas do campo genérico: as duas laterais com as mesmas medidas, e os dois fundos."""
+
+    laterais: Faixa
+    fundos: Faixa
+
+
+IdPlaca = Annotated[str, Field(pattern=r"^[A-Z0-9]+(?:_[A-Z0-9]+)*$")]
+
+
+class PlacaOclusao(Modelo):
+    """O que a máscara diz de uma placa, em pixels do quadro."""
+
+    id: IdPlaca
+    lado: Literal["cab", "opo", "esq", "dir"] | None = None
+    area_px: int = Field(ge=0, description="pixels do polígono da placa dentro da imagem")
+    outra_placa_px: int = Field(ge=0, description="desses, os cobertos por uma placa mais perto")
+    livre_px: int = Field(ge=0)
+    pessoa_px: int = Field(ge=0)
+    bola_px: int = Field(ge=0)
+    rede_px: int = Field(ge=0)
+    grafismo_px: int = Field(ge=0)
+    objeto_px: int = Field(ge=0)
+    nao_placa_px: int = Field(ge=0)
+    livre_frac: float | None = Field(
+        None, ge=0, le=1, description="(livre + rede) / (área − não é placa); nenhuma nas pequenas demais"
+    )
+    altura_ref_px: float = Field(ge=0, description="altura da placa na imagem (px, ref. 960)")
+    pequena: bool = Field(description="mais baixa que 10 px (ref. 960): não se pinta")
+
+
+class PartiuDeOclusao(Modelo):
+    fonte: Literal["nenhuma", "modelo", "rotulo_anterior", "rotulo_revisado"]
+    versao: str | None = None
+    referencia: str | None = None
+
+
+SituacaoOclusao = Literal["ok", "sem_placas", "camera_errada", "duvida"]
+
+
+class RotuloOclusao(Modelo):
+    """A oclusão nas placas de um quadro: a máscara (PNG ao lado, com o mesmo nome) e o que ela diz
+    de cada placa. As placas saem da câmera aprovada do quadro e das faixas, do pacote ou do item."""
+
+    formato: Literal["rotulo.oclusao/1"] = "rotulo.oclusao/1"
+    partida: str = Field(description="ID da partida, ou 'gabarito'")
+    pacote: PacoteRef
+    quadro: str = Field(description="ID do quadro (t + PTS em ms) ou do item do gabarito (g0401)")
+    anotador: Pessoa
+    versao: int = Field(ge=1)
+    ferramenta: str
+    manual: str
+    criado_em: datetime
+    segundos_ativos: float = Field(ge=0)
+    largura: int = Field(gt=0)
+    altura: int = Field(gt=0)
+    camera_de: str | None = Field(
+        None, description="rótulo de câmera aprovado de onde veio a câmera (no gabarito, nenhum)"
+    )
+    camera: CameraRotulo = Field(description="a câmera que desenhou as placas")
+    campo: CampoPacote | None = Field(
+        None, description="medidas do campo da câmera (as faixas ficam a uma distância das linhas)"
+    )
+    placas_de: Literal["faixas", "pacote", "gabarito"]
+    faixas: Faixas | None = None
+    partiu_de: PartiuDeOclusao
+    mascara: str | None = Field(None, description="o PNG da máscara, ao lado (o mesmo nome, com .png)")
+    placas: list[PlacaOclusao] = []
+    situacao: SituacaoOclusao
+    comentario: str = ""
+    corrige: str | None = Field(None, description="arquivo do rótulo que esta versão corrige (revisão cruzada)")
+
+    @model_validator(mode="after")
+    def _coerencia(self):
+        if not (RE_PARTIDA.match(self.partida) or self.partida == "gabarito"):
+            raise ValueError("partida inválida")
+        if not (RE_QUADRO.match(self.quadro) or RE_GABARITO.match(self.quadro)):
+            raise ValueError("quadro inválido")
+        if (self.placas_de == "faixas") != (self.faixas is not None):
+            raise ValueError("as faixas vêm sempre, e só, com placas_de 'faixas'")
+        if (self.partida == "gabarito") != (self.placas_de == "gabarito"):
+            raise ValueError("as placas do gabarito são só as dos itens do gabarito")
+        if self.mascara is not None and not RE_MASCARA.match(self.mascara):
+            raise ValueError("nome da máscara inválido")
+        if self.mascara is None and self.placas:
+            raise ValueError("as placas só vêm com a máscara")
+        if self.situacao == "ok" and (self.mascara is None or all(p.pequena for p in self.placas)):
+            raise ValueError("situação 'ok' exige a máscara e uma placa para pintar")
+        if self.situacao in ("sem_placas", "camera_errada") and self.mascara is not None:
+            raise ValueError(f"situação '{self.situacao}' não leva máscara")
+        if self.situacao == "duvida" and not self.comentario.strip():
+            raise ValueError("'dúvida' exige comentário")
+        ids = [p.id for p in self.placas]
+        if len(ids) != len(set(ids)):
+            raise ValueError("placas repetidas")
+        return self
+
+
+MotivoOclusao = Literal[
+    "faixa_fora_das_placas",
+    "pintura_fora_da_tolerancia",
+    "classe_errada",
+    "camera_errada",
+    "outro",
+]
+
+
+class RevisaoOclusao(Modelo):
+    formato: Literal["revisao.oclusao/1"] = "revisao.oclusao/1"
+    partida: Partida
+    quadro: Quadro
+    rotulo: str = Field(description="arquivo do rótulo revisado")
+    revisor: Pessoa
+    versao: int = Field(ge=1)
+    decisao: Literal["aprovar", "corrigir", "devolver"]
+    motivo: MotivoOclusao | None = None
+    comentario: str = ""
+    nova_versao: str | None = Field(None, description="arquivo da correção, quando a decisão é corrigir")
+    ferramenta: str
+    manual: str
+    criado_em: datetime
+    segundos_ativos: float = Field(ge=0)
+
+    @model_validator(mode="after")
+    def _coerencia(self):
+        if (self.decisao == "devolver") != (self.motivo is not None):
+            raise ValueError("motivo é obrigatório ao devolver, e só ao devolver")
+        if (self.decisao == "corrigir") != (self.nova_versao is not None):
+            raise ValueError("nova_versao é obrigatória ao corrigir, e só ao corrigir")
+        if self.motivo == "outro" and not self.comentario.strip():
+            raise ValueError("motivo 'outro' exige comentário")
+        return self
+
+
+class GabaritoOclusao(Modelo):
+    """Item do gabarito da oclusão: o quadro, a câmera exata, as placas exatas e a máscara verdadeira."""
+
+    formato: Literal["gabarito.oclusao/1"] = "gabarito.oclusao/1"
+    id: Annotated[str, Field(pattern=RE_GABARITO.pattern)]
+    pacote: PacoteRef
+    imagem: str
+    mascara: str = Field(description="a máscara verdadeira (PNG de índices), ao lado")
+    largura: int = Field(gt=0)
+    altura: int = Field(gt=0)
+    camera: CameraRotulo
+    campo: CampoPacote | None = Field(None, description="medidas do campo, quando não são as do pacote")
+    placas: list[PlacaPacote] = Field(min_length=1, description="as placas do quadro, com os polígonos exatos")
+    origem: Literal["simulador", "arbitrado"]
+    observacao: str = ""
+
+    @model_validator(mode="after")
+    def _coerencia(self):
+        ids = [p.id for p in self.placas]
+        if len(ids) != len(set(ids)):
+            raise ValueError("IDs de placa repetidos")
+        c = self.campo
+        if c is not None and not (90 <= c.comprimento <= 120 and 45 <= c.largura <= 90 and c.comprimento > c.largura):
+            raise ValueError("medidas do campo fora do que a página aceita")
+        return self
+
+
 # ----------------------------------------------------------------------------- esquemas
 ESQUEMAS: dict[str, type[Modelo]] = {
     "projeto.json": Projeto,
@@ -414,6 +595,9 @@ ESQUEMAS: dict[str, type[Modelo]] = {
     "revisao.camera.json": RevisaoCamera,
     "gabarito.camera.json": GabaritoCamera,
     "pessoa.dispositivo.json": DispositivoPessoa,
+    "rotulo.oclusao.json": RotuloOclusao,
+    "revisao.oclusao.json": RevisaoOclusao,
+    "gabarito.oclusao.json": GabaritoOclusao,
 }
 
 

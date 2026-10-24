@@ -18,9 +18,10 @@ O mesmo layout existe nas páginas (`web/js/nucleo/pasta.js`).
         manifesto.json, tomadas.json, fila.json
         quadros/<quadro>.jpg
         previsoes/<quadro>.json
-        rotulos/<tarefa>/<quadro>__<anotador>__v<n>.json
+        previsoes/oclusao/<quadro>.png              pré-pintura de um modelo (opcional)
+        rotulos/<tarefa>/<quadro>__<anotador>__v<n>.json    na oclusão, com o .png da máscara ao lado
         revisoes/<tarefa>/<quadro>__<revisor>__v<n>.json
-      gabarito/itens/<g0001>.json|.jpg, gabarito/rotulos/<tarefa>/...
+      gabarito/itens/<g0001>.json|.jpg (|.png na oclusão), gabarito/rotulos/<tarefa>/...
       pessoas/<codigo>/<dispositivo>.json           em que computadores cada código é usado
       conjuntos/<data-hora>/                        saída do unificar
 """
@@ -40,6 +41,7 @@ from .convencoes import (
     PARTIDA_GABARITO,
     RE_ESTADIO,
     RE_GABARITO,
+    RE_MASCARA,
     RE_PARTIDA,
     RE_PESSOA,
     RE_QUADRO,
@@ -49,7 +51,7 @@ from .convencoes import (
 from .formatos import Divisao, Equipe, Fila, Manifesto, PacoteEstadio, Projeto, Tomadas
 from .pacote import pacote_generico
 
-TAREFAS = ("camera",)
+TAREFAS = ("camera", "oclusao")
 RE_ARQUIVO = re.compile(r"^(?P<quadro>t\d{10}|g\d{4})__(?P<pessoa>[A-Z][A-Z0-9]{1,9})__v(?P<versao>\d+)\.json$")
 
 M = TypeVar("M", bound=BaseModel)
@@ -84,6 +86,27 @@ def escrever_json(caminho: Path, obj: BaseModel | dict | list, *, sobrescrever: 
     return caminho
 
 
+def escrever_bytes(caminho: Path, dados: bytes, *, sobrescrever: bool = False) -> Path:
+    """Como `escrever_json`, para bytes (as máscaras PNG da oclusão)."""
+    caminho = Path(caminho)
+    caminho.parent.mkdir(parents=True, exist_ok=True)
+    if not sobrescrever and caminho.exists():
+        raise ArquivoExiste(str(caminho))
+    fd, tmp = tempfile.mkstemp(prefix=f".{caminho.name}.", suffix=".tmp", dir=caminho.parent)
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(dados)
+            f.flush()
+            os.fsync(f.fileno())
+        if not sobrescrever and caminho.exists():
+            raise ArquivoExiste(str(caminho))
+        os.replace(tmp, caminho)
+    except BaseException:
+        Path(tmp).unlink(missing_ok=True)
+        raise
+    return caminho
+
+
 def ler_json(caminho: Path, modelo: type[M] | None = None) -> M | dict:
     texto = Path(caminho).read_text(encoding="utf-8")
     return modelo.model_validate_json(texto) if modelo is not None else json.loads(texto)
@@ -104,6 +127,17 @@ def ler_nome(nome: str) -> tuple[str, str, int] | None:
     if not m:
         return None
     return m["quadro"], m["pessoa"], int(m["versao"])
+
+
+def ler_nome_mascara(nome: str) -> tuple[str, str, int] | None:
+    """A máscara da oclusão (`<quadro>__<pessoa>__v<n>.png`), ou None."""
+    m = RE_MASCARA.match(nome)
+    return (m[1], m[2], int(m[3])) if m else None
+
+
+def mascara_de(nome_rotulo: str) -> str:
+    """O nome da máscara que acompanha um rótulo da oclusão."""
+    return nome_rotulo.removesuffix(".json") + ".png"
 
 
 def _checar(regex: re.Pattern, valor: str, oque: str) -> str:
@@ -181,6 +215,13 @@ class Pasta:
 
     def previsao(self, partida: str, quadro: str) -> Path:
         return self.partida(partida) / "previsoes" / f"{_checar(RE_QUADRO, quadro, 'quadro')}.json"
+
+    def previsao_oclusao(self, partida: str, quadro: str) -> Path:
+        """A pré-pintura de um modelo (PNG com as classes da oclusão), quando há."""
+        return self.partida(partida) / "previsoes" / "oclusao" / f"{_checar(RE_QUADRO, quadro, 'quadro')}.png"
+
+    def item_gabarito(self, item: str) -> Path:
+        return self.gabarito / "itens" / f"{_checar(RE_GABARITO, item, 'item do gabarito')}.json"
 
     def rotulos(self, partida: str, tarefa: str) -> Path:
         if tarefa not in TAREFAS:
@@ -269,5 +310,9 @@ class Pasta:
         return out
 
     def proxima_versao(self, diretorio: Path, quadro: str, pessoa: str) -> int:
+        """A versão seguinte à maior da pessoa no quadro (contando as máscaras sem rótulo, de uma gravação
+        interrompida: o nome nunca se repete)."""
         vs = [v for _, q, pe, v in self.listar(diretorio) if q == quadro and pe == pessoa]
+        if diretorio.exists():
+            vs += [r[2] for p in diretorio.iterdir() if (r := ler_nome_mascara(p.name)) and r[:2] == (quadro, pessoa)]
         return max(vs, default=0) + 1

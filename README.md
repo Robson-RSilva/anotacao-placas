@@ -9,7 +9,8 @@ trabalho de cada pessoa. Só entra aqui o que treina modelo:
 | Central e importação | cadastro da partida (estádio, emissora, competição, data e hora, iluminação, chuva) e os quadros sorteados, do vídeo inteiro ou só dos trechos escolhidos | separar treino e teste por jogo e equilibrar a amostra |
 | Câmera do quadro | a câmera que faz o molde do campo coincidir com as marcações | alvos de pontos-chave e linhas do detector |
 | Revisão cruzada | aprovar, corrigir ou devolver o rótulo de outra pessoa, às cegas | só entra no treino o que foi aprovado |
-| Oclusão nas placas (próxima versão) | máscara por classe dentro de cada placa | alvo da máscara de pessoas do detector |
+| Oclusão nas placas | o que cobre cada placa (pessoa, bola, rede, grafismo, objeto), pintado por cima do contorno das placas, e a fração livre de cada uma | alvo da máscara de pessoas do detector |
+| Revisão da oclusão | aprovar, corrigir ou devolver a pintura de outra pessoa, às cegas | só entra no treino o que foi aprovado |
 
 Cortes, replays, grafismos, lado do estádio e artes das placas são resolvidos por regras e pelo
 cadastro do estádio, sem treino, e são conferidos na **solução assistida** — outro projeto, com
@@ -88,10 +89,19 @@ Não é preciso cadastrar equipe nem levantar o estádio antes: basta importar a
    nome de quem anotou: aprovar, corrigir (vira versão nova, com a autoria de quem revisou) ou devolver
    com um motivo da lista. Nos quadros em dupla às cegas, a revisão só abre depois que as duas
    pessoas anotaram.
-4. **Unificar** (Python, por quem treina). `anotacao unificar` lê tudo, valida de novo e gera
-   `conjuntos/<data-hora>/camera.parquet` com manifesto, respeitando a divisão por partida: quadros de
-   um jogo nunca se misturam entre treino e teste. Cada linha leva as medidas do campo usadas no
-   molde daquele rótulo.
+4. **Pintar a oclusão nas placas.** Depois que a câmera de um quadro é aprovada, ele entra na fila da
+   oclusão. A câmera desenha o contorno das placas — as do estádio levantado ou, no campo genérico,
+   uma **faixa de placas** em cada lado do campo, com a distância da linha, a altura, o comprimento e
+   um vão no meio, ajustados no primeiro quadro da partida (os seguintes já abrem certos). Pinta-se só
+   dentro dos contornos o que está na frente da placa: pessoa, bola, rede, grafismo ou objeto, com o
+   pincel ou o laço. Placas mais baixas que 10 px (ref. 960) ficam de fora. A máscara vai num PNG ao
+   lado do rótulo, e o rótulo traz a fração livre de cada placa. Outra pessoa revisa às cegas, como
+   na câmera ([ADR-0009](docs/adr/0009-oclusao-nas-placas.md)).
+5. **Unificar** (Python, por quem treina). `anotacao unificar` lê tudo, valida de novo e gera
+   `conjuntos/<data-hora>/camera.parquet`, `oclusao.parquet` e `oclusao_placas.parquet` com
+   manifesto, respeitando a divisão por partida: quadros de um jogo nunca se misturam entre treino e
+   teste. Cada linha da câmera leva as medidas do campo usadas no molde daquele rótulo; cada placa da
+   oclusão, as contas refeitas da máscara e o retângulo para recortar.
 
 Para experimentar, a página central cria uma pasta de exemplo (o estádio sintético do laboratório).
 
@@ -109,9 +119,11 @@ simulador: L1 para treino e liberação, L2 para as medidas do campo, L3 e L4 pa
 noite, cada um num .zip que entra por "Trazer arquivos de um .zip". Os itens abrem no campo
 genérico; os de um campo de outro tamanho só fecham com as medidas certas. Sem placas no molde, nada
 decide o lado do campo, e o gabarito aceita a câmera do lado espelhado ([ADR-0008](docs/adr/0008-gabarito-no-campo-generico.md)).
-Em ~10% dos quadros duas pessoas anotam do
-zero, às cegas, para medir a concordância; em outros ~10% a página começa sem previsão, para medir o
-viés de ancoragem.
+A oclusão tem gabarito próprio: os lotes L5 (de dia) e L6 (à noite), com as placas exatas e a
+máscara verdadeira de cada quadro. A pintura se compara com a verdade placa a placa, com 1 px de
+tolerância na borda; a liberação pede a mediana dos últimos 5 itens em até 5% de cada placa.
+Em ~10% dos quadros duas pessoas anotam (e pintam) do zero, às cegas, para medir a concordância; em
+outros ~10% a página começa sem previsão, para medir o viés de ancoragem.
 
 ## Pasta de trabalho
 
@@ -124,8 +136,10 @@ trabalho/                                   a pasta da equipe, sincronizada com 
     manifesto.json, tomadas.json, fila.json
     quadros/<quadro>.jpg                      só os sorteados
     previsoes/<quadro>.json                   quando há previsor (anotacao prever)
+    previsoes/oclusao/<quadro>.png            pré-pintura de um modelo (anotacao prever --tarefa oclusao)
     rotulos/camera/<quadro>__<código>__v<n>.json
-    revisoes/camera/<quadro>__<código>__v<n>.json
+    rotulos/oclusao/<quadro>__<código>__v<n>.json + .png   a pintura e a máscara ao lado
+    revisoes/camera/…, revisoes/oclusao/…
   gabarito/itens/, gabarito/rotulos/          nunca entram no treino
   pessoas/<código>/<navegador>.json           em que computadores cada código é usado
   conjuntos/<data-hora>/                      saída do unificar
@@ -142,16 +156,17 @@ python -m venv .venv && source .venv/bin/activate     # no Windows: .venv\Script
 pip install -e .
 
 anotacao exemplo trabalho                   # pasta de exemplo: estádio sintético e os nomes de A01/A02
-anotacao gabarito ORIGEM --pasta P          # importa itens do gabarito (<id>.json + JPEG)
+anotacao gabarito ORIGEM --pasta P          # importa itens do gabarito (<id>.json + JPEG; na oclusão, + PNG)
 anotacao prever --pasta P --previsor pacote.modulo:objeto   # câmera prevista para o molde abrir perto
+anotacao prever --tarefa oclusao --pasta P --previsor ...   # pré-pintura da oclusão (máscara de pessoas)
 anotacao validar --pasta P                  # confere todos os arquivos
 anotacao unificar --pasta P                 # gera os conjuntos de treino
 anotacao esquemas DESTINO                   # exporta os JSON Schemas
 ```
 
 Para experimentar com dados do laboratório: `scripts/lotes_de_ouro.py` gera os lotes de ouro
-(`--laboratorio ../placas-exposicao --saida lotes`: um .zip por lote, `indice.csv` e um mosaico de
-cada lote), `scripts/gabarito_do_laboratorio.py` gera itens do gabarito no estádio sintético, com
+(`--laboratorio ../placas-exposicao --saida lotes`: um .zip por lote, `indice.csv` e
+`indice-oclusao.csv` e um mosaico de cada lote — na oclusão, com a máscara verdadeira por cima), `scripts/gabarito_do_laboratorio.py` gera itens do gabarito no estádio sintético, com
 placas, e `scripts/video_demo_do_laboratorio.py` monta um vídeo MP4 de demonstração a partir de uma
 transmissão sintética.
 
@@ -183,8 +198,9 @@ em [docs/arquitetura.md](docs/arquitetura.md) e decisões em [docs/adr/](docs/ad
 ## Próximos passos
 
 - Baixar o vídeo pela própria página (depende de onde os vídeos vêm).
-- Página de oclusão nas placas (máscara por classe, a fração livre calculada dela).
-- Previsor com o detector do laboratório (`anotacao prever --previsor pacote.modulo:objeto`).
+- Previsor com o detector do laboratório (`anotacao prever --previsor pacote.modulo:objeto`) e a
+  máscara de pessoas como pré-pintura da oclusão (`--tarefa oclusao`).
+- Decidir se a rede do gol conta como oclusão (o rótulo já guarda os pixels dela).
 - Indicador ao vivo da distância entre o molde e as linhas que a rede encontrou.
 
 ## Dados e privacidade

@@ -134,12 +134,12 @@ export function emOrdemDaPessoa(itens, pessoa, partida) {
 }
 
 /** Pessoas com rótulo próprio no quadro (sem contar as correções feitas na revisão). */
-function quemAnotou(ip, quadro) {
+export function quemAnotou(ip, quadro) {
   return new Set(ip.rotulos.filter((a) => a.quadro === quadro && a.dados.corrige === null).map((a) => a.pessoa));
 }
 
 /** Quantas pessoas precisam anotar o quadro: duas na dupla às cegas, uma nos outros. */
-const precisam = (item) => (item.dupla ? 2 : 1);
+export const precisam = (item) => (item.dupla ? 2 : 1);
 
 /**
  * O próximo item da pessoa na tarefa de câmera, ou null. O item diz a partida, o quadro, a versão a

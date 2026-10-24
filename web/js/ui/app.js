@@ -1,6 +1,6 @@
 // Aplicativo de uma página só: escolhe a pasta de trabalho e troca de vista pelo endereço
-// (#/, #/camera, #/revisao, #/importar, #/coordenacao). Uma página só porque a permissão da pasta
-// vale para a aba aberta: trocar de vista não pede de novo.
+// (#/, #/camera, #/revisao, #/oclusao, #/revisao-oclusao, #/importar, #/coordenacao). Uma página
+// só porque a permissão da pasta vale para a aba aberta: trocar de vista não pede de novo.
 
 import { RE_DISPOSITIVO, VERSAO, codigoPessoa } from "../nucleo/convencoes.js";
 import { carregarEsquemas } from "../nucleo/formatos.js";
@@ -13,9 +13,19 @@ import * as central from "./vista-central.js";
 import * as coordenacao from "./vista-coordenacao.js";
 import * as importar from "./vista-importar.js";
 import * as inicio from "./vista-inicio.js";
+import * as oclusao from "./vista-oclusao.js";
+import * as revisaoOclusao from "./vista-revisao-oclusao.js";
 import * as revisao from "./vista-revisao.js";
 
-const ROTAS = { "": ["central", central], camera: ["camera", camera], revisao: ["revisao", revisao], importar: ["importar", importar], coordenacao: ["coordenacao", coordenacao] };
+const ROTAS = {
+  "": ["central", central],
+  camera: ["camera", camera],
+  revisao: ["revisao", revisao],
+  oclusao: ["oclusao", oclusao],
+  "revisao-oclusao": ["revisao-oclusao", revisaoOclusao],
+  importar: ["importar", importar],
+  coordenacao: ["coordenacao", coordenacao],
+};
 
 /** O que as vistas compartilham: a pasta, o índice, quem está anotando e a importação em curso. */
 const ctx = {
@@ -114,8 +124,12 @@ async function mostrar(nome, modulo) {
     }
   }
   atual = null;
-  const raiz = document.getElementById("app");
-  raiz.replaceChildren(document.getElementById(`tpl-${nome}`).content.cloneNode(true));
+  // cada vista num invólucro próprio: o que uma vista desmontada ainda terminar de fazer (uma leitura
+  // da pasta que demorou) mexe nos elementos dela, já fora da página, e não nos da vista seguinte
+  const raiz = document.createElement("div");
+  raiz.className = "vista";
+  raiz.append(document.getElementById(`tpl-${nome}`).content.cloneNode(true));
+  document.getElementById("app").replaceChildren(raiz);
   for (const v of raiz.querySelectorAll("[data-versao]")) v.textContent = `v${VERSAO}`;
   document.body.className = modulo.CLASSE ?? "pagina-central";
   window.scrollTo(0, 0);

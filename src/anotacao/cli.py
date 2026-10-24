@@ -6,6 +6,7 @@ comandos trabalham sobre a mesma pasta:
 anotacao exemplo trabalho/                  cria uma pasta de trabalho de exemplo
 anotacao gabarito ORIGEM --pasta trabalho/  importa itens do gabarito
 anotacao prever --pasta trabalho/ --previsor pacote.modulo:objeto   previsões para o molde
+anotacao prever --tarefa oclusao --pasta trabalho/ --previsor ...    pré-pintura da oclusão
 anotacao validar --pasta trabalho/          confere todos os arquivos
 anotacao unificar --pasta trabalho/         gera os conjuntos de treino
 anotacao esquemas DESTINO                   exporta os JSON Schemas dos formatos
@@ -19,15 +20,58 @@ import os
 import sys
 from pathlib import Path
 
-from . import __version__
-from .formatos import DispositivoPessoa, Divisao, exportar_esquemas
+from . import __version__, oclusao
+from .camera import Camera
+from .formatos import DispositivoPessoa, Divisao, GabaritoOclusao, exportar_esquemas
 from .gabarito import importar as importar_gabarito
+from .gabarito import ler_item
 from .geracao import equipe_exemplo
 from .indice import Indice
+from .mascara import ler_png
 from .pacote import pacote_sintetico, validar_geometria
 from .pasta import Pasta, escrever_json, ler_json
-from .previsores import carregar_previsor, prever
+from .previsores import carregar_previsor, prever, prever_oclusao
 from .unificar import unificar
+
+#: Diferença aceita entre as contas da página e as do Python (pixels na borda de uma placa).
+TOLERANCIA_PX = 3
+
+
+def _conferir_mascara(caminho, largura: int, altura: int) -> tuple[object, str | None]:
+    try:
+        m = ler_png(caminho)
+    except (ValueError, OSError) as e:
+        return None, f"máscara ilegível: {e}"
+    if m.shape != (altura, largura):
+        return None, "a máscara não tem o tamanho do quadro"
+    if m.max(initial=0) > oclusao.NAO_PLACA:
+        return None, "a máscara tem valores fora das classes"
+    return m, None
+
+
+def _conferir_oclusao(pasta: Pasta, r, caminho, placas3d) -> list[str]:
+    """A máscara de uma pintura existe, tem o tamanho do quadro, só tem classes dentro das placas e diz
+    o mesmo que o rótulo (recalculado aqui, da máscara e das placas)."""
+    if r.mascara is None:
+        return []
+    m, erro = _conferir_mascara(caminho.parent / r.mascara, r.largura, r.altura)
+    if erro:
+        return [erro]
+    geo = oclusao.geometria(Camera.de_rotulo(r.camera.model_dump(), r.largura, r.altura), placas3d, r.largura, r.altura)
+    fora = int(((m > 0) & ~geo.roi).sum())
+    problemas = []
+    if fora > TOLERANCIA_PX * max(1, len(geo.info)) * 10:
+        problemas.append(f"{fora} pixels pintados fora das placas")
+    est = {p["id"]: p for p in oclusao.estatisticas(m, geo)}
+    gravadas = {p.id: p for p in r.placas}
+    if set(est) != set(gravadas):
+        return [*problemas, "as placas do rótulo não são as que a câmera desenha"]
+    for pid, p in est.items():
+        g = gravadas[pid]
+        campos = ["area_px", "livre_px", "pessoa_px", "bola_px", "rede_px", "grafismo_px", "objeto_px", "nao_placa_px"]
+        if any(abs(p[c] - getattr(g, c)) > TOLERANCIA_PX for c in campos):
+            problemas.append(f"{pid}: as contas do rótulo não batem com a máscara")
+    return problemas
 
 
 def _pasta_padrao() -> str:
@@ -74,8 +118,45 @@ def cmd_validar(a: argparse.Namespace) -> int:
             problemas.append(f"{pid}: {len(faltando)} quadro(s) da fila sem imagem (ex.: {faltando[0]})")
         ip = indice.partida(pid)
         problemas += [f"{p.relative_to(pasta.raiz)}: {e}" for p, e in ip.invalidos]
+        ipo = indice.partida(pid, "oclusao")
+        problemas += [f"{p.relative_to(pasta.raiz)}: {e}" for p, e in ipo.invalidos]
+        problemas += [f"{p.relative_to(pasta.raiz)}: a máscara ainda não chegou" for p in ipo.esperando]
+        for a in ipo.rotulos:
+            r = indice.rotulo_oclusao(a)
+            try:
+                pac = pasta.ler_pacote_ref(r.pacote)
+            except (ValueError, OSError) as e:
+                problemas.append(f"{a.caminho.relative_to(pasta.raiz)}: pacote ilegível ({e})")
+                continue
+            campo = (r.campo.comprimento, r.campo.largura) if r.campo else (pac.campo.comprimento, pac.campo.largura)
+            faixas = r.faixas.model_dump() if r.faixas else None
+            placas3d = oclusao.placas_do_rotulo(r.placas_de, faixas, campo, pac)
+            erros = _conferir_oclusao(pasta, r, a.caminho, placas3d)
+            problemas += [f"{a.caminho.relative_to(pasta.raiz)}: {e}" for e in erros]
+    itens = {}
+    for p in sorted((pasta.gabarito / "itens").glob("g*.json")):
+        try:
+            itens[p.stem] = ler_item(p)
+        except (ValueError, OSError) as e:
+            problemas.append(f"{p.relative_to(pasta.raiz)}: {str(e).splitlines()[0]}")
+            continue
+        if isinstance(itens[p.stem], GabaritoOclusao):
+            g = itens[p.stem]
+            _, erro = _conferir_mascara(p.parent / g.mascara, g.largura, g.altura)
+            if erro:
+                problemas.append(f"{p.relative_to(pasta.raiz)}: {erro}")
     gab = indice.partida("gabarito")
     problemas += [f"{p.relative_to(pasta.raiz)}: {e}" for p, e in gab.invalidos]
+    gabo = indice.partida("gabarito", "oclusao")
+    problemas += [f"{p.relative_to(pasta.raiz)}: {e}" for p, e in gabo.invalidos]
+    for a in gabo.rotulos:
+        r = indice.rotulo_oclusao(a)
+        item = itens.get(a.quadro)
+        if not isinstance(item, GabaritoOclusao):
+            problemas.append(f"{a.caminho.relative_to(pasta.raiz)}: não há item da oclusão {a.quadro} no gabarito")
+            continue
+        erros = _conferir_oclusao(pasta, r, a.caminho, [pl.model_dump() for pl in item.placas])
+        problemas += [f"{a.caminho.relative_to(pasta.raiz)}: {e}" for e in erros]
     for registro in sorted(pasta.pessoas.glob("*/*.json")):  # em que computadores cada código é usado
         try:
             d = ler_json(registro, DispositivoPessoa)
@@ -93,6 +174,8 @@ def cmd_unificar(a: argparse.Namespace) -> int:
     destino = unificar(Pasta(a.pasta))
     man = json.loads((destino / "manifesto.json").read_text(encoding="utf-8"))
     print(f"{destino}: {man['quadros']} quadros {man['por_conjunto']}")
+    oc = man["oclusao"]
+    print(f"oclusão: {oc['quadros']} quadros, {oc['placas_pintadas']} placas pintadas {oc['por_conjunto']}")
     prob = json.loads((destino / "problemas.json").read_text(encoding="utf-8"))
     for p in prob["invalidos"]:
         if p["erro"].startswith("partida fora dos conjuntos"):
@@ -108,7 +191,8 @@ def cmd_gabarito(a: argparse.Namespace) -> int:
 
 def cmd_prever(a: argparse.Namespace) -> int:
     previsor = carregar_previsor(a.previsor)
-    n = prever(Pasta(a.pasta), previsor, a.partida or None, refazer=a.refazer)
+    fazer = prever_oclusao if a.tarefa == "oclusao" else prever
+    n = fazer(Pasta(a.pasta), previsor, a.partida or None, refazer=a.refazer)
     print(f"{n} previsões gravadas ({previsor.nome}@{previsor.versao})")
     return 0
 
@@ -130,14 +214,15 @@ def construir_parser() -> argparse.ArgumentParser:
     p.add_argument("destino")
     p.set_defaults(func=cmd_exemplo)
 
-    p = sub.add_parser("gabarito", help="importa itens do gabarito (<id>.json + imagem JPEG)")
+    p = sub.add_parser("gabarito", help="importa itens do gabarito (<id>.json + JPEG; na oclusão, + a máscara PNG)")
     p.add_argument("origem")
     p.add_argument("--pasta", default=_pasta_padrao())
     p.set_defaults(func=cmd_gabarito)
 
-    p = sub.add_parser("prever", help="grava a câmera prevista de cada quadro sorteado")
+    p = sub.add_parser("prever", help="grava a câmera prevista (ou a pré-pintura da oclusão) de cada quadro sorteado")
     p.add_argument("--pasta", default=_pasta_padrao())
     p.add_argument("--previsor", required=True, help="pacote.modulo:objeto")
+    p.add_argument("--tarefa", choices=["camera", "oclusao"], default="camera")
     p.add_argument("--partida", action="append", help="só esta partida (pode repetir)")
     p.add_argument("--refazer", action="store_true", help="refaz as previsões que já existem")
     p.set_defaults(func=cmd_prever)

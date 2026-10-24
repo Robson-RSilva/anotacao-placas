@@ -13,6 +13,17 @@ Um previsor é qualquer objeto chamável com `nome` e `versao`:
 
 e é carregado por `--previsor pacote.modulo:objeto` (o objeto pode ser a instância, a classe ou uma
 função que devolve a instância).
+
+Na oclusão (`anotacao prever --tarefa oclusao`), o previsor recebe só a imagem e devolve a máscara
+do quadro inteiro, com as classes da oclusão (2 pessoa, 3 bola, 4 rede, 5 grafismo, 6 objeto; o resto
+é ignorado), ou None:
+
+    class MinhaMascara:
+        nome = "pessoas_B"
+        versao = "71a0"
+        def __call__(self, imagem_bgr) -> np.ndarray | None: ...
+
+A página pinta com ela, dentro das placas, o começo de cada quadro: `previsoes/oclusao/<quadro>.png`.
 """
 
 from __future__ import annotations
@@ -25,7 +36,9 @@ import cv2
 import numpy as np
 
 from .formatos import CameraRotulo, PacoteEstadio, Previsao
-from .pasta import Pasta, escrever_json
+from .mascara import gravar_png
+from .oclusao import PALETA
+from .pasta import Pasta, escrever_bytes, escrever_json
 
 
 class Previsor(Protocol):
@@ -90,6 +103,42 @@ def prever(
                 ),
                 sobrescrever=True,
             )
+            n += 1
+            if progresso:
+                progresso(pid, k + 1, len(itens))
+    return n
+
+
+def prever_oclusao(
+    pasta: Pasta,
+    previsor,
+    partidas: list[str] | None = None,
+    *,
+    refazer: bool = False,
+    progresso: Callable[[str, int, int], None] | None = None,
+) -> int:
+    """Grava a pré-pintura da oclusão de cada quadro da fila (menos os "sem previsão"), um PNG com as
+    classes da oclusão. Devolve quantas gravou; rodar de novo só faz as que faltam (ou todas, com
+    `refazer`)."""
+    n = 0
+    for pid in partidas or pasta.listar_partidas():
+        man = pasta.ler_manifesto(pid)
+        itens = [it for it in pasta.ler_fila(pid).itens if not it.sem_previsao]
+        for k, item in enumerate(itens):
+            destino = pasta.previsao_oclusao(pid, item.quadro)
+            if destino.exists() and not refazer:
+                continue
+            img = cv2.imread(str(pasta.quadro(pid, item.quadro)))
+            if img is None:
+                continue
+            m = previsor(img)
+            if m is None:
+                continue
+            m = np.asarray(m)
+            if m.shape != (man.video.altura, man.video.largura):
+                raise ValueError(f"{previsor.nome}: a máscara precisa ter o tamanho do quadro ({m.shape})")
+            m = np.where((m >= 2) & (m <= 7), m, 0).astype(np.uint8)  # só as classes que cobrem a placa
+            escrever_bytes(destino, gravar_png(m, PALETA), sobrescrever=True)
             n += 1
             if progresso:
                 progresso(pid, k + 1, len(itens))

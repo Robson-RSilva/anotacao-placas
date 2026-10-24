@@ -38,6 +38,12 @@ GitHub Pages (site estático)          navegador de cada pessoa                 
   ponto ao cursor sem tirar do lugar os já travados. Uma âncora em torno da câmera de partida decide
   o que se mexe com poucas pistas: com um ponto só giram pan e tilt; com dois entram zoom e roll; com
   quatro, a posição; com cinco, a distorção.
+- **A oclusão:** a câmera aprovada de cada quadro desenha as placas — as do pacote do estádio ou,
+  no campo genérico, as faixas de placas que quem pinta ajusta por partida (ADR-0009). A página
+  rasteriza cada placa de frente para a câmera (com a distorção da lente, da mais longe para a mais
+  perto) e só deixa pintar dentro delas; a máscara inteira do quadro vai num PNG de índices ao lado do
+  rótulo, gravado e lido por um codificador próprio (a paleta não passa pelo canvas, que mexeria nas
+  cores). Duas pinturas se comparam placa a placa com 1 px de tolerância na borda.
 - **A importação:** um worker lê o MP4 em blocos (o índice com um leitor próprio de ISO BMFF), faz o
   SHA-256 por partes, decodifica os quadros com o WebCodecs e guarda só os descritores de quadros
   reduzidos a 160 × 90. Com trechos escolhidos, decodifica só do quadro-chave anterior a cada trecho
@@ -60,12 +66,14 @@ GitHub Pages (site estático)          navegador de cada pessoa                 
 | `nucleo/pasta.js`, `nucleo/indice.js` | layout da pasta, escrita que nunca sobrescreve, índice com cache |
 | `nucleo/filas.js`, `nucleo/gabarito.js`, `nucleo/placar.js`, `nucleo/avaliacao.js` | o que cada pessoa faz a seguir, liberação, placar e medidas em px |
 | `nucleo/rotulos.js` | montar e gravar rótulos e revisões |
+| `nucleo/oclusao.js`, `nucleo/png.js` | as placas do quadro (faixas, pacote, gabarito), onde caem na imagem, a máscara, as contas por placa e a comparação; o PNG de índices |
+| `nucleo/filas-oclusao.js`, `nucleo/rotulos-oclusao.js` | a fila da oclusão (quadros com a câmera aprovada) e gravar as pinturas e as revisões |
 | `nucleo/zip.js`, `nucleo/transferencia.js` | levar e trazer arquivos em .zip |
 | `nucleo/hash.js`, `nucleo/aleatorio.js`, `nucleo/estatistica.js` | SHA-256 por partes, sorteio reprodutível, mediana e percentil |
 | `video/mp4.js` | índice do MP4: codec e tabela de amostras |
 | `video/descritores.js`, `video/cortes.js`, `video/sorteio.js` | do vídeo aos quadros sorteados (as contas da v0.1) |
 | `video/importar.js`, `video/trabalhador.js` | a importação, num worker |
-| `ui/` | as vistas (central, câmera, revisão, importar, coordenação), o editor, a escolha da pasta e a vigia que pega o que chega de outros computadores |
+| `ui/` | as vistas (central, câmera, revisão, oclusão, revisão da oclusão, importar, coordenação), o editor do molde, o pintor da oclusão, a escolha da pasta e a vigia que pega o que chega de outros computadores |
 
 `nucleo/` e as contas de `video/` não dependem da página: rodam no Node (`node --test`) e no worker.
 
@@ -77,8 +85,9 @@ GitHub Pages (site estático)          navegador de cada pessoa                 
 | `formatos.py` | modelos dos arquivos (pydantic) e JSON Schemas |
 | `pasta.py`, `indice.py` | layout da pasta, escrita atômica, índice |
 | `pacote.py` | validação do pacote, o campo genérico e o estádio sintético |
-| `gabarito.py`, `previsores.py` | importar o gabarito; previsões do modelo para o molde |
-| `unificar.py` | conjuntos de treino em Parquet |
+| `gabarito.py`, `previsores.py` | importar o gabarito; previsões do modelo para o molde e pré-pintura da oclusão |
+| `oclusao.py`, `mascara.py` | as mesmas contas da oclusão que as páginas, e o PNG de índices |
+| `unificar.py` | conjuntos de treino em Parquet (câmera e oclusão) |
 | `geracao.py` | arquivos que as páginas leem e saem do Python (esquemas, exemplo, convenções) |
 | `cli.py` | linha de comando |
 

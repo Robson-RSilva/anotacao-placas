@@ -1,0 +1,233 @@
+{
+  "$defs": {
+    "CameraRotulo": {
+      "additionalProperties": false,
+      "properties": {
+        "C": {
+          "description": "centro óptico (m)",
+          "items": {
+            "type": "number"
+          },
+          "maxItems": 3,
+          "minItems": 3,
+          "title": "C",
+          "type": "array"
+        },
+        "hfov_graus": {
+          "description": "campo de visão horizontal",
+          "exclusiveMaximum": 150,
+          "exclusiveMinimum": 0.5,
+          "title": "Hfov Graus",
+          "type": "number"
+        },
+        "k1": {
+          "default": 0.0,
+          "maximum": 1.0,
+          "minimum": -1.0,
+          "title": "K1",
+          "type": "number"
+        },
+        "pan": {
+          "title": "Pan",
+          "type": "number"
+        },
+        "roll": {
+          "maximum": 45,
+          "minimum": -45,
+          "title": "Roll",
+          "type": "number"
+        },
+        "tilt": {
+          "maximum": 90,
+          "minimum": -90,
+          "title": "Tilt",
+          "type": "number"
+        }
+      },
+      "required": [
+        "hfov_graus",
+        "pan",
+        "tilt",
+        "roll",
+        "C"
+      ],
+      "title": "CameraRotulo",
+      "type": "object"
+    },
+    "CampoPacote": {
+      "additionalProperties": false,
+      "properties": {
+        "comprimento": {
+          "default": 105.0,
+          "description": "metros, linha de fundo a linha de fundo",
+          "exclusiveMaximum": 130,
+          "exclusiveMinimum": 80,
+          "title": "Comprimento",
+          "type": "number"
+        },
+        "largura": {
+          "default": 68.0,
+          "description": "metros, lateral a lateral",
+          "exclusiveMaximum": 100,
+          "exclusiveMinimum": 40,
+          "title": "Largura",
+          "type": "number"
+        }
+      },
+      "title": "CampoPacote",
+      "type": "object"
+    },
+    "PlacaPacote": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "pattern": "^[A-Z0-9]+(?:_[A-Z0-9]+)*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "lado": {
+          "enum": [
+            "cab",
+            "opo",
+            "esq",
+            "dir"
+          ],
+          "title": "Lado",
+          "type": "string"
+        },
+        "patrocinador": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Patrocinador"
+        },
+        "tipo": {
+          "enum": [
+            "estatica",
+            "led"
+          ],
+          "title": "Tipo",
+          "type": "string"
+        },
+        "vertices": {
+          "description": "BL, BR, TR, TL, vistos de frente",
+          "items": {
+            "items": {
+              "type": "number"
+            },
+            "maxItems": 3,
+            "minItems": 3,
+            "type": "array"
+          },
+          "maxItems": 4,
+          "minItems": 4,
+          "title": "Vertices",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "tipo",
+        "lado",
+        "vertices"
+      ],
+      "title": "PlacaPacote",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Item do gabarito da oclusão: o quadro, a câmera exata, as placas exatas e a máscara verdadeira.",
+  "properties": {
+    "altura": {
+      "exclusiveMinimum": 0,
+      "title": "Altura",
+      "type": "integer"
+    },
+    "camera": {
+      "$ref": "#/$defs/CameraRotulo"
+    },
+    "campo": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/CampoPacote"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "medidas do campo, quando não são as do pacote"
+    },
+    "formato": {
+      "const": "gabarito.oclusao/1",
+      "default": "gabarito.oclusao/1",
+      "title": "Formato",
+      "type": "string"
+    },
+    "id": {
+      "pattern": "^g\\d{4}$",
+      "title": "Id",
+      "type": "string"
+    },
+    "imagem": {
+      "title": "Imagem",
+      "type": "string"
+    },
+    "largura": {
+      "exclusiveMinimum": 0,
+      "title": "Largura",
+      "type": "integer"
+    },
+    "mascara": {
+      "description": "a máscara verdadeira (PNG de índices), ao lado",
+      "title": "Mascara",
+      "type": "string"
+    },
+    "observacao": {
+      "default": "",
+      "title": "Observacao",
+      "type": "string"
+    },
+    "origem": {
+      "enum": [
+        "simulador",
+        "arbitrado"
+      ],
+      "title": "Origem",
+      "type": "string"
+    },
+    "pacote": {
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*/pacote-\\d+\\.\\d+$",
+      "title": "Pacote",
+      "type": "string"
+    },
+    "placas": {
+      "description": "as placas do quadro, com os polígonos exatos",
+      "items": {
+        "$ref": "#/$defs/PlacaPacote"
+      },
+      "minItems": 1,
+      "title": "Placas",
+      "type": "array"
+    }
+  },
+  "required": [
+    "id",
+    "pacote",
+    "imagem",
+    "mascara",
+    "largura",
+    "altura",
+    "camera",
+    "placas",
+    "origem"
+  ],
+  "title": "GabaritoOclusao",
+  "type": "object"
+}

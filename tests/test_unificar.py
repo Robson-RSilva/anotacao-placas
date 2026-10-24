@@ -4,16 +4,28 @@ from __future__ import annotations
 
 import json
 
+import numpy as np
 import pandas as pd
 
+from anotacao import oclusao
 from anotacao.camera import Camera
 from anotacao.convencoes import REF_PACOTE_GENERICO
 from anotacao.formatos import CampoPacote, Divisao
 from anotacao.indice import Indice
-from anotacao.pasta import escrever_json
+from anotacao.pasta import escrever_json, mascara_de
 from anotacao.unificar import unificar
 
-from conftest import AGORA, PARTIDA, camera_exemplo, criar_partida, gravar_revisao, gravar_rotulo
+from conftest import (
+    AGORA,
+    PARTIDA,
+    camera_exemplo,
+    criar_partida,
+    gravar_pintura,
+    gravar_revisao,
+    gravar_revisao_oclusao,
+    gravar_rotulo,
+    placas_do_pacote,
+)
 
 
 def test_um_rotulo_aprovado_por_quadro(pasta):
@@ -119,3 +131,54 @@ def test_pacote_ilegivel_deixa_o_rotulo_pendente(pasta):
     prob = json.loads((destino / "problemas.json").read_text(encoding="utf-8"))
     assert [p["arquivo"] for p in prob["invalidos"]] == ["estadios/arena-x/pacote-2.0"]
     assert [p["quadro"] for p in prob["pendentes"]] == [q[0]]
+
+
+def _pessoa_numa_placa(cam):
+    """Uma pintura com uma "pessoa" cobrindo metade da primeira placa que se pinta."""
+    geo = oclusao.geometria(cam, placas_do_pacote(), cam.w, cam.h)
+    alvo = next(p for p in geo.info if not p["pequena"])
+    ys, xs = np.nonzero(geo.regiao == alvo["k"] + 1)
+    pintura = np.zeros((cam.h, cam.w), np.uint8)
+    pintura[ys.min() : ys.max() + 1, xs.min() : (xs.min() + xs.max()) // 2] = oclusao.PESSOA
+    return alvo, pintura
+
+
+def test_oclusao_no_conjunto(pasta):
+    """A pintura aprovada de cada quadro com a câmera aprovada: uma linha por quadro e uma por placa,
+    as contas refeitas da máscara; "câmera errada" e máscara que não chegou ficam listadas."""
+    fila = criar_partida(pasta, [{}, {}, {}, {}, {}], imagens=False)
+    q = [it.quadro for it in fila.itens]
+    cam = camera_exemplo()
+    cameras = []
+    for quadro in q[:4]:
+        n = gravar_rotulo(pasta, quadro, "A01", cam)
+        gravar_revisao(pasta, quadro, n, "A02")
+        cameras.append(n)
+    alvo, pintura = _pessoa_numa_placa(cam)
+    n0 = gravar_pintura(pasta, q[0], "A02", cam, pintura, camera_de=cameras[0])
+    gravar_revisao_oclusao(pasta, q[0], n0, "A01", minutos=5)
+    n1 = gravar_pintura(pasta, q[1], "A02", cam, situacao="camera_errada", camera_de=cameras[1])
+    gravar_revisao_oclusao(pasta, q[1], n1, "A01")
+    gravar_pintura(pasta, q[2], "A02", cam, np.zeros_like(pintura), camera_de=cameras[2])  # sem revisão
+    n3 = gravar_pintura(pasta, q[3], "A02", cam, pintura, camera_de=cameras[3])
+    gravar_revisao_oclusao(pasta, q[3], n3, "A01")
+    (pasta.rotulos(PARTIDA, "oclusao") / mascara_de(n3)).unlink()  # a máscara ainda não chegou
+
+    destino = unificar(pasta, agora=AGORA)
+    df = pd.read_parquet(destino / "oclusao.parquet")
+    assert df["quadro"].tolist() == [q[0]]
+    linha = df.iloc[0]
+    assert linha["mascara"] == f"partidas/{PARTIDA}/rotulos/oclusao/{mascara_de(n0)}"
+    assert linha["camera_de"] == cameras[0] and linha["revisor"] == "A01" and linha["placas_de"] == "pacote"
+    assert linha["pessoa_px"] > 0 and linha["livre_frac_minima"] < 0.8
+    placas = pd.read_parquet(destino / "oclusao_placas.parquet").set_index("placa")
+    p = placas.loc[alvo["id"]]
+    assert 0.2 < p["livre_frac"] < 0.8 and p["x1"] > p["x0"] >= 0 and p["y1"] > p["y0"] >= 0
+    assert (placas["conjunto"] == "treino").all()
+    prob = json.loads((destino / "problemas.json").read_text(encoding="utf-8"))
+    errada = [x for x in prob["pendentes"] if x.get("tarefa") == "oclusao"]
+    assert [x["quadro"] for x in errada] == [q[1]] and "câmera errada" in errada[0]["motivo"]
+    assert any(x["arquivo"].endswith(n3) and "não chegou" in x["erro"] for x in prob["invalidos"])
+    man = json.loads((destino / "manifesto.json").read_text(encoding="utf-8"))
+    assert man["formato"] == "conjuntos/2"
+    assert man["oclusao"]["quadros"] == 1 and man["oclusao"]["placas"] == len(placas)

@@ -13,9 +13,10 @@
 //       manifesto.json, tomadas.json, fila.json
 //       quadros/<quadro>.jpg
 //       previsoes/<quadro>.json
-//       rotulos/<tarefa>/<quadro>__<anotador>__v<n>.json
+//       previsoes/oclusao/<quadro>.png       pré-pintura de um modelo (opcional)
+//       rotulos/<tarefa>/<quadro>__<anotador>__v<n>.json   na oclusão, com o .png da máscara ao lado
 //       revisoes/<tarefa>/<quadro>__<revisor>__v<n>.json
-//     gabarito/itens/<g0001>.json|.jpg, gabarito/rotulos/<tarefa>/...
+//     gabarito/itens/<g0001>.json|.jpg (|.png na oclusão), gabarito/rotulos/<tarefa>/...
 //     pessoas/<codigo>/<dispositivo>.json   em que computadores cada código é usado
 //     conjuntos/<data-hora>/            saída do unificar (Python)
 
@@ -31,6 +32,7 @@ import {
   RE_VERSAO_PACOTE,
   TAREFAS,
   lerNome,
+  lerNomeMascara,
   partesPacote,
 } from "./convencoes.js";
 import { validar } from "./formatos.js";
@@ -132,6 +134,16 @@ export class Pasta {
 
   previsao(partida, quadro) {
     return `${this.partida(partida)}/previsoes/${checar(RE_QUADRO, quadro, "quadro")}.json`;
+  }
+
+  /** A pré-pintura de um modelo para a oclusão (PNG com as classes), quando há. */
+  previsaoOclusao(partida, quadro) {
+    return `${this.partida(partida)}/previsoes/oclusao/${checar(RE_QUADRO, quadro, "quadro")}.png`;
+  }
+
+  /** A máscara verdadeira de um item do gabarito da oclusão. */
+  mascaraGabarito(id) {
+    return `gabarito/itens/${checar(RE_GABARITO, id, "item do gabarito")}.png`;
   }
 
   rotulos(partida, tarefa = "camera") {
@@ -329,10 +341,15 @@ export class Pasta {
     return out;
   }
 
+  /**
+   * A versão seguinte à maior da pessoa no quadro. Conta também as máscaras da oclusão sem rótulo
+   * (uma gravação interrompida entre a máscara e o rótulo): o nome nunca se repete.
+   */
   async proximaVersao(diretorio, quadro, pessoa) {
     let maior = 0;
-    for (const a of await this.listarArquivos(diretorio)) {
-      if (a.quadro === quadro && a.pessoa === pessoa) maior = Math.max(maior, a.versao);
+    for (const item of await this.listar(diretorio)) {
+      const a = item.tipo === "arquivo" ? lerNome(item.nome) ?? lerNomeMascara(item.nome) : null;
+      if (a && a.quadro === quadro && a.pessoa === pessoa) maior = Math.max(maior, a.versao);
     }
     return maior + 1;
   }

@@ -3,9 +3,10 @@
 // Não há banco de dados: a verdade são os arquivos na pasta sincronizada. O índice só evita reler o
 // mesmo JSON a cada clique. Arquivos inválidos ficam em `invalidos` e não entram em nada.
 
-import { PARTIDA_GABARITO, REF_PACOTE_GENERICO, RE_GABARITO } from "./convencoes.js";
-import { validar } from "./formatos.js";
+import { PARTIDA_GABARITO, REF_PACOTE_GENERICO, RE_GABARITO, mascaraDe } from "./convencoes.js";
+import { TIPOS_DA_TAREFA, validar } from "./formatos.js";
 import { pacoteGenerico } from "./pacote.js";
+import { decodificarPng } from "./png.js";
 
 const ms = (iso) => Date.parse(iso);
 
@@ -16,6 +17,7 @@ export class IndicePartida {
     this.revisoes = [];
     this.revisoesDe = new Map(); // nome do rótulo -> [revisão]
     this.invalidos = []; // [{caminho, erro}]
+    this.esperando = []; // rótulos da oclusão cuja máscara ainda não chegou (o Drive sincronizando)
   }
 
   versoes(quadro, pessoa) {
@@ -152,13 +154,22 @@ export class Indice {
     return { prontas, problemas };
   }
 
-  /** Itens do gabarito válidos, em ordem de ID. */
-  async itensGabarito() {
+  /** Itens do gabarito válidos da tarefa ("camera" ou "oclusao"), em ordem de ID. */
+  async itensGabarito(tarefa = "camera") {
+    const tipo = TIPOS_DA_TAREFA[tarefa].gabarito;
+    const formato = tarefa === "camera" ? "gabarito.camera/1" : "gabarito.oclusao/1";
     const out = [];
     for (const item of await this.pasta.listar("gabarito/itens")) {
       if (item.tipo !== "arquivo" || !item.nome.endsWith(".json") || !RE_GABARITO.test(item.nome.slice(0, -5))) continue;
       try {
-        const g = await this.ler("gabarito", `gabarito/itens/${item.nome}`, await item.alca.getFile());
+        const f = await item.alca.getFile();
+        const hit = this._cache.get(`gabarito/itens/${item.nome}`);
+        // o formato decide a tarefa: um item da outra tarefa não é inválido, só não é desta
+        if (!(hit && hit.assinatura === `${f.lastModified}|${f.size}`)) {
+          const bruto = JSON.parse(await f.text());
+          if (bruto.formato !== formato) continue;
+        } else if (hit.tipo !== tipo) continue;
+        const g = await this.ler(tipo, `gabarito/itens/${item.nome}`, f);
         if (g.id === item.nome.slice(0, -5)) out.push(g);
       } catch {
         // item inválido não entra (o `anotacao validar` mostra)
@@ -167,14 +178,47 @@ export class Indice {
     return out;
   }
 
-  /** Rótulos e revisões válidos da partida (ou do gabarito). */
+  /** Os índices de uma máscara PNG da pasta ({largura, altura, dados}), relidos só quando o arquivo muda. */
+  async mascara(caminho) {
+    const f = await this.pasta.arquivo(caminho);
+    if (!f) {
+      const e = new Error(`arquivo não encontrado: ${caminho}`);
+      e.name = "NotFoundError";
+      throw e;
+    }
+    const assinatura = `${f.lastModified}|${f.size}`;
+    const hit = this._cache.get(caminho);
+    if (hit && hit.assinatura === assinatura && hit.tipo === "png") return hit.valor;
+    const valor = await decodificarPng(new Uint8Array(await f.arrayBuffer()));
+    if (this._cache.size > 4000) this._cache.clear();
+    this._cache.set(caminho, { assinatura, tipo: "png", valor });
+    return valor;
+  }
+
+  /**
+   * Rótulos e revisões válidos da partida (ou do gabarito) na tarefa. Na oclusão, um rótulo cuja
+   * máscara ainda não chegou (o Drive sincronizando) fica em `esperando`, e não entra em nada.
+   */
   async partida(partida, tarefa = "camera") {
+    const tipos = TIPOS_DA_TAREFA[tarefa];
+    if (!tipos) throw new Error(`tarefa desconhecida: ${tarefa}`);
     const ip = new IndicePartida(partida);
-    for (const a of await this.pasta.listarArquivos(this.pasta.rotulos(partida, tarefa))) {
+    const dir = this.pasta.rotulos(partida, tarefa);
+    const mascaras = tarefa === "oclusao"
+      ? new Set((await this.pasta.listar(dir)).filter((i) => i.tipo === "arquivo" && i.nome.endsWith(".png")).map((i) => i.nome))
+      : null;
+    for (const a of await this.pasta.listarArquivos(dir)) {
       try {
-        const dados = await this.ler("rotulo", a.caminho, await a.alca.getFile());
+        const dados = await this.ler(tipos.rotulo, a.caminho, await a.alca.getFile());
         if (dados.quadro !== a.quadro || dados.anotador !== a.pessoa || dados.versao !== a.versao || dados.partida !== partida) {
           throw new Error("o conteúdo não bate com o nome do arquivo");
+        }
+        if (mascaras && dados.mascara !== null) {
+          if (dados.mascara !== mascaraDe(a.nome)) throw new Error("a máscara precisa ter o nome do rótulo");
+          if (!mascaras.has(dados.mascara)) {
+            ip.esperando.push({ caminho: a.caminho, nome: a.nome });
+            continue;
+          }
         }
         ip.rotulos.push({ caminho: a.caminho, nome: a.nome, partida, quadro: a.quadro, pessoa: a.pessoa, versao: a.versao, dados });
       } catch (e) {
@@ -184,7 +228,7 @@ export class Indice {
     if (partida === PARTIDA_GABARITO) return ip;
     for (const a of await this.pasta.listarArquivos(this.pasta.revisoes(partida, tarefa))) {
       try {
-        const r = await this.ler("revisao", a.caminho, await a.alca.getFile());
+        const r = await this.ler(tipos.revisao, a.caminho, await a.alca.getFile());
         if (r.quadro !== a.quadro || r.revisor !== a.pessoa || r.versao !== a.versao || r.partida !== partida) {
           throw new Error("o conteúdo não bate com o nome do arquivo");
         }

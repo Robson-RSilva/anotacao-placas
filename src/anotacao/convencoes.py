@@ -16,7 +16,7 @@ import unicodedata
 REF_W, REF_H = 960, 540
 
 #: Versão do Manual de anotação que esta versão da ferramenta segue, por tarefa.
-MANUAL = {"camera": "camera-0.1", "revisao": "revisao-0.1"}
+MANUAL = {"camera": "camera-0.1", "revisao": "revisao-0.1", "oclusao": "oclusao-0.1"}
 
 RE_ESTADIO = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 RE_VERSAO_PACOTE = re.compile(r"^\d+\.\d+$")
@@ -25,6 +25,8 @@ RE_QUADRO = re.compile(r"^t\d{10}$")
 RE_GABARITO = re.compile(r"^g\d{4}$")
 RE_PESSOA = re.compile(r"^[A-Z][A-Z0-9]{1,9}$")
 RE_PACOTE_REF = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*/pacote-\d+\.\d+$")
+#: A máscara da oclusão, ao lado do rótulo: o mesmo nome, com .png.
+RE_MASCARA = re.compile(r"^(t\d{10}|g\d{4})__([A-Z][A-Z0-9]{1,9})__v(\d+)\.png$")
 #: Navegador de um computador (um identificador aleatório, guardado no próprio navegador).
 RE_DISPOSITIVO = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 

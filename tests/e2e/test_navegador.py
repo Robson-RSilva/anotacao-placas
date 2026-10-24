@@ -23,12 +23,25 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from anotacao import oclusao
 from anotacao.camera import Camera, mirror_camera
 from anotacao.campo import Campo
 from anotacao.cli import main
-from anotacao.formatos import Fila, GabaritoCamera, Manifesto, RevisaoCamera, RotuloCamera, Tomadas
+from anotacao.formatos import (
+    Fila,
+    GabaritoCamera,
+    GabaritoOclusao,
+    Manifesto,
+    RevisaoCamera,
+    RotuloCamera,
+    RotuloOclusao,
+    Tomadas,
+)
+from anotacao.mascara import gravar_png, ler_png
 from anotacao.pacote import pacote_generico, pacote_sintetico
+from anotacao.pasta import Pasta, escrever_json
 
+from conftest import camera_exemplo, criar_partida, gravar_revisao, gravar_rotulo, placas_do_pacote
 from sintetico import (
     REGISTRO_DA_TOMADA,
     codificadores_ffmpeg,
@@ -890,4 +903,220 @@ def test_funciona_sem_internet(site_montado, navegador):
     pagina.wait_for_selector("#pessoa:not([disabled])")
     assert pagina.evaluate("anotacao.pasta.listarPacotes()") == ["estadio-sintetico/pacote-1.0", "generico/pacote-1.0"]
     pagina.context.set_offline(False)
+    assert not erros, erros
+
+
+# ---------------------------------------------------------------------------- oclusão nas placas
+def _pessoa_na_placa(cam: Camera, img: np.ndarray, semente: int) -> tuple[int, int, int, int]:
+    """Desenha uma "pessoa" (um retângulo escuro) na frente de uma das placas que se pintam e devolve o
+    retângulo (x0, y0, x1, y1) na imagem."""
+    geo = oclusao.geometria(cam, placas_do_pacote(), cam.w, cam.h)
+    alvo = [p for p in geo.info if not p["pequena"]][semente % 2]
+    ys, xs = np.nonzero(geo.regiao == alvo["k"] + 1)
+    cx, alto = int((xs.min() + xs.max()) // 2), int(ys.max() - ys.min())
+    x0, x1, y0, y1 = cx - 6, cx + 6, int(ys.min()) - alto, int(ys.max()) + 2 * alto
+    cv2.rectangle(img, (x0, y0), (x1 - 1, y1 - 1), (30, 30, 40), -1)
+    return x0, y0, x1, y1
+
+
+def _pasta_com_cameras_aprovadas(destino: Path, n: int = 2) -> tuple[dict[str, tuple], Path]:
+    """Uma pasta de trabalho com uma partida do estádio sintético: em cada quadro uma "pessoa" na frente
+    de uma placa, e a câmera anotada (A01) e aprovada (A02). Devolve o retângulo da pessoa em cada
+    quadro e o .zip da pasta."""
+    pasta = Pasta(destino / "trabalho")
+    pasta.criar()
+    pac = pacote_sintetico()
+    escrever_json(pasta.pacote_path(pac.estadio, pac.versao), pac)
+    fila = criar_partida(pasta, [{"atribuido_a": []} for _ in range(n)])
+    pessoas = {}
+    for k, it in enumerate(fila.itens):
+        cam = camera_exemplo((-8.0 + k, 0.0, 0.0))
+        img = cv2.imread(str(pasta.quadro(PARTIDA, it.quadro)))
+        pessoas[it.quadro] = _pessoa_na_placa(cam, img, k)
+        cv2.imwrite(str(pasta.quadro(PARTIDA, it.quadro)), img)
+        nome = gravar_rotulo(pasta, it.quadro, "A01", cam)
+        gravar_revisao(pasta, it.quadro, nome, "A02", minutos=10)
+    zipado = destino / "trabalho.zip"
+    with zipfile.ZipFile(zipado, "w") as z:
+        for p in sorted(pasta.raiz.rglob("*")):
+            if p.is_file():
+                z.write(p, p.relative_to(pasta.raiz).as_posix())
+    return pessoas, zipado
+
+
+def _janela(pagina, x: float, y: float) -> tuple[float, float]:
+    """Um ponto da imagem na janela, pela vista atual do pintor."""
+    return tuple(
+        pagina.evaluate(
+            "([x, y]) => { const [sx, sy] = pintor.paraTela(x, y); const r = pintor.cv.getBoundingClientRect();"
+            " return [r.left + sx, r.top + sy]; }",
+            [x, y],
+        )
+    )
+
+
+def _pintar_retangulo(pagina, caixa, ferramenta: str) -> None:
+    """Pinta o retângulo da "pessoa": com o pincel, arrastando pelo meio; com o laço, clique a clique;
+    com o laço à mão livre, contornando e soltando onde começou."""
+    x0, y0, x1, y1 = caixa
+    pagina.evaluate("(c) => pintor.enquadrar(c[0], c[1], c[2], c[3])", [x0 - 40, y0 - 10, x1 + 40, y1 + 10])
+    cantos = [(x0, y0), (x1, y0), (x1, y1), (x0, y1)]
+    if ferramenta == "pincel":
+        pagina.keyboard.press("b")
+        pagina.evaluate("(r) => { pintor.raio = r; }", (x1 - x0) / 2 + 0.5)
+        cx = (x0 + x1) / 2
+        pagina.mouse.move(*_janela(pagina, cx, y0 + 1))
+        pagina.mouse.down()
+        pagina.mouse.move(*_janela(pagina, cx, y1 - 1), steps=15)
+        pagina.mouse.up()
+    elif ferramenta == "laco":
+        pagina.keyboard.press("l")
+        for x, y in cantos:
+            pagina.mouse.click(*_janela(pagina, x, y))
+        pagina.keyboard.press("Enter")
+    else:  # laço à mão livre: o arraste volta ao ponto de partida e fecha ao soltar
+        pagina.keyboard.press("l")
+        pagina.mouse.move(*_janela(pagina, x0, y0))
+        pagina.mouse.down()
+        for x, y in [*cantos[1:], cantos[0]]:
+            pagina.mouse.move(*_janela(pagina, x, y), steps=10)
+        pagina.mouse.up()
+        assert pagina.evaluate("pintor.laco") is None, "o laço à mão livre fecha ao soltar, mesmo onde começou"
+
+
+def test_oclusao_pintar_revisar_e_unificar(site, navegador, capturas, tmp_path):
+    """A oclusão de ponta a ponta: os quadros com a câmera aprovada entram na fila; pinta-se a pessoa
+    na frente da placa (pincel num quadro, laço no outro); outra pessoa revisa às cegas e aprova; e o
+    `unificar` em Python monta o conjunto da oclusão com as máscaras que a página gravou."""
+    pessoas, zipado = _pasta_com_cameras_aprovadas(tmp_path)
+    erros: list[str] = []
+    pagina = _pagina(navegador, erros)
+    pagina.goto(site)
+    pagina.evaluate("anotacao.intervaloAtualizar = 300")
+    pagina.click("#btn-navegador")
+    pagina.click("#criar-vazia")
+    _escolher_pessoa(pagina, site, "A03")
+    pagina.set_input_files("#trazer-zip", str(zipado))
+    pagina.wait_for_function("document.querySelector('#res-pasta').textContent.includes('novo(s)')")
+    pagina.wait_for_function("document.querySelector('#st-oclusao').textContent.startsWith('Pode pintar')")
+    pagina.click("#ir-oclusao")
+    feitos = []
+    for ferramenta in ("pincel", "laco"):
+        pagina.wait_for_selector("#painel:not([hidden])")
+        pagina.wait_for_function("(f) => window.itemOclusao && !f.includes(itemOclusao.quadro)", arg=feitos)
+        item = pagina.evaluate("itemOclusao")
+        assert item["partida"] == PARTIDA and not item["treino"]
+        assert pagina.is_hidden("#secao-faixas"), "o estádio tem o levantamento: as placas são as do pacote"
+        _pintar_retangulo(pagina, pessoas[item["quadro"]], ferramenta)
+        pintadas = pagina.evaluate("pintor.estatisticas().filter((p) => p.pessoa_px > 0).length")
+        assert pintadas >= 1
+        if ferramenta == "pincel":
+            pagina.screenshot(path=str(capturas / "e2e_11_oclusao.png"))
+            pagina.click("#salvar")
+            assert "Confira cada placa" in pagina.inner_text("#erro")
+        pagina.check("#ck-conferi")
+        pagina.click("#salvar")
+        feitos.append(item["quadro"])
+    pagina.wait_for_selector("#vazio:has-text('Nada para pintar agora')")
+    d = f"partidas/{PARTIDA}/rotulos/oclusao"
+    assert sorted(_listar(pagina, d)) == sorted(f"{q}__A03__v1.{e}" for q in feitos for e in ("json", "png"))
+    for q in feitos:
+        r = RotuloOclusao.model_validate_json(_ler(pagina, f"{d}/{q}__A03__v1.json"))
+        assert r.placas_de == "pacote" and r.camera_de == f"{q}__A01__v1.json"
+        m = ler_png(_bytes(pagina, f"{d}/{r.mascara}"))
+        x0, y0, x1, y1 = pessoas[q]
+        pessoa = m == oclusao.PESSOA
+        assert pessoa.sum() > 20
+        assert pessoa[y0:y1, x0 - 1 : x1 + 1].sum() / pessoa.sum() > 0.97, "a pintura ficou na pessoa"
+        assert any(p.pessoa_px > 0 and p.livre_frac < 1 for p in r.placas)
+
+    # outra pessoa revisa às cegas e aprova
+    _escolher_pessoa(pagina, site, "A04")
+    pagina.wait_for_function("document.querySelector('#st-revisao-oclusao').textContent.startsWith('2 pintura')")
+    pagina.click("#ir-revisao-oclusao")
+    for _ in range(2):
+        pagina.wait_for_selector("#painel:not([hidden])")
+        antes = pagina.evaluate("pintor.img.src")
+        assert pagina.inner_text("#r-situacao") == "Pintado"
+        assert pagina.evaluate("pintor.estatisticas().some((p) => p.pessoa_px > 0)")
+        vista = pagina.evaluate("({...pintor.vista})")
+        pagina.keyboard.press("z")  # quem revisa também vai às placas
+        assert pagina.evaluate("({...pintor.vista})") != vista
+        pagina.keyboard.press("a")
+        pagina.wait_for_function("(a) => !window.pintor || pintor.img.src !== a", arg=antes)
+    pagina.wait_for_selector("#vazio:has-text('Nenhuma pintura de outra pessoa')")
+    assert len(_listar(pagina, f"partidas/{PARTIDA}/revisoes/oclusao")) == 2
+
+    # o Python lê o que a página gravou
+    raiz = tmp_path / "copia"
+    for caminho, dados in _arquivos(pagina).items():
+        (raiz / caminho).parent.mkdir(parents=True, exist_ok=True)
+        (raiz / caminho).write_bytes(dados)
+    assert main(["validar", "--pasta", str(raiz)]) == 0
+    assert main(["unificar", "--pasta", str(raiz)]) == 0
+    conjunto = next((raiz / "conjuntos").iterdir())
+    df = pd.read_parquet(conjunto / "oclusao.parquet")
+    assert sorted(df["quadro"]) == sorted(feitos) and (df["revisor"] == "A04").all()
+    placas = pd.read_parquet(conjunto / "oclusao_placas.parquet")
+    assert (placas["pessoa_px"] > 0).sum() >= 2
+    assert not erros, erros
+
+
+def test_treino_da_oclusao_com_o_gabarito(site, navegador, capturas, tmp_path):
+    """Quem começa pinta o gabarito da oclusão: ao salvar, vê a diferença para a máscara verdadeira e
+    a resposta; sem itens que bastem para a liberação, a fila para."""
+    pac = pacote_sintetico()
+    cam = camera_exemplo()
+    img = renderizar(cam, CAMPO, pac, 7)
+    caixa = _pessoa_na_placa(cam, img, 0)
+    geo = oclusao.geometria(cam, placas_do_pacote(), cam.w, cam.h)
+    pintura = np.zeros((cam.h, cam.w), np.uint8)
+    x0, y0, x1, y1 = caixa
+    pintura[y0:y1, x0:x1] = oclusao.PESSOA
+    verdade = oclusao.mascara_efetiva(pintura, geo.roi)
+    g = GabaritoOclusao(
+        id="g0901",
+        pacote=pacote_generico().ref,
+        imagem="g0901.jpg",
+        mascara="g0901.png",
+        largura=cam.w,
+        altura=cam.h,
+        camera=cam.para_rotulo(),
+        placas=placas_do_pacote(),
+        origem="simulador",
+    )
+    lote = tmp_path / "L0-oclusao.zip"
+    with zipfile.ZipFile(lote, "w") as z:
+        z.writestr("gabarito/itens/g0901.json", g.model_dump_json())
+        z.writestr("gabarito/itens/g0901.jpg", cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 95])[1].tobytes())
+        z.writestr("gabarito/itens/g0901.png", gravar_png(verdade, oclusao.PALETA))
+    erros: list[str] = []
+    pagina = _pagina(navegador, erros)
+    pagina.goto(site)
+    pagina.click("#btn-navegador")
+    pagina.click("#criar-vazia")
+    _escolher_pessoa(pagina, site, "A01")
+    pagina.set_input_files("#trazer-zip", str(lote))
+    pagina.wait_for_function("document.querySelector('#res-pasta').textContent.startsWith('3 arquivo(s) novo(s)')")
+    pagina.wait_for_function("document.querySelector('#st-oclusao').textContent.startsWith('Em treino')")
+    assert "até 5% de cada placa" in pagina.inner_text("#st-oclusao")
+    assert pagina.inner_text("#st-camera").startswith("Pode anotar"), "o gabarito da oclusão não é o da câmera"
+    pagina.click("#ir-oclusao")
+    pagina.wait_for_selector("#treino", state="visible")
+    assert pagina.evaluate("itemOclusao") == {"partida": "gabarito", "quadro": "g0901", "treino": True}
+    _pintar_retangulo(pagina, caixa, "laco_livre")
+    pagina.check("#ck-conferi")
+    pagina.click("#salvar")
+    pagina.wait_for_selector("#resultado", state="visible")
+    assert pagina.inner_text("#resultado-titulo") == "Dentro da tolerância", pagina.inner_text("#resultado-texto")
+    assert "Faltam acertos no gabarito (1/5" in pagina.inner_text("#resultado-texto")
+    minha = pagina.evaluate("Array.from(pintor.mascara()).filter((v) => v === 2).length")
+    pagina.click("#ver-resposta")
+    assert pagina.inner_text("#ver-resposta") == "Ver a minha pintura"
+    resposta = pagina.evaluate("Array.from(pintor.mascara()).filter((v) => v === 2).length")
+    assert resposta == int((verdade == oclusao.PESSOA).sum()) and abs(minha - resposta) <= 0.1 * resposta
+    pagina.screenshot(path=str(capturas / "e2e_12_treino_oclusao.png"))
+    pagina.click("#proximo")
+    pagina.wait_for_selector("#vazio:has-text('O gabarito da oclusão acabou')")
+    assert sorted(_listar(pagina, "gabarito/rotulos/oclusao")) == ["g0901__A01__v1.json", "g0901__A01__v1.png"]
     assert not erros, erros

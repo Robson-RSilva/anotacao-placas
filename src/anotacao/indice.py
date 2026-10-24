@@ -14,8 +14,11 @@ from typing import TypeVar
 
 from pydantic import BaseModel, ValidationError
 
-from .formatos import Fila, Manifesto, RevisaoCamera, RotuloCamera, Tomadas
-from .pasta import Pasta, ler_json
+from .formatos import Fila, Manifesto, RevisaoCamera, RevisaoOclusao, RotuloCamera, RotuloOclusao, Tomadas
+from .pasta import Pasta, ler_json, mascara_de
+
+#: Modelos do rótulo e da revisão de cada tarefa.
+MODELOS = {"camera": (RotuloCamera, RevisaoCamera), "oclusao": (RotuloOclusao, RevisaoOclusao)}
 
 M = TypeVar("M", bound=BaseModel)
 
@@ -59,8 +62,9 @@ class IndicePartida:
     partida: str
     rotulos: list[Arquivo]
     revisoes: list[Arquivo]
-    revisoes_de: dict[str, list[RevisaoCamera]] = field(default_factory=dict)
+    revisoes_de: dict[str, list[RevisaoCamera | RevisaoOclusao]] = field(default_factory=dict)
     invalidos: list[tuple[Path, str]] = field(default_factory=list)
+    esperando: list[Path] = field(default_factory=list)  # oclusão: o rótulo chegou antes da máscara
 
     def versoes(self, quadro: str, pessoa: str) -> list[Arquivo]:
         return sorted((a for a in self.rotulos if a.quadro == quadro and a.pessoa == pessoa), key=lambda a: a.versao)
@@ -80,7 +84,7 @@ class IndicePartida:
             out[a.quadro].append(a)
         return out
 
-    def ultima_revisao(self, nome_rotulo: str) -> RevisaoCamera | None:
+    def ultima_revisao(self, nome_rotulo: str) -> RevisaoCamera | RevisaoOclusao | None:
         rs = self.revisoes_de.get(nome_rotulo, [])
         return max(rs, key=lambda r: r.criado_em) if rs else None
 
@@ -93,6 +97,9 @@ class Indice:
     def rotulo(self, a: Arquivo | Path) -> RotuloCamera:
         return self.cache.ler(a.caminho if isinstance(a, Arquivo) else a, RotuloCamera)
 
+    def rotulo_oclusao(self, a: Arquivo | Path) -> RotuloOclusao:
+        return self.cache.ler(a.caminho if isinstance(a, Arquivo) else a, RotuloOclusao)
+
     def manifesto(self, partida: str) -> Manifesto:
         return self.cache.ler(self.pasta.manifesto(partida), Manifesto)
 
@@ -103,24 +110,33 @@ class Indice:
         return self.cache.ler(self.pasta.tomadas(partida), Tomadas)
 
     def partida(self, partida: str, tarefa: str = "camera") -> IndicePartida:
-        """Rótulos e revisões válidos da partida; os inválidos ficam em `invalidos` e não entram em nada."""
+        """Rótulos e revisões válidos da partida na tarefa; os inválidos ficam em `invalidos` e não entram
+        em nada. Na oclusão, um rótulo cuja máscara ainda não chegou fica em `esperando`."""
+        modelo_rotulo, modelo_revisao = MODELOS[tarefa]
         invalidos: list[tuple[Path, str]] = []
+        esperando: list[Path] = []
         rot = []
         for p, q, pe, v in self.pasta.listar(self.pasta.rotulos(partida, tarefa)):
             try:
-                r = self.cache.ler(p, RotuloCamera)
+                r = self.cache.ler(p, modelo_rotulo)
                 if (r.partida, r.quadro, r.anotador, r.versao) != (partida, q, pe, v):
                     raise ValueError("o conteúdo não bate com o nome do arquivo")
+                if tarefa == "oclusao" and r.mascara is not None:
+                    if r.mascara != mascara_de(p.name):
+                        raise ValueError("a máscara precisa ter o nome do rótulo")
+                    if not (p.parent / r.mascara).is_file():
+                        esperando.append(p)
+                        continue
             except (ValidationError, ValueError, OSError) as e:
                 invalidos.append((p, str(e).splitlines()[0]))
                 continue
             rot.append(Arquivo(p, partida, q, pe, v))
-        ip = IndicePartida(partida, rot, [], invalidos=invalidos)
+        ip = IndicePartida(partida, rot, [], invalidos=invalidos, esperando=esperando)
         if partida == "gabarito":
             return ip
         for p, q, pe, v in self.pasta.listar(self.pasta.revisoes(partida, tarefa)):
             try:
-                r = self.cache.ler(p, RevisaoCamera)
+                r = self.cache.ler(p, modelo_revisao)
                 if (r.partida, r.quadro, r.revisor, r.versao) != (partida, q, pe, v):
                     raise ValueError("o conteúdo não bate com o nome do arquivo")
             except (ValidationError, ValueError, OSError) as e:

@@ -7,4 +7,4 @@ previsões do modelo. Cortes, replays e artes das placas são conferidos na solu
 outro projeto.
 """
 
-__version__ = "0.6.0"
+__version__ = "0.7.0"

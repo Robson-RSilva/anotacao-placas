@@ -3,8 +3,9 @@
 
 import { construirCampo, erroNasMedidas } from "./campo.js";
 import { ladoCanonico } from "./camera.js";
-import { RE_GABARITO, RE_PARTIDA, RE_QUADRO } from "./convencoes.js";
+import { RE_GABARITO, RE_MASCARA, RE_PARTIDA, RE_QUADRO } from "./convencoes.js";
 import { validarEsquema } from "./esquema.js";
+import { erroNasFaixas } from "./oclusao.js";
 
 /** Tipo de arquivo -> nome do esquema. */
 export const ESQUEMAS = Object.freeze({
@@ -20,6 +21,15 @@ export const ESQUEMAS = Object.freeze({
   revisao: "revisao.camera.json",
   gabarito: "gabarito.camera.json",
   dispositivo: "pessoa.dispositivo.json",
+  rotulo_oclusao: "rotulo.oclusao.json",
+  revisao_oclusao: "revisao.oclusao.json",
+  gabarito_oclusao: "gabarito.oclusao.json",
+});
+
+/** Tipos de arquivo de cada tarefa: o rótulo, a revisão e o item do gabarito. */
+export const TIPOS_DA_TAREFA = Object.freeze({
+  camera: Object.freeze({ rotulo: "rotulo", revisao: "revisao", gabarito: "gabarito" }),
+  oclusao: Object.freeze({ rotulo: "rotulo_oclusao", revisao: "revisao_oclusao", gabarito: "gabarito_oclusao" }),
 });
 
 export const SITUACOES = Object.freeze(["ok", "sem_marcacoes", "impossivel_transicao", "impossivel_borrao", "duvida"]);
@@ -29,6 +39,14 @@ export const MOTIVOS = Object.freeze([
   "molde_fora_da_tolerancia",
   "ponto_em_marca_coberta",
   "deveria_ser_sem_marcacoes",
+  "outro",
+]);
+export const SITUACOES_OCLUSAO = Object.freeze(["ok", "sem_placas", "camera_errada", "duvida"]);
+export const MOTIVOS_OCLUSAO = Object.freeze([
+  "faixa_fora_das_placas",
+  "pintura_fora_da_tolerancia",
+  "classe_errada",
+  "camera_errada",
   "outro",
 ]);
 
@@ -117,6 +135,32 @@ const REGRAS = {
       e.push("nova_versao é obrigatória ao corrigir, e só ao corrigir");
     }
     if (o.motivo === "outro" && !o.comentario.trim()) e.push("motivo 'outro' exige comentário");
+    return e;
+  },
+  revisao_oclusao(o) {
+    return REGRAS.revisao(o);
+  },
+  rotulo_oclusao(o) {
+    const e = [];
+    if (!(RE_PARTIDA.test(o.partida) || o.partida === "gabarito")) e.push("partida inválida");
+    if (!(RE_QUADRO.test(o.quadro) || RE_GABARITO.test(o.quadro))) e.push("quadro inválido");
+    if ((o.placas_de === "faixas") !== (o.faixas !== null)) e.push("as faixas vêm sempre, e só, com placas_de 'faixas'");
+    if ((o.partida === "gabarito") !== (o.placas_de === "gabarito")) e.push("as placas do gabarito são só as dos itens do gabarito");
+    if (o.mascara !== null && !RE_MASCARA.test(o.mascara)) e.push("nome da máscara inválido");
+    if (o.mascara === null && o.placas.length) e.push("as placas só vêm com a máscara");
+    if (o.situacao === "ok" && (o.mascara === null || o.placas.every((p) => p.pequena))) {
+      e.push("situação 'ok' exige a máscara e uma placa para pintar");
+    }
+    if (["sem_placas", "camera_errada"].includes(o.situacao) && o.mascara !== null) e.push(`situação '${o.situacao}' não leva máscara`);
+    if (o.situacao === "duvida" && !o.comentario.trim()) e.push("'dúvida' exige comentário");
+    if (!unicos(o.placas.map((p) => p.id))) e.push("placas repetidas");
+    const faixas = o.faixas && erroNasFaixas(o.faixas);
+    if (faixas) e.push(faixas);
+    return e;
+  },
+  gabarito_oclusao(o) {
+    const e = REGRAS.gabarito(o);
+    if (!unicos(o.placas.map((p) => p.id))) e.push("IDs de placa repetidos");
     return e;
   },
 };

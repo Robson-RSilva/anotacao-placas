@@ -51,6 +51,10 @@ passa.
 - **Câmera e molde idênticos ao laboratório.** Mudou o modelo no laboratório, rode
   `python scripts/fixture_do_laboratorio.py --laboratorio ../placas-exposicao` e ajuste
   `camera.py`/`campo.py` e os espelhos em `web/js/nucleo/` até os testes passarem.
+- **As contas da oclusão são as mesmas nos dois lados.** `oclusao.py` e `mascara.py` têm espelho em
+  `web/js/nucleo/oclusao.js` e `png.js`, com as mesmas operações na mesma ordem (até o arredondamento):
+  a página e o Python precisam achar os mesmos pixels. Mudou um, mude o outro e regenere
+  `tests/fixtures/oclusao.json` (`python scripts/gerar_arquivos_web.py`).
 - **Nunca dados no Git.** Vídeos, quadros, rótulos e conjuntos ficam na pasta de trabalho do Drive.
   Os únicos vídeos do repositório são os de teste, de poucos KB, em `tests/fixtures/video/`.
 - **Manual junto.** Regra de anotação nova vai primeiro para o Manual de anotação, com versão; a

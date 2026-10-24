@@ -134,7 +134,7 @@ export async function pastaExemplo({ membros = null } = {}) {
 }
 
 /** Uma partida importada (manifesto, tomadas e fila aberta), sem imagens: `itens` são {quadro, tomada, dupla, ...}. */
-export async function criarPartida(pasta, itens, { partida = PARTIDA, largura = 640, altura = 360 } = {}) {
+export async function criarPartida(pasta, itens, { partida = PARTIDA, largura = 640, altura = 360, pacote = REF_PACOTE } = {}) {
   const fila = {
     formato: "fila.partida/1",
     partida,
@@ -161,7 +161,7 @@ export async function criarPartida(pasta, itens, { partida = PARTIDA, largura = 
   await pasta.gravar("manifesto", pasta.manifesto(partida), {
     formato: "manifesto.partida/1",
     partida,
-    pacote: REF_PACOTE,
+    pacote,
     cadastro: {
       estadio: "estadio-sintetico",
       pacote_versao: "1.0",

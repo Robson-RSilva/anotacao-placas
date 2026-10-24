@@ -12,6 +12,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent))
 
+from anotacao import oclusao
 from anotacao.camera import Camera
 from anotacao.campo import Campo
 from anotacao.formatos import (
@@ -25,13 +26,16 @@ from anotacao.formatos import (
     Membro,
     PreProcessamento,
     RevisaoCamera,
+    RevisaoOclusao,
     RotuloCamera,
+    RotuloOclusao,
     Tomada,
     Tomadas,
     VideoInfo,
 )
+from anotacao.mascara import gravar_png
 from anotacao.pacote import pacote_sintetico
-from anotacao.pasta import Pasta, escrever_json, nome_arquivo
+from anotacao.pasta import Pasta, escrever_bytes, escrever_json, mascara_de, nome_arquivo
 
 from sintetico import renderizar
 
@@ -200,6 +204,83 @@ def gravar_revisao(
             manual="revisao-0.1",
             criado_em=AGORA + timedelta(minutes=minutos),
             segundos_ativos=4,
+            **kw,
+        ),
+    )
+
+
+def placas_do_pacote() -> list[dict]:
+    return [p.model_dump() for p in pacote_sintetico().placas]
+
+
+def gravar_pintura(
+    pasta: Pasta,
+    quadro: str,
+    pessoa: str,
+    cam: Camera,
+    pintura: np.ndarray | None = None,
+    *,
+    versao: int = 1,
+    minutos: int = 0,
+    situacao: str = "ok",
+    camera_de: str | None = None,
+    partida: str = PARTIDA,
+    **kw,
+) -> str:
+    """Uma pintura da oclusão como a página grava: a máscara (só dentro das placas) e o rótulo, com o que
+    ela diz de cada placa. As placas são as do pacote sintético."""
+    w, h = cam.w, cam.h
+    nome = nome_arquivo(quadro, pessoa, versao)
+    placas, mascara = [], None
+    if situacao in ("ok", "duvida") and pintura is not None:
+        geo = oclusao.geometria(cam, placas_do_pacote(), w, h)
+        m = oclusao.mascara_efetiva(pintura, geo.roi)
+        placas = oclusao.estatisticas(m, geo)
+        mascara = mascara_de(nome)
+        escrever_bytes(pasta.rotulos(partida, "oclusao") / mascara, gravar_png(m, oclusao.PALETA))
+    r = RotuloOclusao(
+        partida=partida,
+        pacote="estadio-sintetico/pacote-1.0",
+        quadro=quadro,
+        anotador=pessoa,
+        versao=versao,
+        ferramenta="0.7.0",
+        manual="oclusao-0.1",
+        criado_em=AGORA + timedelta(minutes=minutos),
+        segundos_ativos=60,
+        largura=w,
+        altura=h,
+        camera_de=camera_de,
+        camera=CameraRotulo(**cam.para_rotulo()),
+        placas_de="pacote",
+        partiu_de={"fonte": "nenhuma"},
+        mascara=mascara,
+        placas=placas,
+        situacao=situacao,
+        comentario=kw.pop("comentario", "dúvida" if situacao == "duvida" else ""),
+        **kw,
+    )
+    escrever_json(pasta.rotulos(partida, "oclusao") / nome, r)
+    return nome
+
+
+def gravar_revisao_oclusao(
+    pasta: Pasta, quadro: str, rotulo: str, revisor: str, decisao="aprovar", minutos=0, versao=1, **kw
+) -> None:
+    escrever_json(
+        pasta.revisoes(PARTIDA, "oclusao") / nome_arquivo(quadro, revisor, versao),
+        RevisaoOclusao(
+            partida=PARTIDA,
+            quadro=quadro,
+            rotulo=rotulo,
+            revisor=revisor,
+            versao=versao,
+            decisao=decisao,
+            motivo="pintura_fora_da_tolerancia" if decisao == "devolver" else None,
+            ferramenta="0.7.0",
+            manual="revisao-0.1",
+            criado_em=AGORA + timedelta(minutes=minutos),
+            segundos_ativos=5,
             **kw,
         ),
     )
