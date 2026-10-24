@@ -280,6 +280,11 @@ def baixar(
         "retries": 10,
         "fragment_retries": 10,
     }
+    # o yt-dlp confere se há ffmpeg para baixar trechos sem olhar o ffmpeg_location das opções — só o
+    # que a linha de comando dele guarda aqui (sem isto, só acharia um ffmpeg instalado no sistema)
+    lugar = getattr(getattr(yt_dlp.postprocessor, "FFmpegPostProcessor", None), "_ffmpeg_location", None)
+    if lugar is not None:
+        lugar.set(ffmpeg)
     if deno := deno_exe():
         opcoes["js_runtimes"] = {"deno": {"path": deno}}
     if navegador:
