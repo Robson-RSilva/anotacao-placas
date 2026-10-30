@@ -5,7 +5,7 @@ Serve para experimentar o fluxo inteiro (importar, anotar, revisar) antes do pri
     python scripts/video_demo_do_laboratorio.py --transmissao ../placas-exposicao/data/transmissoes/bc_A_123.pkl \
         --saida demo_A_123.mp4
 
-Precisa do ffmpeg. Depois, na página de importação, use o pacote `estadio-sintetico/pacote-1.0`.
+Precisa do ffmpeg. Depois, o vídeo entra pela página de importação como o de um jogo de verdade.
 """
 
 from __future__ import annotations

@@ -30,7 +30,7 @@ passa.
 ## Fluxo
 
 - `main` sempre verde e protegida; cada mudança num ramo (`feat/...`, `fix/...`, `docs/...`) e PR.
-- Commits no estilo Conventional Commits, em português: `feat: página de oclusão`,
+- Commits no estilo Conventional Commits, em português: `feat: página dos jogadores`,
   `fix: versão da revisão`, `docs: formato do rótulo`.
 - Mudança visível para quem anota entra no `CHANGELOG.md`, na seção "Não lançado".
 - Versões seguem SemVer; cada versão vira uma tag `vX.Y.Z`. A versão está em três lugares que um
@@ -45,16 +45,20 @@ passa.
 - **A página não fala com a internet.** Nada de CDN, análise de uso ou envio de dados: a CSP do
   `index.html` só permite o próprio site.
 - **Formato mudou, versão muda.** Mudar um modelo em `formatos.py` exige subir o sufixo do formato
-  quando quebra arquivos antigos (`rotulo.camera/2`), atualizar `docs/formatos.md` e regenerar os
+  quando quebra arquivos antigos (`rotulo.pontos/2`), atualizar `docs/formatos.md` e regenerar os
   arquivos das páginas: `python scripts/gerar_arquivos_web.py` (há um teste que confere). Regras entre
   campos ficam nos dois lados: `model_validator` no Python e `REGRAS` em `web/js/nucleo/formatos.js`.
-- **Câmera e molde idênticos ao laboratório.** Mudou o modelo no laboratório, rode
-  `python scripts/fixture_do_laboratorio.py --laboratorio ../placas-exposicao` e ajuste
-  `camera.py`/`campo.py` e os espelhos em `web/js/nucleo/` até os testes passarem.
-- **As contas da oclusão são as mesmas nos dois lados.** `oclusao.py` e `mascara.py` têm espelho em
-  `web/js/nucleo/oclusao.js` e `png.js`, com as mesmas operações na mesma ordem (até o arredondamento):
-  a página e o Python precisam achar os mesmos pixels. Mudou um, mude o outro e regenere
-  `tests/fixtures/oclusao.json` (`python scripts/gerar_arquivos_web.py`).
+- **O campo idêntico ao do laboratório.** Os nomes dos pontos, a ordem e a simetria de 180° vêm do
+  campo do laboratório. Mudou o campo lá, rode
+  `python scripts/fixture_do_laboratorio.py --laboratorio ../placas-exposicao` e ajuste `campo.py` e
+  `web/js/nucleo/campo.js` até os testes passarem.
+- **O PNG é o mesmo nos dois lados.** `mascara.py` e `web/js/nucleo/png.js` gravam e leem as máscaras
+  do mesmo jeito; os bytes de referência ficam em `tests/fixtures/png.json`
+  (`python scripts/gerar_arquivos_web.py`).
+- **As regras do gabarito ficam na página** (`REGRA` em `web/js/nucleo/gabarito.js`). Mudou uma regra,
+  confira de novo com os anotadores simulados (`python scripts/conferir_regras.py --lotes <lotes>
+  --saida <tmp>`, ADR-0010) e atualize o README, `docs/formatos.md` e o texto da página do gabarito. Lotes novos saem de `scripts/lotes_de_ouro.py`, com faixas de id que não se
+  sobrepõem às dos lotes já entregues.
 - **Nunca dados no Git.** Vídeos, quadros, rótulos e conjuntos ficam na pasta de trabalho do Drive.
   Os únicos vídeos do repositório são os de teste, de poucos KB, em `tests/fixtures/video/`.
 - **Manual junto.** Regra de anotação nova vai primeiro para o Manual de anotação, com versão; a

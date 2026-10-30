@@ -199,38 +199,55 @@ label.botao { cursor: pointer; }
 .pagina-editor { height: 100vh; overflow: hidden; }
 .pagina-editor #app { height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
 
-.medidas { display: flex; align-items: center; gap: 0.4rem; font-size: 0.9rem; }
-.medidas input { width: 5.2rem; }
-
-/* ------------------------------------------------------------------ oclusão */
+/* ------------------------------------------------------------------ as duas tarefas */
 .secoes { display: flex; flex-direction: column; gap: 1.1rem; }
 .alternar button[aria-pressed="true"] { border-color: var(--acento); background: color-mix(in srgb, var(--acento) 16%, var(--superficie)); }
 .titulo-secao .botoes { margin-top: 0; }
+.titulo-secao h2 { margin: 0; }
 .tamanho { display: flex; align-items: center; gap: 0.4rem; font-size: 0.86rem; margin-top: 0.5rem; }
 .tamanho input { flex: 1; min-width: 0; }
-.classes { display: grid; gap: 0.25rem; font-size: 0.86rem; margin-top: 0.5rem; }
-.classes label { display: flex; align-items: center; gap: 0.45rem; }
-.classes kbd { margin-left: auto; }
-.amostra { width: 0.95rem; height: 0.95rem; border-radius: 3px; border: 1px solid rgba(0, 0, 0, 0.35); flex: none; }
-.amostra[data-classe="1"] { background: linear-gradient(135deg, transparent 45%, var(--ruim) 45%, var(--ruim) 55%, transparent 55%), var(--superficie); }
-.amostra[data-classe="2"] { background: rgb(231, 76, 60); }
-.amostra[data-classe="3"] { background: rgb(241, 196, 15); }
-.amostra[data-classe="4"] { background: rgb(155, 89, 182); }
-.amostra[data-classe="5"] { background: rgb(230, 126, 34); }
-.amostra[data-classe="6"] { background: rgb(26, 188, 156); }
-.amostra[data-classe="7"] { background: rgb(127, 140, 141); }
-.camadas { display: flex; flex-wrap: wrap; gap: 0.3rem 0.8rem; font-size: 0.84rem; margin-top: 0.5rem; }
-.faixas { display: grid; grid-template-columns: auto 1fr 1fr; gap: 0.3rem 0.45rem; align-items: center; font-size: 0.86rem;
-  margin-bottom: 0.5rem; }
-.faixas b { font-weight: 600; font-size: 0.82rem; }
-.faixas input[type=number] { width: 100%; min-width: 0; }
-.faixas input[type=checkbox] { justify-self: start; }
+.caixa-marcar { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.86rem; }
+.painel.largo { width: 380px; }
+.acoes button { flex: 1; justify-content: center; }
 .faixa.resultado h2 { margin-bottom: 0.35rem; }
+.faixa.resultado h2.certo { color: var(--bom); }
+.faixa.resultado h2.errado { color: var(--ruim); }
 .faixa.resultado p { margin: 0 0 0.4rem; }
-.cartao .botoes { margin-top: 0.25rem; }
-.secao-faixas > summary { cursor: pointer; list-style: none; }
-.secao-faixas > summary::-webkit-details-marker { display: none; }
-.secao-faixas > summary h2 { display: inline; }
-.secao-faixas > summary::before { content: "▸ "; color: var(--sutil); }
-.secao-faixas[open] > summary::before { content: "▾ "; }
-.secao-faixas[open] > summary { margin-bottom: 0.5rem; }
+.faixa.treino { background: color-mix(in srgb, var(--medio) 16%, var(--superficie)); }
+.legenda { font-size: 0.8rem; color: var(--sutil); display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.45rem; }
+.legenda .cor { display: inline-block; width: 0.8rem; height: 0.8rem; border-radius: 3px; vertical-align: -1px; }
+.cor.certo { background: #2ea043; }
+.cor.longe { background: #d29922; }
+.cor.errado { background: #f85149; }
+.cor.faltou { background: #ff9800; }
+.cor.verdade { background: #3fb950; border-radius: 50%; }
+.como-revisar summary { cursor: pointer; }
+.como-revisar ol { margin: 0.5rem 0 0; padding-left: 1.2rem; display: grid; gap: 0.35rem; }
+.nome-ponto { flex: 1; justify-content: flex-start; border: 0; background: none; padding: 0.1rem 0.2rem; font: 0.8rem ui-monospace, monospace;
+  color: var(--texto); text-align: left; overflow-wrap: anywhere; }
+.nome-ponto:hover { text-decoration: underline; }
+.botao.pequeno { padding: 0.2rem 0.55rem; font-size: 0.82rem; }
+.passos { margin: 0; padding-left: 1.2rem; display: grid; gap: 0.45rem; font-size: 0.92rem; }
+#cartoes-gabarito .barra-progresso { width: 100%; flex: none; }
+
+/* o mapa do campo */
+.caixa-mapa { width: 100%; }
+.mapa { display: block; width: 100%; height: auto; max-height: 52vh; user-select: none; }
+.mapa .gramado { fill: #2f6b35; }
+.mapa .linhas line, .mapa .linhas polyline { stroke: rgba(255, 255, 255, 0.85); stroke-width: 0.35; }
+.mapa .linhas .gol { stroke: #e6e9ee; stroke-width: 0.5; }
+.mapa .marca-campo { fill: rgba(255, 255, 255, 0.85); }
+.mapa-rotulos text { font: 3px system-ui, sans-serif; fill: rgba(255, 255, 255, 0.75); text-anchor: middle; dominant-baseline: middle; }
+.ponto-mapa { cursor: pointer; }
+.ponto-mapa .alvo { fill: transparent; }
+.ponto-mapa .marca { fill: rgba(0, 0, 0, 0.35); stroke: #ffffff; stroke-width: 0.45; }
+.ponto-mapa:hover .marca, .ponto-mapa.destaque .marca { stroke: #ffffff; stroke-width: 0.8; r: 1.9; }
+.ponto-mapa.marcado .marca { fill: #4fc3f7; stroke: #0b3d57; }
+.ponto-mapa.certo .marca { fill: #3fb950; stroke: #0b3d1a; }
+.ponto-mapa.longe .marca { fill: #d29922; stroke: #3d2b00; }
+.ponto-mapa.errado .marca { fill: #f85149; stroke: #4d0b0b; }
+.ponto-mapa.faltou .marca { fill: transparent; stroke: #ff9800; stroke-width: 0.8; stroke-dasharray: 0.8 0.5; }
+.ponto-mapa.selecionado .marca { fill: #ffd33d; stroke: #000000; stroke-width: 0.6; r: 2.1; }
+.escolha { margin: 0.4rem 0 0; font-size: 0.84rem; color: var(--sutil); min-height: 2.4em; }
+.escolha.pedindo { color: var(--texto); font-weight: 600; }
+#resultados td:nth-child(-n+3), #lotes td:nth-child(-n+2) { white-space: nowrap; }

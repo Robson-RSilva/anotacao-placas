@@ -5,8 +5,8 @@ comandos trabalham sobre a mesma pasta:
 
 anotacao exemplo trabalho/                  cria uma pasta de trabalho de exemplo
 anotacao gabarito ORIGEM --pasta trabalho/  importa itens do gabarito
-anotacao prever --pasta trabalho/ --previsor pacote.modulo:objeto   previsões para o molde
-anotacao prever --tarefa oclusao --pasta trabalho/ --previsor ...    pré-pintura da oclusão
+anotacao prever --tarefa pontos --pasta trabalho/ --previsor pacote.modulo:objeto      pontos de um modelo
+anotacao prever --tarefa jogadores --pasta trabalho/ --previsor pacote.modulo:objeto   pré-pintura
 anotacao validar --pasta trabalho/          confere todos os arquivos
 anotacao unificar --pasta trabalho/         gera os conjuntos de treino
 anotacao esquemas DESTINO                   exporta os JSON Schemas dos formatos
@@ -20,58 +20,42 @@ import os
 import sys
 from pathlib import Path
 
-from . import __version__, oclusao
-from .camera import Camera
-from .formatos import DispositivoPessoa, Divisao, GabaritoOclusao, exportar_esquemas
+import numpy as np
+
+from . import __version__
+from .formatos import DispositivoPessoa, Divisao, Equipe, GabaritoJogadores, Membro, exportar_esquemas
+from .gabarito import conferir_mascara, ler_item
 from .gabarito import importar as importar_gabarito
-from .gabarito import ler_item
-from .geracao import equipe_exemplo
 from .indice import Indice
 from .mascara import ler_png
-from .pacote import pacote_sintetico, validar_geometria
 from .pasta import Pasta, escrever_json, ler_json
-from .previsores import carregar_previsor, prever, prever_oclusao
+from .previsores import carregar_previsor, prever
 from .unificar import unificar
 
-#: Diferença aceita entre as contas da página e as do Python (pixels na borda de uma placa).
-TOLERANCIA_PX = 3
+
+def equipe_exemplo() -> Equipe:
+    return Equipe(
+        membros=[
+            Membro(codigo="A01", nome="Anotador 1", papeis=["anotador", "revisor"]),
+            Membro(codigo="A02", nome="Anotador 2", papeis=["anotador", "revisor"]),
+        ]
+    )
 
 
-def _conferir_mascara(caminho, largura: int, altura: int) -> tuple[object, str | None]:
+def _conferir_mascara(caminho: Path, r) -> str | None:
+    """A máscara de um rótulo dos jogadores existe, tem o tamanho da imagem, só 0 e 1, e os pixels
+    pintados que o rótulo diz."""
     try:
         m = ler_png(caminho)
     except (ValueError, OSError) as e:
-        return None, f"máscara ilegível: {e}"
-    if m.shape != (altura, largura):
-        return None, "a máscara não tem o tamanho do quadro"
-    if m.max(initial=0) > oclusao.NAO_PLACA:
-        return None, "a máscara tem valores fora das classes"
-    return m, None
-
-
-def _conferir_oclusao(pasta: Pasta, r, caminho, placas3d) -> list[str]:
-    """A máscara de uma pintura existe, tem o tamanho do quadro, só tem classes dentro das placas e diz
-    o mesmo que o rótulo (recalculado aqui, da máscara e das placas)."""
-    if r.mascara is None:
-        return []
-    m, erro = _conferir_mascara(caminho.parent / r.mascara, r.largura, r.altura)
-    if erro:
-        return [erro]
-    geo = oclusao.geometria(Camera.de_rotulo(r.camera.model_dump(), r.largura, r.altura), placas3d, r.largura, r.altura)
-    fora = int(((m > 0) & ~geo.roi).sum())
-    problemas = []
-    if fora > TOLERANCIA_PX * max(1, len(geo.info)) * 10:
-        problemas.append(f"{fora} pixels pintados fora das placas")
-    est = {p["id"]: p for p in oclusao.estatisticas(m, geo)}
-    gravadas = {p.id: p for p in r.placas}
-    if set(est) != set(gravadas):
-        return [*problemas, "as placas do rótulo não são as que a câmera desenha"]
-    for pid, p in est.items():
-        g = gravadas[pid]
-        campos = ["area_px", "livre_px", "pessoa_px", "bola_px", "rede_px", "grafismo_px", "objeto_px", "nao_placa_px"]
-        if any(abs(p[c] - getattr(g, c)) > TOLERANCIA_PX for c in campos):
-            problemas.append(f"{pid}: as contas do rótulo não batem com a máscara")
-    return problemas
+        return f"máscara ilegível: {e}"
+    if m.shape != (r.altura, r.largura):
+        return "a máscara não tem o tamanho da imagem"
+    if m.max(initial=0) > 1:
+        return "a máscara tem valores além de 0 e 1"
+    if int(np.count_nonzero(m)) != r.pixels:
+        return f"o rótulo diz {r.pixels} pixels pintados, a máscara tem {int(np.count_nonzero(m))}"
+    return None
 
 
 def _pasta_padrao() -> str:
@@ -81,16 +65,11 @@ def _pasta_padrao() -> str:
 def cmd_exemplo(a: argparse.Namespace) -> int:
     pasta = Pasta(a.destino)
     pasta.criar()
-    pac = pacote_sintetico()
-    caminho = pasta.pacote_path(pac.estadio, pac.versao)
-    if not caminho.exists():
-        escrever_json(caminho, pac)
     if not pasta.ler_equipe().membros:
         escrever_json(pasta.equipe_path, equipe_exemplo(), sobrescrever=True)
     if not pasta.divisao_path.exists():
         escrever_json(pasta.divisao_path, Divisao())
     print(f"Pasta de exemplo pronta em {pasta.raiz}")
-    print(f"  pacote do estádio: {pac.ref}")
     print("  equipe: A01 e A02 (edite na página de coordenação)")
     print("Abra as páginas de anotação no Chrome ou no Edge e escolha esta pasta.")
     return 0
@@ -102,8 +81,7 @@ def cmd_validar(a: argparse.Namespace) -> int:
     pasta.ler_equipe()
     pasta.ler_divisao()
     pasta.ler_projeto()
-    for ref in pasta.listar_pacotes():
-        problemas += [f"{ref}: {e}" for e in validar_geometria(pasta.ler_pacote_ref(ref))]
+    rel = lambda p: p.relative_to(pasta.raiz)  # noqa: E731
     indice = Indice(pasta)
     for pid in pasta.listar_partidas():
         try:
@@ -116,54 +94,59 @@ def cmd_validar(a: argparse.Namespace) -> int:
         faltando = [it.quadro for it in fila.itens if not pasta.quadro(pid, it.quadro).exists()]
         if faltando:
             problemas.append(f"{pid}: {len(faltando)} quadro(s) da fila sem imagem (ex.: {faltando[0]})")
-        ip = indice.partida(pid)
-        problemas += [f"{p.relative_to(pasta.raiz)}: {e}" for p, e in ip.invalidos]
-        ipo = indice.partida(pid, "oclusao")
-        problemas += [f"{p.relative_to(pasta.raiz)}: {e}" for p, e in ipo.invalidos]
-        problemas += [f"{p.relative_to(pasta.raiz)}: a máscara ainda não chegou" for p in ipo.esperando]
-        for a in ipo.rotulos:
-            r = indice.rotulo_oclusao(a)
-            try:
-                pac = pasta.ler_pacote_ref(r.pacote)
-            except (ValueError, OSError) as e:
-                problemas.append(f"{a.caminho.relative_to(pasta.raiz)}: pacote ilegível ({e})")
-                continue
-            campo = (r.campo.comprimento, r.campo.largura) if r.campo else (pac.campo.comprimento, pac.campo.largura)
-            faixas = r.faixas.model_dump() if r.faixas else None
-            placas3d = oclusao.placas_do_rotulo(r.placas_de, faixas, campo, pac)
-            erros = _conferir_oclusao(pasta, r, a.caminho, placas3d)
-            problemas += [f"{a.caminho.relative_to(pasta.raiz)}: {e}" for e in erros]
+        do_quadro = {it.quadro for it in fila.itens}
+        for tarefa in ("pontos", "jogadores"):
+            ip = indice.partida(pid, tarefa)
+            problemas += [f"{rel(p)}: {e}" for p, e in ip.invalidos]
+            problemas += [f"{rel(p)}: a máscara ainda não chegou" for p in ip.esperando]
+            for arq in ip.rotulos:
+                r = indice.rotulo(arq, tarefa)
+                if arq.quadro not in do_quadro:
+                    problemas.append(f"{rel(arq.caminho)}: o quadro não está na fila da partida")
+                if tarefa == "jogadores" and r.mascara is not None:
+                    erro = _conferir_mascara(arq.caminho.parent / r.mascara, r)
+                    if erro:
+                        problemas.append(f"{rel(arq.caminho)}: {erro}")
     itens = {}
     for p in sorted((pasta.gabarito / "itens").glob("g*.json")):
         try:
-            itens[p.stem] = ler_item(p)
+            item = ler_item(p)
         except (ValueError, OSError) as e:
-            problemas.append(f"{p.relative_to(pasta.raiz)}: {str(e).splitlines()[0]}")
+            problemas.append(f"{rel(p)}: {str(e).splitlines()[0]}")
             continue
-        if isinstance(itens[p.stem], GabaritoOclusao):
-            g = itens[p.stem]
-            _, erro = _conferir_mascara(p.parent / g.mascara, g.largura, g.altura)
-            if erro:
-                problemas.append(f"{p.relative_to(pasta.raiz)}: {erro}")
-    gab = indice.partida("gabarito")
-    problemas += [f"{p.relative_to(pasta.raiz)}: {e}" for p, e in gab.invalidos]
-    gabo = indice.partida("gabarito", "oclusao")
-    problemas += [f"{p.relative_to(pasta.raiz)}: {e}" for p, e in gabo.invalidos]
-    for a in gabo.rotulos:
-        r = indice.rotulo_oclusao(a)
-        item = itens.get(a.quadro)
-        if not isinstance(item, GabaritoOclusao):
-            problemas.append(f"{a.caminho.relative_to(pasta.raiz)}: não há item da oclusão {a.quadro} no gabarito")
+        if item is None:
+            continue  # item das versões até a 0.7 (câmera ou oclusão): fica fora
+        if item.id != p.stem:
+            problemas.append(f"{rel(p)}: o nome do arquivo precisa ser o id do item ({item.id})")
             continue
-        erros = _conferir_oclusao(pasta, r, a.caminho, [pl.model_dump() for pl in item.placas])
-        problemas += [f"{a.caminho.relative_to(pasta.raiz)}: {e}" for e in erros]
+        itens[item.id] = item
+        if isinstance(item, GabaritoJogadores):
+            try:
+                conferir_mascara((p.parent / item.mascara).read_bytes(), item)
+            except (ValueError, OSError) as e:
+                problemas.append(f"{rel(p)}: {e}")
+    for tarefa in ("pontos", "jogadores"):
+        gab = indice.partida("gabarito", tarefa)
+        problemas += [f"{rel(p)}: {e}" for p, e in gab.invalidos]
+        for arq in gab.rotulos:
+            item = itens.get(arq.quadro)
+            if item is None or (tarefa == "jogadores") != isinstance(item, GabaritoJogadores):
+                problemas.append(f"{rel(arq.caminho)}: não há item {arq.quadro} de {tarefa} no gabarito")
+                continue
+            r = indice.rotulo(arq, tarefa)
+            if (r.largura, r.altura) != (item.largura, item.altura):
+                problemas.append(f"{rel(arq.caminho)}: o tamanho não é o da imagem do item")
+            if tarefa == "jogadores" and r.mascara is not None:
+                erro = _conferir_mascara(arq.caminho.parent / r.mascara, r)
+                if erro:
+                    problemas.append(f"{rel(arq.caminho)}: {erro}")
     for registro in sorted(pasta.pessoas.glob("*/*.json")):  # em que computadores cada código é usado
         try:
             d = ler_json(registro, DispositivoPessoa)
             if d.codigo != registro.parent.name or d.dispositivo != registro.stem:
                 raise ValueError("o conteúdo não bate com o nome do arquivo")
         except (ValueError, OSError) as e:
-            problemas.append(f"{registro.relative_to(pasta.raiz)}: {e}")
+            problemas.append(f"{rel(registro)}: {e}")
     for linha in problemas:
         print(linha)
     print(f"{len(problemas)} problema(s) em {len(pasta.listar_partidas())} partida(s)")
@@ -173,9 +156,13 @@ def cmd_validar(a: argparse.Namespace) -> int:
 def cmd_unificar(a: argparse.Namespace) -> int:
     destino = unificar(Pasta(a.pasta))
     man = json.loads((destino / "manifesto.json").read_text(encoding="utf-8"))
-    print(f"{destino}: {man['quadros']} quadros {man['por_conjunto']}")
-    oc = man["oclusao"]
-    print(f"oclusão: {oc['quadros']} quadros, {oc['placas_pintadas']} placas pintadas {oc['por_conjunto']}")
+    po, jo = man["pontos"], man["jogadores"]
+    print(f"{destino}:")
+    print(f"  pontos: {po['quadros']} quadros, {po['pontos']} pontos {po['por_conjunto']}")
+    print(f"  jogadores: {jo['quadros']} quadros {jo['por_conjunto']}")
+    for tarefa, motivos in man["descartados"].items():
+        if motivos:
+            print(f"  descartados em {tarefa}: {motivos}")
     prob = json.loads((destino / "problemas.json").read_text(encoding="utf-8"))
     for p in prob["invalidos"]:
         if p["erro"].startswith("partida fora dos conjuntos"):
@@ -191,8 +178,7 @@ def cmd_gabarito(a: argparse.Namespace) -> int:
 
 def cmd_prever(a: argparse.Namespace) -> int:
     previsor = carregar_previsor(a.previsor)
-    fazer = prever_oclusao if a.tarefa == "oclusao" else prever
-    n = fazer(Pasta(a.pasta), previsor, a.partida or None, refazer=a.refazer)
+    n = prever(Pasta(a.pasta), previsor, a.tarefa, a.partida or None, refazer=a.refazer)
     print(f"{n} previsões gravadas ({previsor.nome}@{previsor.versao})")
     return 0
 
@@ -214,15 +200,15 @@ def construir_parser() -> argparse.ArgumentParser:
     p.add_argument("destino")
     p.set_defaults(func=cmd_exemplo)
 
-    p = sub.add_parser("gabarito", help="importa itens do gabarito (<id>.json + JPEG; na oclusão, + a máscara PNG)")
+    p = sub.add_parser("gabarito", help="importa itens do gabarito (<id>.json + JPEG; nos jogadores, + a máscara PNG)")
     p.add_argument("origem")
     p.add_argument("--pasta", default=_pasta_padrao())
     p.set_defaults(func=cmd_gabarito)
 
-    p = sub.add_parser("prever", help="grava a câmera prevista (ou a pré-pintura da oclusão) de cada quadro sorteado")
+    p = sub.add_parser("prever", help="grava os pontos (ou a pré-pintura dos jogadores) de um modelo para cada quadro")
     p.add_argument("--pasta", default=_pasta_padrao())
     p.add_argument("--previsor", required=True, help="pacote.modulo:objeto")
-    p.add_argument("--tarefa", choices=["camera", "oclusao"], default="camera")
+    p.add_argument("--tarefa", choices=["pontos", "jogadores"], required=True)
     p.add_argument("--partida", action="append", help="só esta partida (pode repetir)")
     p.add_argument("--refazer", action="store_true", help="refaz as previsões que já existem")
     p.set_defaults(func=cmd_prever)

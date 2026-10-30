@@ -1,6 +1,8 @@
 # ADR-0006 — Anotar sem equipe nem estádio cadastrados: código digitado, filas abertas e campo genérico
 
-**Situação:** aceita (23/10/2026).
+**Situação:** aceita (23/10/2026). O campo genérico (o molde que se estica) foi substituído pela
+ADR-0010 (30/10/2026): os pontos se marcam direto na imagem. O código digitado, as filas abertas e
+os trechos continuam valendo.
 
 ## Contexto
 

@@ -8,35 +8,32 @@
 //
 //   trabalho/
 //     equipe.json (opcional: nomes), divisao.json, projeto.json (opcional: nome e link do Manual)
-//     estadios/<estadio>/pacote-<versao>/pacote.json      generico/pacote-1.0: o campo genérico
 //     partidas/<partida>/
 //       manifesto.json, tomadas.json, fila.json
 //       quadros/<quadro>.jpg
-//       previsoes/<quadro>.json
-//       previsoes/oclusao/<quadro>.png       pré-pintura de um modelo (opcional)
-//       rotulos/<tarefa>/<quadro>__<anotador>__v<n>.json   na oclusão, com o .png da máscara ao lado
+//       previsoes/pontos/<quadro>.json      pontos de um modelo (opcional)
+//       previsoes/jogadores/<quadro>.png    pré-pintura de um modelo (opcional)
+//       rotulos/<tarefa>/<quadro>__<anotador>__v<n>.json   nos jogadores, com o .png da máscara ao lado
 //       revisoes/<tarefa>/<quadro>__<revisor>__v<n>.json
-//     gabarito/itens/<g0001>.json|.jpg (|.png na oclusão), gabarito/rotulos/<tarefa>/...
+//     gabarito/itens/<g1001>.json|.jpg (|.png nos jogadores), gabarito/rotulos/<tarefa>/...
 //     pessoas/<codigo>/<dispositivo>.json   em que computadores cada código é usado
 //     conjuntos/<data-hora>/            saída do unificar (Python)
+//
+// As tarefas são `pontos` e `jogadores`. As pastas das versões até a 0.7 (rotulos/camera,
+// rotulos/oclusao, estadios/) ficam onde estão e não entram em nada.
 
 import {
   PARTIDA_GABARITO,
-  REF_PACOTE_GENERICO,
   RE_DISPOSITIVO,
-  RE_ESTADIO,
   RE_GABARITO,
   RE_PARTIDA,
   RE_PESSOA,
   RE_QUADRO,
-  RE_VERSAO_PACOTE,
   TAREFAS,
   lerNome,
   lerNomeMascara,
-  partesPacote,
 } from "./convencoes.js";
 import { validar } from "./formatos.js";
-import { pacoteGenerico } from "./pacote.js";
 
 export class ArquivoExiste extends Error {
   constructor(caminho) {
@@ -86,17 +83,6 @@ export class Pasta {
     return `pessoas/${checar(RE_PESSOA, codigo, "código")}/${checar(RE_DISPOSITIVO, dispositivo, "dispositivo")}.json`;
   }
 
-  pacote(estadio, versao) {
-    checar(RE_ESTADIO, estadio, "estádio");
-    checar(RE_VERSAO_PACOTE, versao, "versão do pacote");
-    return `estadios/${estadio}/pacote-${versao}/pacote.json`;
-  }
-
-  pacoteRef(ref) {
-    const [estadio, versao] = partesPacote(ref);
-    return this.pacote(estadio, versao);
-  }
-
   partida(partida) {
     if (partida === PARTIDA_GABARITO) return "gabarito";
     return `partidas/${checar(RE_PARTIDA, partida, "partida")}`;
@@ -132,26 +118,27 @@ export class Pasta {
     return `gabarito/itens/${checar(RE_GABARITO, id, "item do gabarito")}.json`;
   }
 
-  previsao(partida, quadro) {
-    return `${this.partida(partida)}/previsoes/${checar(RE_QUADRO, quadro, "quadro")}.json`;
+  /** Os pontos de um modelo para o quadro, quando há. */
+  previsaoPontos(partida, quadro) {
+    return `${this.partida(partida)}/previsoes/pontos/${checar(RE_QUADRO, quadro, "quadro")}.json`;
   }
 
-  /** A pré-pintura de um modelo para a oclusão (PNG com as classes), quando há. */
-  previsaoOclusao(partida, quadro) {
-    return `${this.partida(partida)}/previsoes/oclusao/${checar(RE_QUADRO, quadro, "quadro")}.png`;
+  /** A pré-pintura de um modelo para os jogadores (PNG: 1 onde há jogador), quando há. */
+  previsaoJogadores(partida, quadro) {
+    return `${this.partida(partida)}/previsoes/jogadores/${checar(RE_QUADRO, quadro, "quadro")}.png`;
   }
 
-  /** A máscara verdadeira de um item do gabarito da oclusão. */
+  /** A máscara verdadeira de um item do gabarito dos jogadores. */
   mascaraGabarito(id) {
     return `gabarito/itens/${checar(RE_GABARITO, id, "item do gabarito")}.png`;
   }
 
-  rotulos(partida, tarefa = "camera") {
+  rotulos(partida, tarefa) {
     if (!TAREFAS.includes(tarefa)) throw new Error(`tarefa desconhecida: ${tarefa}`);
     return `${this.partida(partida)}/rotulos/${tarefa}`;
   }
 
-  revisoes(partida, tarefa = "camera") {
+  revisoes(partida, tarefa) {
     if (!TAREFAS.includes(tarefa)) throw new Error(`tarefa desconhecida: ${tarefa}`);
     return `${this.partida(partida)}/revisoes/${tarefa}`;
   }
@@ -281,18 +268,11 @@ export class Pasta {
   // ------------------------------------------------------------------ criação
   /** Pastas básicas e equipe/divisão vazias, sem mexer no que já existe. */
   async criar() {
-    for (const p of ["estadios", "partidas", "gabarito/itens", "conjuntos"]) await this.diretorio(p, { criar: true });
+    for (const p of ["partidas", "gabarito/itens", "conjuntos"]) await this.diretorio(p, { criar: true });
     if (!(await this.existe(Pasta.EQUIPE))) await this.gravar("equipe", Pasta.EQUIPE, { formato: "equipe/1", membros: [] });
     if (!(await this.existe(Pasta.DIVISAO))) {
       await this.gravar("divisao", Pasta.DIVISAO, { formato: "divisao/1", validacao: [], teste_congelado: [], teste_externo: [] });
     }
-    await this.garantirPacoteGenerico();
-  }
-
-  /** O campo genérico na pasta (para o Python e para quem abrir a pasta saber o molde usado). */
-  async garantirPacoteGenerico() {
-    const caminho = this.pacoteRef(REF_PACOTE_GENERICO);
-    if (!(await this.existe(caminho))) await this.gravar("pacote", caminho, pacoteGenerico(), { sobrescrever: true });
   }
 
   /** É uma pasta de trabalho? (tem equipe.json) */
@@ -316,20 +296,6 @@ export class Pasta {
     return out.sort();
   }
 
-  async listarPacotes() {
-    const refs = [];
-    for (const e of await this.listar("estadios")) {
-      if (e.tipo !== "pasta" || !RE_ESTADIO.test(e.nome)) continue;
-      for (const v of await this.listar(`estadios/${e.nome}`)) {
-        const versao = v.nome.startsWith("pacote-") ? v.nome.slice(7) : "";
-        if (v.tipo === "pasta" && RE_VERSAO_PACOTE.test(versao) && (await this.existe(`estadios/${e.nome}/${v.nome}/pacote.json`))) {
-          refs.push(`${e.nome}/pacote-${versao}`);
-        }
-      }
-    }
-    return refs.sort();
-  }
-
   /** Arquivos de rótulo ou revisão de uma pasta: [{caminho, nome, quadro, pessoa, versao, alca}]. */
   async listarArquivos(diretorio) {
     const out = [];
@@ -342,7 +308,7 @@ export class Pasta {
   }
 
   /**
-   * A versão seguinte à maior da pessoa no quadro. Conta também as máscaras da oclusão sem rótulo
+   * A versão seguinte à maior da pessoa no quadro. Conta também as máscaras dos jogadores sem rótulo
    * (uma gravação interrompida entre a máscara e o rótulo): o nome nunca se repete.
    */
   async proximaVersao(diretorio, quadro, pessoa) {
@@ -391,11 +357,6 @@ export class Pasta {
     return (await this.existe(Pasta.DIVISAO))
       ? this.ler("divisao", Pasta.DIVISAO)
       : { formato: "divisao/1", validacao: [], teste_congelado: [], teste_externo: [] };
-  }
-
-  async lerPacote(ref) {
-    if (ref === REF_PACOTE_GENERICO && !(await this.existe(this.pacoteRef(ref)))) return validar("pacote", pacoteGenerico());
-    return this.ler("pacote", this.pacoteRef(ref));
   }
 
   async lerManifesto(partida) {

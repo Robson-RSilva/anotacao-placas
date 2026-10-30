@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:; media-src 'self' blob:; worker-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'">
-  <meta name="description" content="Anotação de dados de treino do detector de marcações: tudo roda no navegador e os arquivos ficam na pasta de cada pessoa.">
+  <meta name="description" content="Anotação de dados de treino: os pontos do campo e os jogadores, marcados direto na imagem. Tudo roda no navegador e os arquivos ficam na pasta de cada pessoa.">
   <title>Anotação de dados para treino</title>
   <link rel="icon" href="icone.svg" type="image/svg+xml">
   <link rel="stylesheet" href="css/estilo.css">
@@ -66,7 +66,6 @@
         <p class="sutil" id="nome-vazia"></p>
         <div class="botoes">
           <button type="button" class="primario" id="criar-vazia">Criar pasta de trabalho</button>
-          <button type="button" id="criar-exemplo">Criar com o exemplo (estádio sintético)</button>
           <button type="button" id="trocar-vazia">Escolher outra pasta</button>
           <label class="botao">Trazer a cópia de um .zip<input type="file" id="trazer-zip-vazia" accept=".zip,application/zip" hidden></label>
         </div>
@@ -80,23 +79,31 @@
         </section>
         <section class="cartoes">
           <article class="cartao">
-            <h2>Câmera do quadro</h2>
-            <p id="st-camera" class="sutil">—</p>
-            <a class="botao primario" href="#/camera" id="ir-camera">Anotar</a>
+            <h2>Pontos do campo</h2>
+            <p class="sutil">Clique em cada ponto do campo que aparece na imagem.</p>
+            <p id="st-pontos">—</p>
+            <a class="botao primario" href="#/pontos" id="ir-pontos">Marcar pontos</a>
           </article>
           <article class="cartao">
-            <h2>Revisão cruzada</h2>
-            <p id="st-revisao" class="sutil">—</p>
-            <a class="botao" href="#/revisao" id="ir-revisao">Revisar</a>
+            <h2>Jogadores</h2>
+            <p class="sutil">Pinte todos os jogadores da imagem.</p>
+            <p id="st-jogadores">—</p>
+            <a class="botao primario" href="#/jogadores" id="ir-jogadores">Pintar jogadores</a>
           </article>
           <article class="cartao">
-            <h2>Oclusão nas placas</h2>
-            <p id="st-oclusao" class="sutil">—</p>
-            <p id="st-revisao-oclusao" class="sutil"></p>
+            <h2>Revisão às cegas</h2>
+            <p class="sutil">Confira o que outras pessoas fizeram, sem saber quem fez.</p>
+            <p id="st-revisao">—</p>
             <div class="botoes">
-              <a class="botao primario" href="#/oclusao" id="ir-oclusao">Pintar</a>
-              <a class="botao" href="#/revisao-oclusao" id="ir-revisao-oclusao">Revisar</a>
+              <a class="botao" href="#/revisao-pontos" id="ir-revisao-pontos">Revisar pontos</a>
+              <a class="botao" href="#/revisao-jogadores" id="ir-revisao-jogadores">Revisar jogadores</a>
             </div>
+          </article>
+          <article class="cartao">
+            <h2>Gabarito</h2>
+            <p class="sutil">O teste com as respostas certas, antes das imagens reais.</p>
+            <p id="st-gabarito">—</p>
+            <a class="botao" href="#/gabarito" id="ir-gabarito">Abrir o gabarito</a>
           </article>
         </section>
 
@@ -107,7 +114,7 @@
           </div>
           <div class="rolavel">
             <table class="tabela" id="partidas">
-              <thead><tr><th>Partida</th><th>Emissora</th><th>Condições</th><th>Sorteados</th><th>Anotados</th><th>Aprovados</th><th>Revisão pendente</th><th title="Pinturas aprovadas, dos quadros com a câmera aprovada">Oclusão</th></tr></thead>
+              <thead><tr><th>Partida</th><th>Emissora</th><th>Condições</th><th>Sorteados</th><th title="Quadros com os pontos aprovados na revisão e a parte dos sorteados; desc.: quantos deles foram descartados">Pontos aprovados</th><th title="Quadros com a pintura aprovada na revisão e a parte dos sorteados; desc.: quantos deles foram descartados">Jogadores aprovados</th><th>Revisão pendente</th></tr></thead>
               <tbody></tbody>
             </table>
           </div>
@@ -117,11 +124,11 @@
           <div class="titulo-secao">
             <h2>Placar</h2>
             <div class="botoes alternar" role="group" aria-label="Tarefa do placar">
-              <button type="button" data-placar="camera" aria-pressed="true">Câmera</button>
-              <button type="button" data-placar="oclusao" aria-pressed="false">Oclusão</button>
+              <button type="button" data-placar="pontos" aria-pressed="true">Pontos</button>
+              <button type="button" data-placar="jogadores" aria-pressed="false">Jogadores</button>
             </div>
           </div>
-          <p class="sutil">Ponto só conta depois de aprovado na revisão cruzada.</p>
+          <p class="sutil">Ponto só conta depois de aprovado na revisão às cegas.</p>
           <div class="rolavel">
             <table class="tabela" id="placar">
               <thead><tr><th>Pessoa</th><th>Aprovados na semana</th><th>Aprovados</th><th>Taxa de aprovação</th><th>Tempo mediano</th><th id="th-concordancia">Concordância (cegos)</th><th>Gabarito</th><th>Dias seguidos</th><th>Marcos</th></tr></thead>
@@ -151,130 +158,219 @@
     </footer>
   </template>
 
-  <!-- ================================================================== câmera -->
-  <template id="tpl-camera">
-    <header class="barra">
-      <a href="#/" class="voltar">← Central</a>
-      <h1>Câmera do quadro</h1>
-      <span id="dica" class="dica"></span>
-      <span class="tempo" title="Tempo ativo neste quadro">⏱ <span id="tempo">0:00</span></span>
-    </header>
-
-    <main class="editor">
-      <div class="tela" id="area"><canvas id="tela" aria-label="Quadro com o molde do campo"></canvas>
-        <div id="vazio" class="vazio" hidden></div>
-      </div>
-
-      <aside class="painel" id="painel" hidden>
-        <section id="treino" class="faixa treino" hidden>
-          Treino com gabarito: ao salvar, aparece a diferença para a câmera verdadeira.
-        </section>
-        <section id="devolvido" class="faixa devolvido" hidden></section>
-
-        <section>
-          <h2>Começar de</h2>
-          <div class="linha-campos">
-            <select id="registro" aria-label="Câmera do registro do estádio"></select>
-            <button id="recomecar" type="button" title="Volta para a câmera escolhida e destrava tudo">Recomeçar</button>
-          </div>
-          <div class="botoes">
-            <button id="virar" type="button">Virar o lado <kbd>F</kbd></button>
-            <button id="desfazer" type="button">Desfazer <kbd>Ctrl Z</kbd></button>
-          </div>
-        </section>
-
-        <section>
-          <h2>Medidas do campo</h2>
-          <div class="medidas">
-            <input id="comprimento" type="number" min="90" max="120" step="0.5" inputmode="decimal" aria-label="Comprimento do campo, em metros" title="Comprimento: de uma linha de fundo à outra">
-            <span>×</span>
-            <input id="largura" type="number" min="45" max="90" step="0.5" inputmode="decimal" aria-label="Largura do campo, em metros" title="Largura: de uma lateral à outra">
-            <span>m</span>
-          </div>
-          <p class="sutil">Comprimento × largura. As áreas, o círculo e os gols têm a medida da regra; o tamanho do campo muda de um estádio para outro. Se o molde não fecha com as linhas, ajuste aqui (o que está travado continua).</p>
-        </section>
-
-        <section>
-          <h2>Travados <span id="n-pinos" class="contagem"></span></h2>
-          <ul id="pinos" class="pinos"><li class="sutil">Arraste ou clique num ponto do molde para travar.</li></ul>
-        </section>
-
-        <section>
-          <h2>Pronto quando</h2>
-          <ul class="checagem">
-            <li id="ck-pontos">3 pontos espalhados, ou 2 pontos e 1 linha</li>
-            <li id="ck-residuo">molde a até 2 px dos travados</li>
-            <li id="ck-lado-item"><label><input type="checkbox" id="ck-lado"> conferi o lado numa placa estática</label></li>
-          </ul>
-        </section>
-
-        <section>
-          <h2>Situação</h2>
-          <div class="situacoes" id="situacoes">
-            <label><input type="radio" name="situacao" value="ok" checked> Câmera certa</label>
-            <label><input type="radio" name="situacao" value="sem_marcacoes"> Sem marcações suficientes</label>
-            <label><input type="radio" name="situacao" value="impossivel_transicao"> Impossível: transição ou grafismo</label>
-            <label><input type="radio" name="situacao" value="impossivel_borrao"> Impossível: borrão</label>
-            <label><input type="radio" name="situacao" value="duvida"> Dúvida (com comentário)</label>
-          </div>
-          <textarea id="comentario" rows="2" placeholder="Comentário (obrigatório em dúvida)"></textarea>
-        </section>
-
-        <button id="salvar" class="primario" type="button">Salvar <kbd>S</kbd></button>
-        <p id="erro" class="erro" role="alert"></p>
-
-        <details class="ajuda">
-          <summary>Como usar</summary>
-          <ul>
-            <li><b>Arrastar um ponto</b>: o molde inteiro acompanha; ao soltar, ele fica travado.</li>
-            <li><b>Clicar num ponto</b>: trava onde está.</li>
-            <li><b>Arrastar uma linha</b> (lateral, fundo): leva a linha até a pintada.</li>
-            <li><b>Medidas do campo</b>: quando o campo é maior ou menor que 105 × 68 m, mude o comprimento e a largura; o que está travado continua.</li>
-            <li><b>Botão direito</b> num travado: destrava.</li>
-            <li><b>Roda do mouse</b>: aproxima. Arrastar o vazio move a vista. <kbd>0</kbd> volta a vista.</li>
-            <li><kbd>L</kbd> nomes · <kbd>P</kbd> placas · <kbd>F</kbd> virar o lado · <kbd>S</kbd> salvar</li>
-          </ul>
-        </details>
-      </aside>
-    </main>
-
-    <div id="modal" class="modal" hidden>
-      <div class="caixa" role="dialog" aria-modal="true" aria-labelledby="modal-titulo">
-        <h2 id="modal-titulo"></h2>
-        <p id="modal-texto"></p>
-        <button id="modal-ok" class="primario" type="button">Próximo</button>
+  <!-- ================================================================== caixas compartilhadas -->
+  <template id="tpl-caixas">
+    <div id="caixa-descartar" class="modal" hidden>
+      <form class="caixa" role="dialog" aria-modal="true" aria-labelledby="titulo-descartar" id="form-descartar">
+        <h2 id="titulo-descartar">Descartar esta imagem?</h2>
+        <p class="sutil">Descarte só a imagem que não dá para anotar direito. Uma imagem normal em que não aparece nada para marcar você salva vazia — ela também serve para o treino.</p>
+        <div class="situacoes" id="motivos-descarte"></div>
+        <textarea id="comentario-descarte" rows="2" placeholder="Comentário (obrigatório em “outro motivo”)"></textarea>
+        <p class="erro" id="erro-descartar" role="alert"></p>
+        <div class="botoes">
+          <button type="submit" class="primario" id="confirmar-descartar">Descartar</button>
+          <button type="button" id="voltar-descartar">Voltar</button>
+        </div>
+      </form>
+    </div>
+    <div id="caixa-confirmar" class="modal" hidden>
+      <div class="caixa" role="dialog" aria-modal="true" aria-labelledby="titulo-confirmar">
+        <h2 id="titulo-confirmar"></h2>
+        <p id="texto-confirmar"></p>
+        <div class="botoes">
+          <button type="button" class="primario" id="sim-confirmar">Salvar assim</button>
+          <button type="button" id="nao-confirmar">Voltar</button>
+        </div>
       </div>
     </div>
   </template>
 
-  <!-- ================================================================== revisão -->
-  <template id="tpl-revisao">
+  <!-- ================================================================== pontos -->
+  <template id="tpl-pontos">
     <header class="barra">
       <a href="#/" class="voltar">← Central</a>
-      <h1>Revisão cruzada</h1>
+      <h1>Pontos do campo</h1>
+      <span id="dica" class="dica"></span>
+      <span class="tempo" title="Tempo ativo nesta imagem">⏱ <span id="tempo">0:00</span></span>
+    </header>
+
+    <main class="editor">
+      <div class="tela" id="area"><canvas id="tela" aria-label="A imagem, com os pontos marcados"></canvas>
+        <div id="vazio" class="vazio" hidden></div>
+      </div>
+
+      <aside class="painel largo" id="painel" hidden>
+        <section id="treino" class="faixa treino" hidden>Teste do gabarito: esta imagem tem resposta. Ao salvar, você vê o resultado.</section>
+        <section id="devolvido" class="faixa devolvido" hidden></section>
+        <section id="partiu" class="faixa" hidden></section>
+
+        <section id="resultado" class="faixa resultado" hidden>
+          <h2 id="resultado-titulo"></h2>
+          <p id="resultado-texto"></p>
+          <p class="legenda"><span class="cor certo"></span> no lugar <span class="cor longe"></span> perto <span class="cor errado"></span> errado <span class="cor faltou"></span> faltou <span class="cor verdade"></span> resposta</p>
+          <div class="botoes">
+            <button id="ver-resposta" type="button">Ver a resposta <kbd>V</kbd></button>
+            <button id="proximo" class="primario" type="button">Próximo <kbd>N</kbd></button>
+            <a id="voltar-gabarito" class="botao" href="#/gabarito" hidden>Voltar ao gabarito</a>
+          </div>
+        </section>
+
+        <section>
+          <div class="titulo-secao">
+            <h2>Mapa do campo</h2>
+            <button id="girar" type="button" title="Gira o mapa 90 graus: deixe embaixo o lado mais perto da câmera">Girar <kbd>R</kbd></button>
+          </div>
+          <div id="mapa" class="caixa-mapa"></div>
+          <p id="escolha" class="escolha" role="status"></p>
+        </section>
+
+        <div id="edicao" class="secoes">
+          <section>
+            <h2>Marcados <span id="n-pontos" class="contagem"></span></h2>
+            <ul id="lista-pontos" class="pinos"></ul>
+            <div class="botoes">
+              <button id="desfazer" type="button">Desfazer <kbd>Ctrl Z</kbd></button>
+              <label class="caixa-marcar"><input type="checkbox" id="ver-nomes"> nomes <kbd>L</kbd></label>
+            </div>
+          </section>
+
+          <div class="botoes acoes">
+            <button id="salvar" class="primario" type="button">Salvar <kbd>S</kbd></button>
+            <button id="descartar" type="button">Descartar imagem <kbd>D</kbd></button>
+          </div>
+          <p id="erro" class="erro" role="alert"></p>
+
+          <details class="ajuda" open>
+            <summary>Como marcar</summary>
+            <ul>
+              <li><b>Escolha o ponto no mapa e clique no lugar dele na imagem.</b> Ou o contrário: clique na imagem e depois no mapa.</li>
+              <li>Marque <b>todo ponto do campo que aparece</b>, no centro exato do cruzamento das linhas (ou da marca, ou da trave). Aproxime com a roda do mouse; a lupa mostra o pixel.</li>
+              <li><b>Gire o mapa</b> (<kbd>R</kbd>) até ele ficar como a imagem: o lado de baixo do mapa é o mais perto da câmera. Câmera atrás do gol: o gol de perto embaixo.</li>
+              <li>Ponto coberto por um jogador: marque só se dá para saber exatamente onde ele está. Fora da imagem, não marque.</li>
+              <li>Nenhum ponto à vista (um close, a torcida)? Salve sem pontos. <b>Descarte</b> só a imagem que não dá para anotar (transição, borrão, grafismo por cima).</li>
+              <li><b>Arraste</b> um ponto para ajustar; <b>botão direito</b> (ou <kbd>Delete</kbd>) apaga. <kbd>Esc</kbd> cancela o ponto escolhido. Botão direito e arrastar move a vista; <kbd>0</kbd> volta a vista; <kbd>H</kbd> esconde os pontos.</li>
+            </ul>
+          </details>
+        </div>
+      </aside>
+    </main>
+  </template>
+
+  <!-- ================================================================== jogadores -->
+  <template id="tpl-jogadores">
+    <header class="barra">
+      <a href="#/" class="voltar">← Central</a>
+      <h1>Jogadores</h1>
+      <span id="dica" class="dica"></span>
+      <span class="tempo" title="Tempo ativo nesta imagem">⏱ <span id="tempo">0:00</span></span>
+    </header>
+
+    <main class="editor">
+      <div class="tela" id="area"><canvas id="tela" aria-label="A imagem, com a pintura dos jogadores"></canvas>
+        <div id="vazio" class="vazio" hidden></div>
+      </div>
+
+      <aside class="painel" id="painel" hidden>
+        <section id="treino" class="faixa treino" hidden>Teste do gabarito: esta imagem tem resposta. Ao salvar, você vê o resultado.</section>
+        <section id="devolvido" class="faixa devolvido" hidden></section>
+        <section id="partiu" class="faixa" hidden></section>
+
+        <section id="resultado" class="faixa resultado" hidden>
+          <h2 id="resultado-titulo"></h2>
+          <p id="resultado-texto"></p>
+          <p class="legenda"><span class="cor certo"></span> certo <span class="cor errado"></span> faltou <span class="cor longe"></span> a mais <span class="cor faltou"></span> não é jogador</p>
+          <div class="botoes">
+            <button id="ver-resposta" type="button">Ver a resposta <kbd>V</kbd></button>
+            <button id="proximo" class="primario" type="button">Próximo <kbd>N</kbd></button>
+            <a id="voltar-gabarito" class="botao" href="#/gabarito" hidden>Voltar ao gabarito</a>
+          </div>
+        </section>
+
+        <div id="edicao" class="secoes">
+          <section>
+            <h2>O que pintar</h2>
+            <p class="sutil">Todos os jogadores, inclusive os goleiros: o corpo inteiro, do cabelo à chuteira. <b>Não pinte</b> árbitros, gandulas, fotógrafos, comissão técnica, torcida nem a sombra no gramado.</p>
+          </section>
+          <section>
+            <h2>Pintar</h2>
+            <div class="botoes alternar" role="group" aria-label="Ferramenta">
+              <button type="button" data-ferramenta="pincel" aria-pressed="true">Pincel <kbd>B</kbd></button>
+              <button type="button" data-ferramenta="laco" aria-pressed="false">Laço <kbd>L</kbd></button>
+              <button type="button" id="borracha" aria-pressed="false">Borracha <kbd>E</kbd></button>
+            </div>
+            <label class="tamanho">Pincel <input id="raio" type="range" min="1" max="30" value="4" aria-label="Tamanho do pincel, em pixels da imagem"> <span id="raio-valor">4 px</span> <kbd>[</kbd> <kbd>]</kbd></label>
+            <div class="botoes">
+              <button id="desfazer" type="button">Desfazer <kbd>Ctrl Z</kbd></button>
+              <button id="refazer" type="button">Refazer</button>
+              <label class="caixa-marcar"><input type="checkbox" id="ver-pintura" checked> pintura <kbd>H</kbd></label>
+            </div>
+          </section>
+
+          <div class="botoes acoes">
+            <button id="salvar" class="primario" type="button">Salvar <kbd>S</kbd></button>
+            <button id="descartar" type="button">Descartar imagem <kbd>D</kbd></button>
+          </div>
+          <p id="erro" class="erro" role="alert"></p>
+
+          <details class="ajuda" open>
+            <summary>Como pintar</summary>
+            <ul>
+              <li><b>Laço</b> (<kbd>L</kbd>) é o mais rápido: arraste em volta do jogador e solte; ou clique ponto a ponto e feche no primeiro ponto, com dois cliques ou <kbd>Enter</kbd>.</li>
+              <li><b>Pincel</b> (<kbd>B</kbd>) para os detalhes: braços, pernas, a chuteira. <kbd>[</kbd> e <kbd>]</kbd> mudam o tamanho.</li>
+              <li><b>Borracha</b> (<kbd>E</kbd>): o pincel e o laço passam a apagar.</li>
+              <li>Pinte até a borda do jogador: <b>1 px de folga</b> não conta. Jogador atrás de outro: pinte o que aparece.</li>
+              <li>Nenhum jogador na imagem? Salve sem pintar. <b>Descarte</b> só a imagem que não dá para anotar (transição, borrão, grafismo por cima).</li>
+              <li><b>Roda do mouse</b> aproxima; botão direito (ou espaço) e arrastar move a vista; <kbd>0</kbd> volta a vista; <kbd>H</kbd> esconde a pintura para comparar com a imagem.</li>
+            </ul>
+          </details>
+        </div>
+      </aside>
+    </main>
+  </template>
+
+  <!-- ================================================================== revisão dos pontos -->
+  <template id="tpl-revisao-pontos">
+    <header class="barra">
+      <a href="#/" class="voltar">← Central</a>
+      <h1>Revisão às cegas · Pontos</h1>
       <span id="dica" class="dica"></span>
       <span class="contagem-barra" id="pendentes"></span>
       <span class="tempo" title="Tempo ativo nesta revisão">⏱ <span id="tempo">0:00</span></span>
     </header>
 
     <main class="editor">
-      <div class="tela" id="area"><canvas id="tela" aria-label="Quadro com o molde do rótulo em revisão"></canvas>
+      <div class="tela" id="area"><canvas id="tela" aria-label="A imagem, com os pontos em revisão"></canvas>
         <div id="vazio" class="vazio" hidden></div>
       </div>
 
-      <aside class="painel" id="painel" hidden>
-        <section class="faixa">Você não vê quem anotou. Confira as linhas, os arcos, as medidas do campo e o lado.</section>
+      <aside class="painel largo" id="painel" hidden>
+        <details class="faixa como-revisar" open>
+          <summary><b>Como revisar</b> — você não sabe quem marcou, e quem marcou não sabe quem revisa.</summary>
+          <ol>
+            <li>Passe o mouse em cada ponto: o nome aparece na imagem e no mapa. <b>Está no centro do cruzamento</b> (até 2 px)? <b>O nome confere</b> com o lugar no mapa?</li>
+            <li>Procure <b>ponto que aparece e ficou sem marcar</b>, e ponto marcado onde não dá para ver.</li>
+            <li>Decida. <b>Aprovar</b> (<kbd>A</kbd>): está certo. <b>Corrigir</b> (<kbd>C</kbd>): dá para consertar rápido — você ajusta, e a correção vale com o seu nome. <b>Devolver</b> (<kbd>D</kbd>): precisa refazer — volta para quem marcou, com o motivo.</li>
+            <li>Imagem descartada: aprove se ela não dá mesmo para anotar; se dá, devolva (“descarte errado”) ou corrija marcando os pontos.</li>
+          </ol>
+        </details>
 
         <section>
           <h2>O rótulo</h2>
           <dl class="ficha">
             <dt>Situação</dt><dd id="r-situacao"></dd>
-            <dt>Resíduo mediano</dt><dd id="r-residuo"></dd>
+            <dt>Pontos</dt><dd id="r-pontos"></dd>
             <dt>Partiu de</dt><dd id="r-partiu"></dd>
-            <dt>Medidas do campo</dt><dd id="r-campo"></dd>
             <dt>Comentário</dt><dd id="r-comentario"></dd>
           </dl>
-          <ul id="pinos" class="pinos"></ul>
+        </section>
+
+        <section>
+          <div class="titulo-secao">
+            <h2>Mapa do campo</h2>
+            <button id="girar" type="button" title="Gira o mapa 90 graus">Girar <kbd>R</kbd></button>
+          </div>
+          <div id="mapa" class="caixa-mapa"></div>
+          <p id="escolha" class="escolha" role="status"></p>
         </section>
 
         <section id="decidir">
@@ -284,19 +380,13 @@
             <button id="corrigir" type="button">Corrigir <kbd>C</kbd></button>
             <button id="devolver" type="button">Devolver <kbd>D</kbd></button>
           </div>
-          <p class="sutil">Diferença dentro da tolerância não se corrige: aprove.</p>
+          <p class="sutil">Diferença de até 2 px não se corrige: aprove.</p>
         </section>
 
         <section id="secao-devolver" hidden>
           <h2>Devolver</h2>
-          <select id="motivo" aria-label="Motivo da devolução">
-            <option value="lado_trocado">Lado trocado</option>
-            <option value="molde_fora_da_tolerancia">Molde fora da tolerância</option>
-            <option value="ponto_em_marca_coberta">Ponto travado em marca coberta</option>
-            <option value="deveria_ser_sem_marcacoes">Deveria ser "sem marcações suficientes"</option>
-            <option value="outro">Outro (com comentário)</option>
-          </select>
-          <textarea id="comentario-dev" rows="2" placeholder="Comentário"></textarea>
+          <select id="motivo" aria-label="Motivo da devolução"></select>
+          <textarea id="comentario-dev" rows="2" placeholder="Comentário para quem marcou (o que corrigir)"></textarea>
           <div class="botoes">
             <button id="confirmar-devolver" type="button" class="primario">Confirmar devolução</button>
             <button type="button" data-voltar>Voltar</button>
@@ -305,24 +395,13 @@
 
         <section id="secao-corrigir" hidden>
           <h2>Corrigir</h2>
-          <p class="sutil">Ajuste o molde como na página de câmera. A correção vira uma versão nova, com a sua autoria.</p>
+          <p class="sutil">Como na página de pontos: escolha no mapa e clique na imagem; arraste para ajustar; botão direito apaga. A correção vira uma versão nova, com a sua autoria.</p>
+          <ul id="lista-pontos" class="pinos"></ul>
           <div class="botoes">
-            <button id="virar" type="button">Virar o lado <kbd>F</kbd></button>
-            <button id="desfazer" type="button">Desfazer</button>
+            <button id="desfazer" type="button">Desfazer <kbd>Ctrl Z</kbd></button>
+            <button id="descartar" type="button">Descartar em vez disso</button>
           </div>
-          <div class="medidas">
-            <input id="comprimento" type="number" min="90" max="120" step="0.5" inputmode="decimal" aria-label="Comprimento do campo, em metros" title="Comprimento: de uma linha de fundo à outra">
-            <span>×</span>
-            <input id="largura" type="number" min="45" max="90" step="0.5" inputmode="decimal" aria-label="Largura do campo, em metros" title="Largura: de uma lateral à outra">
-            <span>m</span>
-          </div>
-          <select id="situacao-corr" aria-label="Situação da correção">
-            <option value="ok">Câmera certa</option>
-            <option value="sem_marcacoes">Sem marcações suficientes</option>
-            <option value="impossivel_transicao">Impossível: transição ou grafismo</option>
-            <option value="impossivel_borrao">Impossível: borrão</option>
-          </select>
-          <textarea id="comentario-corr" rows="2" placeholder="Comentário"></textarea>
+          <textarea id="comentario-corr" rows="2" placeholder="Comentário (opcional)"></textarea>
           <div class="botoes">
             <button id="salvar-correcao" class="primario" type="button">Salvar correção</button>
             <button type="button" data-voltar>Voltar</button>
@@ -333,160 +412,41 @@
     </main>
   </template>
 
-  <!-- ================================================================== oclusão -->
-  <template id="tpl-oclusao">
+  <!-- ================================================================== revisão dos jogadores -->
+  <template id="tpl-revisao-jogadores">
     <header class="barra">
       <a href="#/" class="voltar">← Central</a>
-      <h1>Oclusão nas placas</h1>
-      <span id="dica" class="dica"></span>
-      <span class="tempo" title="Tempo ativo neste quadro">⏱ <span id="tempo">0:00</span></span>
-    </header>
-
-    <main class="editor">
-      <div class="tela" id="area"><canvas id="tela" aria-label="Quadro com as placas e a pintura"></canvas>
-        <div id="vazio" class="vazio" hidden></div>
-      </div>
-
-      <aside class="painel" id="painel" hidden>
-        <section id="treino" class="faixa treino" hidden>
-          Treino com gabarito: ao salvar, aparece a diferença para a máscara verdadeira, e dá para ver a resposta.
-        </section>
-        <section id="devolvido" class="faixa devolvido" hidden></section>
-        <section id="partiu" class="faixa" hidden></section>
-
-        <section id="resultado" class="faixa resultado" hidden>
-          <h2 id="resultado-titulo"></h2>
-          <p id="resultado-texto"></p>
-          <ul id="resultado-placas" class="pinos"></ul>
-          <div class="botoes">
-            <button id="ver-resposta" type="button">Ver a resposta <kbd>R</kbd></button>
-            <button id="proximo" class="primario" type="button">Próximo <kbd>N</kbd></button>
-          </div>
-        </section>
-
-        <div id="edicao" class="secoes">
-        <section>
-          <h2>Pintar</h2>
-          <div class="botoes alternar" role="group" aria-label="Ferramenta">
-            <button type="button" data-ferramenta="pincel" aria-pressed="true">Pincel <kbd>B</kbd></button>
-            <button type="button" data-ferramenta="laco" aria-pressed="false">Laço <kbd>L</kbd></button>
-          </div>
-          <label class="tamanho">Pincel <input id="raio" type="range" min="1" max="40" value="6" aria-label="Tamanho do pincel, em pixels da imagem"> <span id="raio-valor">6 px</span> <kbd>[</kbd> <kbd>]</kbd></label>
-          <div class="classes" role="radiogroup" aria-label="O que cobre a placa">
-            <label><input type="radio" name="classe" value="2" checked><span class="amostra" data-classe="2"></span> Pessoa <kbd>1</kbd></label>
-            <label><input type="radio" name="classe" value="3"><span class="amostra" data-classe="3"></span> Bola <kbd>2</kbd></label>
-            <label><input type="radio" name="classe" value="4"><span class="amostra" data-classe="4"></span> Rede do gol <kbd>3</kbd></label>
-            <label><input type="radio" name="classe" value="5"><span class="amostra" data-classe="5"></span> Grafismo da emissora <kbd>4</kbd></label>
-            <label><input type="radio" name="classe" value="6"><span class="amostra" data-classe="6"></span> Objeto (trave, câmera, banco…) <kbd>5</kbd></label>
-            <label><input type="radio" name="classe" value="7"><span class="amostra" data-classe="7"></span> Não é placa (vão na faixa) <kbd>6</kbd></label>
-            <label><input type="radio" name="classe" value="1"><span class="amostra" data-classe="1"></span> Apagar (placa livre) <kbd>E</kbd></label>
-          </div>
-          <div class="botoes">
-            <button id="desfazer" type="button">Desfazer <kbd>Ctrl Z</kbd></button>
-            <button id="refazer" type="button">Refazer</button>
-          </div>
-          <div class="camadas">
-            <label><input type="checkbox" id="ver-pintura" checked> pintura <kbd>H</kbd></label>
-            <label><input type="checkbox" id="ver-contornos" checked> contornos <kbd>O</kbd></label>
-            <label><input type="checkbox" id="ver-molde"> linhas do campo <kbd>M</kbd></label>
-          </div>
-        </section>
-
-        <section>
-          <h2>Placas no quadro <span id="n-placas" class="contagem"></span></h2>
-          <ul id="lista-placas" class="pinos"></ul>
-          <div class="botoes"><button id="enquadrar" type="button" title="Aproxima a vista das placas que se pintam">Ir às placas <kbd>Z</kbd></button></div>
-        </section>
-
-        <section>
-          <h2>Pronto quando</h2>
-          <ul class="checagem">
-            <li id="ck-pintaveis">há placa para pintar (as pequenas demais ficam de fora)</li>
-            <li><label><input type="checkbox" id="ck-conferi"> conferi cada placa: o contorno e o que a cobre</label></li>
-          </ul>
-        </section>
-
-        <section>
-          <h2>Situação</h2>
-          <div class="situacoes">
-            <label><input type="radio" name="situacao" value="ok" checked> Pintado</label>
-            <label><input type="radio" name="situacao" value="sem_placas"> Nenhuma placa para pintar</label>
-            <label><input type="radio" name="situacao" value="camera_errada"> Câmera errada (o contorno não fecha com as placas)</label>
-            <label><input type="radio" name="situacao" value="duvida"> Dúvida (com comentário)</label>
-          </div>
-          <textarea id="comentario" rows="2" placeholder="Comentário (obrigatório em dúvida)"></textarea>
-        </section>
-
-        <button id="salvar" class="primario" type="button">Salvar <kbd>S</kbd></button>
-
-        <details id="secao-faixas" class="secao-faixas" hidden>
-          <summary><h2>Faixas de placas <span id="resumo-faixas" class="contagem"></span></h2></summary>
-          <div class="faixas">
-            <span></span><b>Laterais</b><b>Fundos</b>
-            <span class="sutil">da linha (m)</span>
-            <input id="lat-distancia" type="number" min="0.5" max="30" step="0.1" inputmode="decimal" aria-label="Distância das placas laterais até a lateral, em metros">
-            <input id="fun-distancia" type="number" min="0.5" max="30" step="0.1" inputmode="decimal" aria-label="Distância das placas de fundo até a linha de fundo, em metros">
-            <span class="sutil">altura (m)</span>
-            <input id="lat-altura" type="number" min="0.2" max="5" step="0.05" inputmode="decimal" aria-label="Altura das placas laterais, em metros">
-            <input id="fun-altura" type="number" min="0.2" max="5" step="0.05" inputmode="decimal" aria-label="Altura das placas de fundo, em metros">
-            <span class="sutil">comprimento (m)</span>
-            <input id="lat-comprimento" type="number" min="2" max="200" step="1" inputmode="decimal" placeholder="inteira" aria-label="Comprimento da faixa lateral, centrada no meio do lado, em metros (vazio: de canto a canto)">
-            <input id="fun-comprimento" type="number" min="2" max="200" step="1" inputmode="decimal" placeholder="inteira" aria-label="Comprimento da faixa de fundo, centrada atrás do gol, em metros (vazio: de canto a canto)">
-            <span class="sutil">vão no meio (m)</span>
-            <input id="lat-vao" type="number" min="0" max="100" step="0.5" inputmode="decimal" aria-label="Vão sem placas no meio das laterais, em metros">
-            <input id="fun-vao" type="number" min="0" max="100" step="0.5" inputmode="decimal" aria-label="Vão sem placas atrás do gol, em metros">
-            <span class="sutil">tem placas</span>
-            <input type="checkbox" id="lat-ligada" aria-label="Há placas nas laterais">
-            <input type="checkbox" id="fun-ligada" aria-label="Há placas atrás dos gols">
-          </div>
-          <p class="sutil">Sem o levantamento do estádio, as placas são uma faixa em cada lado do campo. Ajuste até o contorno fechar com as placas da imagem; os próximos quadros da partida já abrem com estas medidas. Vão que sobrar dentro da faixa: pinte “não é placa”.</p>
-        </details>
-
-        <details class="ajuda">
-          <summary>Como usar</summary>
-          <ul>
-            <li><b>Confira o contorno</b> de cada placa. Sem o levantamento, ajuste as faixas até ele fechar; se nem assim fecha (as linhas do campo, <kbd>M</kbd>, também não batem), é “câmera errada”.</li>
-            <li><b>Pinte só o que está na frente da placa</b>: pessoa, bola, rede, grafismo ou objeto. O que fica fora dos contornos não muda. Sombra, reflexo e brilho não cobrem: deixe livre.</li>
-            <li><b>Pincel</b> (<kbd>B</kbd>): arraste. <b>Laço</b> (<kbd>L</kbd>): arraste em volta, ou clique ponto a ponto e feche no primeiro ponto, com dois cliques ou <kbd>Enter</kbd>.</li>
-            <li><kbd>1</kbd>–<kbd>6</kbd> escolhem o que pintar; <kbd>E</kbd> apaga. <kbd>[</kbd> <kbd>]</kbd> mudam o pincel.</li>
-            <li><b>Roda do mouse</b> aproxima; botão direito (ou espaço) e arrastar move a vista. <kbd>Z</kbd> vai às placas, <kbd>0</kbd> volta a vista.</li>
-            <li><kbd>H</kbd> esconde a pintura para ver a imagem; <kbd>O</kbd> os contornos; <kbd>M</kbd> mostra as linhas do campo.</li>
-          </ul>
-        </details>
-        </div>
-        <p id="erro" class="erro" role="alert"></p>
-      </aside>
-    </main>
-  </template>
-
-  <!-- ================================================================== revisão da oclusão -->
-  <template id="tpl-revisao-oclusao">
-    <header class="barra">
-      <a href="#/" class="voltar">← Central</a>
-      <h1>Revisão da oclusão</h1>
+      <h1>Revisão às cegas · Jogadores</h1>
       <span id="dica" class="dica"></span>
       <span class="contagem-barra" id="pendentes"></span>
       <span class="tempo" title="Tempo ativo nesta revisão">⏱ <span id="tempo">0:00</span></span>
     </header>
 
     <main class="editor">
-      <div class="tela" id="area"><canvas id="tela" aria-label="Quadro com a pintura em revisão"></canvas>
+      <div class="tela" id="area"><canvas id="tela" aria-label="A imagem, com a pintura em revisão"></canvas>
         <div id="vazio" class="vazio" hidden></div>
       </div>
 
       <aside class="painel" id="painel" hidden>
-        <section class="faixa">Você não vê quem pintou. Confira o contorno das placas e o que a pintura cobre: a roda do mouse aproxima, <kbd>Z</kbd> vai às placas e <kbd>H</kbd> esconde a pintura para ver a imagem.</section>
+        <details class="faixa como-revisar" open>
+          <summary><b>Como revisar</b> — você não sabe quem pintou, e quem pintou não sabe quem revisa.</summary>
+          <ol>
+            <li>Aproxime com a roda do mouse e esconda e mostre a pintura (<kbd>H</kbd>) para comparar com a imagem.</li>
+            <li>Confira: <b>todo jogador pintado</b> (goleiros também), <b>inteiro</b> e até a borda (1 px de folga não conta)? <b>Ninguém que não é jogador</b> pintado (árbitro, gandula, torcida), nem a sombra?</li>
+            <li>Decida. <b>Aprovar</b> (<kbd>A</kbd>): está certo. <b>Corrigir</b> (<kbd>C</kbd>): dá para consertar rápido — você pinta, e a correção vale com o seu nome. <b>Devolver</b> (<kbd>D</kbd>): precisa refazer — volta para quem pintou, com o motivo.</li>
+            <li>Imagem descartada: aprove se ela não dá mesmo para anotar; se dá, devolva (“descarte errado”) ou corrija pintando.</li>
+          </ol>
+        </details>
 
         <section>
           <h2>A pintura</h2>
           <dl class="ficha">
             <dt>Situação</dt><dd id="r-situacao"></dd>
-            <dt>Placas</dt><dd id="r-placas"></dd>
+            <dt>Pintado</dt><dd id="r-pixels"></dd>
             <dt>Partiu de</dt><dd id="r-partiu"></dd>
             <dt>Comentário</dt><dd id="r-comentario"></dd>
           </dl>
-          <ul id="lista-placas" class="pinos"></ul>
-          <div class="botoes"><button id="enquadrar" type="button" title="Aproxima a vista das placas que se pintam">Ir às placas <kbd>Z</kbd></button></div>
+          <div class="botoes"><label class="caixa-marcar"><input type="checkbox" id="ver-pintura" checked> pintura <kbd>H</kbd></label></div>
         </section>
 
         <section id="decidir">
@@ -501,14 +461,8 @@
 
         <section id="secao-devolver" hidden>
           <h2>Devolver</h2>
-          <select id="motivo" aria-label="Motivo da devolução">
-            <option value="pintura_fora_da_tolerancia">Pintura fora da tolerância</option>
-            <option value="classe_errada">Classe errada</option>
-            <option value="faixa_fora_das_placas">Faixas fora das placas</option>
-            <option value="camera_errada">Deveria ser “câmera errada”</option>
-            <option value="outro">Outro (com comentário)</option>
-          </select>
-          <textarea id="comentario-dev" rows="2" placeholder="Comentário"></textarea>
+          <select id="motivo" aria-label="Motivo da devolução"></select>
+          <textarea id="comentario-dev" rows="2" placeholder="Comentário para quem pintou (o que corrigir)"></textarea>
           <div class="botoes">
             <button id="confirmar-devolver" type="button" class="primario">Confirmar devolução</button>
             <button type="button" data-voltar>Voltar</button>
@@ -517,63 +471,19 @@
 
         <section id="secao-corrigir" hidden>
           <h2>Corrigir</h2>
-          <p class="sutil">Pinte como na página da oclusão. A correção vira uma versão nova, com a sua autoria.</p>
-          <div class="secoes">
-        <section>
-          <h2 class="sutil">Pintar</h2>
+          <p class="sutil">Como na página dos jogadores. A correção vira uma versão nova, com a sua autoria.</p>
           <div class="botoes alternar" role="group" aria-label="Ferramenta">
             <button type="button" data-ferramenta="pincel" aria-pressed="true">Pincel <kbd>B</kbd></button>
             <button type="button" data-ferramenta="laco" aria-pressed="false">Laço <kbd>L</kbd></button>
+            <button type="button" id="borracha" aria-pressed="false">Borracha <kbd>E</kbd></button>
           </div>
-          <label class="tamanho">Pincel <input id="raio" type="range" min="1" max="40" value="6" aria-label="Tamanho do pincel, em pixels da imagem"> <span id="raio-valor">6 px</span> <kbd>[</kbd> <kbd>]</kbd></label>
-          <div class="classes" role="radiogroup" aria-label="O que cobre a placa">
-            <label><input type="radio" name="classe" value="2" checked><span class="amostra" data-classe="2"></span> Pessoa <kbd>1</kbd></label>
-            <label><input type="radio" name="classe" value="3"><span class="amostra" data-classe="3"></span> Bola <kbd>2</kbd></label>
-            <label><input type="radio" name="classe" value="4"><span class="amostra" data-classe="4"></span> Rede do gol <kbd>3</kbd></label>
-            <label><input type="radio" name="classe" value="5"><span class="amostra" data-classe="5"></span> Grafismo da emissora <kbd>4</kbd></label>
-            <label><input type="radio" name="classe" value="6"><span class="amostra" data-classe="6"></span> Objeto (trave, câmera, banco…) <kbd>5</kbd></label>
-            <label><input type="radio" name="classe" value="7"><span class="amostra" data-classe="7"></span> Não é placa (vão na faixa) <kbd>6</kbd></label>
-            <label><input type="radio" name="classe" value="1"><span class="amostra" data-classe="1"></span> Apagar (placa livre) <kbd>E</kbd></label>
-          </div>
+          <label class="tamanho">Pincel <input id="raio" type="range" min="1" max="30" value="4" aria-label="Tamanho do pincel, em pixels da imagem"> <span id="raio-valor">4 px</span> <kbd>[</kbd> <kbd>]</kbd></label>
           <div class="botoes">
             <button id="desfazer" type="button">Desfazer <kbd>Ctrl Z</kbd></button>
             <button id="refazer" type="button">Refazer</button>
+            <button id="descartar" type="button">Descartar em vez disso</button>
           </div>
-          <div class="camadas">
-            <label><input type="checkbox" id="ver-pintura" checked> pintura <kbd>H</kbd></label>
-            <label><input type="checkbox" id="ver-contornos" checked> contornos <kbd>O</kbd></label>
-            <label><input type="checkbox" id="ver-molde"> linhas do campo <kbd>M</kbd></label>
-          </div>
-        </section>
-        <details id="secao-faixas" class="secao-faixas" hidden>
-          <summary><h2>Faixas de placas <span id="resumo-faixas" class="contagem"></span></h2></summary>
-          <div class="faixas">
-            <span></span><b>Laterais</b><b>Fundos</b>
-            <span class="sutil">da linha (m)</span>
-            <input id="lat-distancia" type="number" min="0.5" max="30" step="0.1" inputmode="decimal" aria-label="Distância das placas laterais até a lateral, em metros">
-            <input id="fun-distancia" type="number" min="0.5" max="30" step="0.1" inputmode="decimal" aria-label="Distância das placas de fundo até a linha de fundo, em metros">
-            <span class="sutil">altura (m)</span>
-            <input id="lat-altura" type="number" min="0.2" max="5" step="0.05" inputmode="decimal" aria-label="Altura das placas laterais, em metros">
-            <input id="fun-altura" type="number" min="0.2" max="5" step="0.05" inputmode="decimal" aria-label="Altura das placas de fundo, em metros">
-            <span class="sutil">comprimento (m)</span>
-            <input id="lat-comprimento" type="number" min="2" max="200" step="1" inputmode="decimal" placeholder="inteira" aria-label="Comprimento da faixa lateral, centrada no meio do lado, em metros (vazio: de canto a canto)">
-            <input id="fun-comprimento" type="number" min="2" max="200" step="1" inputmode="decimal" placeholder="inteira" aria-label="Comprimento da faixa de fundo, centrada atrás do gol, em metros (vazio: de canto a canto)">
-            <span class="sutil">vão no meio (m)</span>
-            <input id="lat-vao" type="number" min="0" max="100" step="0.5" inputmode="decimal" aria-label="Vão sem placas no meio das laterais, em metros">
-            <input id="fun-vao" type="number" min="0" max="100" step="0.5" inputmode="decimal" aria-label="Vão sem placas atrás do gol, em metros">
-            <span class="sutil">tem placas</span>
-            <input type="checkbox" id="lat-ligada" aria-label="Há placas nas laterais">
-            <input type="checkbox" id="fun-ligada" aria-label="Há placas atrás dos gols">
-          </div>
-          <p class="sutil">Sem o levantamento do estádio, as placas são uma faixa em cada lado do campo. Ajuste até o contorno fechar com as placas da imagem; os próximos quadros da partida já abrem com estas medidas. Vão que sobrar dentro da faixa: pinte “não é placa”.</p>
-        </details>
-          </div>
-          <select id="situacao-corr" aria-label="Situação da correção">
-            <option value="ok">Pintado</option>
-            <option value="sem_placas">Nenhuma placa para pintar</option>
-            <option value="camera_errada">Câmera errada</option>
-          </select>
-          <textarea id="comentario-corr" rows="2" placeholder="Comentário"></textarea>
+          <textarea id="comentario-corr" rows="2" placeholder="Comentário (opcional)"></textarea>
           <div class="botoes">
             <button id="salvar-correcao" class="primario" type="button">Salvar correção</button>
             <button type="button" data-voltar>Voltar</button>
@@ -581,6 +491,74 @@
         </section>
         <p id="erro" class="erro" role="alert"></p>
       </aside>
+    </main>
+  </template>
+
+  <!-- ================================================================== gabarito -->
+  <template id="tpl-gabarito">
+    <header class="barra">
+      <a href="#/" class="voltar">← Central</a>
+      <h1>Gabarito</h1>
+      <span class="espaco"></span>
+      <span class="sutil" id="quem-gabarito"></span>
+    </header>
+    <main class="central">
+      <section class="cartao destaque">
+        <h2>Como funciona o teste</h2>
+        <ol class="passos">
+          <li><b>Faça o teste de cada tarefa.</b> São imagens com a resposta certa: você anota como sempre e, ao salvar, vê o resultado e pode ver a resposta.</li>
+          <li><b>Você é liberado para as imagens reais</b> quando acerta <span id="meta-pontos">8 das últimas 10</span> nos pontos, e <span id="meta-jogadores">4 das últimas 5</span> nos jogadores. Até lá, a página da tarefa só mostra o teste.</li>
+          <li><b>Depois, de vez em quando</b> (uma a cada 15 imagens), uma imagem do gabarito aparece no meio das reais, sem aviso e sem resultado: é assim que a qualidade é medida o tempo todo. Quem cai muito volta para o teste.</li>
+        </ol>
+      </section>
+
+      <section class="cartoes" id="cartoes-gabarito">
+        <article class="cartao" data-tarefa="pontos">
+          <h2>Pontos do campo</h2>
+          <p class="st"></p>
+          <div class="barra-progresso" aria-hidden="true"><div></div></div>
+          <p class="sutil regra"></p>
+          <div class="botoes"><a class="botao primario fazer" href="#/pontos?treino">Fazer o teste</a></div>
+        </article>
+        <article class="cartao" data-tarefa="jogadores">
+          <h2>Jogadores</h2>
+          <p class="st"></p>
+          <div class="barra-progresso" aria-hidden="true"><div></div></div>
+          <p class="sutil regra"></p>
+          <div class="botoes"><a class="botao primario fazer" href="#/jogadores?treino">Fazer o teste</a></div>
+        </article>
+      </section>
+
+      <section>
+        <div class="titulo-secao">
+          <h2>Seus resultados</h2>
+          <div class="botoes alternar" role="group" aria-label="Tarefa">
+            <button type="button" data-res="pontos" aria-pressed="true">Pontos</button>
+            <button type="button" data-res="jogadores" aria-pressed="false">Jogadores</button>
+          </div>
+        </div>
+        <div class="rolavel">
+          <table class="tabela" id="resultados">
+            <thead><tr><th>Item</th><th>Lote</th><th>Quando</th><th>Como</th><th>Resultado</th><th></th><th></th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="cartao">
+        <h2>Lotes de ouro nesta pasta</h2>
+        <div class="rolavel">
+          <table class="tabela" id="lotes">
+            <thead><tr><th>Lote</th><th>Tarefa</th><th>Itens</th><th>Números</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="botoes">
+          <label class="botao">Importar lote de ouro (.zip)<input type="file" id="importar-lote" accept=".zip,application/zip" hidden></label>
+        </div>
+        <p class="sutil">Quem coordena importa uma vez, na pasta da equipe: todo mundo vê. Os lotes não se sobrepõem: dá para importar um, alguns ou todos.</p>
+        <p class="sutil" id="res-lote" role="status"></p>
+      </section>
     </main>
   </template>
 
@@ -595,7 +573,6 @@
         <p class="sutil">O vídeo é lido e processado neste navegador; só os quadros sorteados vão para a pasta de trabalho. Funciona com MP4 ou MOV (H.264, H.265, VP9 ou AV1). Para MKV ou TS, converta antes para MP4 (no OBS: Arquivo → Remuxar gravações).</p>
         <form id="form-importar" class="grade-form">
           <label>Estádio <input name="estadio" required autocomplete="off" placeholder="ex.: Arena da Baixada"></label>
-          <label id="rotulo-pacote" hidden>Molde do campo <select name="pacote"></select></label>
           <label>Emissora <input name="emissora" required autocomplete="off"></label>
           <label>Competição <input name="competicao" required autocomplete="off"></label>
           <label>Data e hora <input name="data_hora" type="datetime-local" required></label>
@@ -605,7 +582,7 @@
             <select name="iluminacao"><option value="dia">dia</option><option value="noite">noite</option><option value="transicao">transição</option></select>
           </label>
           <label class="caixa-marcar"><input type="checkbox" name="chuva"> chuva</label>
-          <label>Quadros a sortear <input name="alvo" type="number" min="1" max="5000" value="100"></label>
+          <label>Quadros a sortear <input name="alvo" type="text" inputmode="numeric" autocomplete="off" value="100" aria-describedby="dica-alvo"><span class="sutil" id="dica-alvo">de 1 a 5000</span></label>
           <label class="largo">Trechos do vídeo (opcional)
             <input name="trechos" autocomplete="off" placeholder="ex.: 0:05:00-0:50:00, 1:05:00-1:50:00 (vazio: o vídeo inteiro)">
           </label>
@@ -657,19 +634,11 @@
       </section>
 
       <section class="cartao">
-        <h2>Pacotes de estádio</h2>
-        <p class="sutil">Sem pacote, o molde é o campo genérico (105 × 68 m, ajustável na página de câmera). O pacote do levantamento de um estádio traz as medidas, as placas (para conferir o lado) e a posição das câmeras.</p>
-        <ul id="pacotes" class="lista"></ul>
-        <label class="botao">Acrescentar pacote (pacote.json)<input type="file" id="arquivo-pacote" accept=".json,application/json" hidden></label>
-        <p class="sutil">Pacote publicado não muda: medida nova é versão nova (pacote-1.1).</p>
-        <p class="erro" id="erro-pacote" role="alert"></p>
-      </section>
-
-      <section class="cartao">
         <h2>Gabarito</h2>
         <p id="st-gabarito" class="sutil"></p>
-        <label class="botao">Importar itens (g0001.json + imagem; na oclusão, + a máscara .png)<input type="file" id="arquivos-gabarito" accept=".json,.jpg,.jpeg,.png" multiple hidden></label>
-        <p class="sutil">Os lotes de ouro em .zip entram pela página central: “Trazer arquivos de um .zip”.</p>
+        <div class="botoes"><a class="botao" href="#/gabarito">Abrir a página do gabarito</a></div>
+        <p class="sutil">Os lotes de ouro em .zip entram pela página do gabarito. Para itens soltos (gNNNN.json com a imagem e, nos jogadores, a máscara .png):</p>
+        <label class="botao">Importar itens soltos<input type="file" id="arquivos-gabarito" accept=".json,.jpg,.jpeg,.png" multiple hidden></label>
         <p class="erro" id="erro-gabarito" role="alert"></p>
       </section>
 
@@ -686,7 +655,7 @@
 
       <section class="cartao">
         <h2>Conjunto de treino</h2>
-        <p class="sutil">O conjunto (Parquet com manifesto) é gerado em Python por quem treina: <code>anotacao unificar --pasta "&lt;pasta de trabalho&gt;"</code>. Previsões do modelo para o molde abrir mais perto: <code>anotacao prever</code>.</p>
+        <p class="sutil">O conjunto (Parquet com manifesto) é gerado em Python por quem treina: <code>anotacao unificar --pasta "&lt;pasta de trabalho&gt;"</code>. Para a imagem já abrir com os pontos (ou a pintura) de um modelo: <code>anotacao prever --tarefa pontos</code> (ou <code>jogadores</code>).</p>
       </section>
     </main>
   </template>

@@ -3,9 +3,8 @@
 // Não há banco de dados: a verdade são os arquivos na pasta sincronizada. O índice só evita reler o
 // mesmo JSON a cada clique. Arquivos inválidos ficam em `invalidos` e não entram em nada.
 
-import { PARTIDA_GABARITO, REF_PACOTE_GENERICO, RE_GABARITO, mascaraDe } from "./convencoes.js";
+import { PARTIDA_GABARITO, RE_GABARITO, mascaraDe } from "./convencoes.js";
 import { TIPOS_DA_TAREFA, validar } from "./formatos.js";
-import { pacoteGenerico } from "./pacote.js";
 import { decodificarPng } from "./png.js";
 
 const ms = (iso) => Date.parse(iso);
@@ -17,7 +16,7 @@ export class IndicePartida {
     this.revisoes = [];
     this.revisoesDe = new Map(); // nome do rótulo -> [revisão]
     this.invalidos = []; // [{caminho, erro}]
-    this.esperando = []; // rótulos da oclusão cuja máscara ainda não chegou (o Drive sincronizando)
+    this.esperando = []; // rótulos dos jogadores cuja máscara ainda não chegou (o Drive sincronizando)
   }
 
   versoes(quadro, pessoa) {
@@ -105,14 +104,6 @@ export class Indice {
     return this.pasta.lerDivisao();
   }
 
-  async pacote(ref) {
-    if (ref === REF_PACOTE_GENERICO && !(await this.pasta.existe(this.pasta.pacoteRef(ref)))) {
-      this._generico ??= validar("pacote", pacoteGenerico()); // pasta criada antes do campo genérico
-      return this._generico;
-    }
-    return this.ler("pacote", this.pasta.pacoteRef(ref));
-  }
-
   manifesto(partida) {
     return this.ler("manifesto", this.pasta.manifesto(partida));
   }
@@ -125,8 +116,9 @@ export class Indice {
     return this.ler("tomadas", this.pasta.tomadas(partida));
   }
 
-  previsao(partida, quadro) {
-    return this.lerSeExiste("previsao", this.pasta.previsao(partida, quadro));
+  /** Os pontos de um modelo para o quadro, ou null. */
+  previsaoPontos(partida, quadro) {
+    return this.lerSeExiste("previsao_pontos", this.pasta.previsaoPontos(partida, quadro));
   }
 
   listarPartidas() {
@@ -134,19 +126,18 @@ export class Indice {
   }
 
   /**
-   * As partidas que dá para usar, com manifesto, fila, pacote e rótulos lidos. Uma partida
-   * incompleta (a fila ainda sincronizando) ou com arquivo inválido vai para `problemas` e não trava
-   * as outras.
+   * As partidas que dá para usar, com manifesto e fila lidos (e, com `tarefa`, os rótulos dela em
+   * `ip`). Uma partida incompleta (a fila ainda sincronizando) ou com arquivo inválido vai para
+   * `problemas` e não trava as outras.
    */
-  async partidasProntas() {
+  async partidasProntas(tarefa = null) {
     const prontas = [];
     const problemas = [];
     for (const partida of await this.listarPartidas()) {
       try {
         const manifesto = await this.manifesto(partida);
         const fila = await this.fila(partida);
-        const pacote = await this.pacote(manifesto.pacote);
-        prontas.push({ partida, manifesto, fila, pacote, ip: await this.partida(partida) });
+        prontas.push({ partida, manifesto, fila, ip: tarefa ? await this.partida(partida, tarefa) : null });
       } catch (e) {
         problemas.push({ partida, erro: e.message || String(e) });
       }
@@ -154,10 +145,12 @@ export class Indice {
     return { prontas, problemas };
   }
 
-  /** Itens do gabarito válidos da tarefa ("camera" ou "oclusao"), em ordem de ID. */
-  async itensGabarito(tarefa = "camera") {
-    const tipo = TIPOS_DA_TAREFA[tarefa].gabarito;
-    const formato = tarefa === "camera" ? "gabarito.camera/1" : "gabarito.oclusao/1";
+  /** Itens do gabarito válidos da tarefa ("pontos" ou "jogadores"), em ordem de ID. */
+  async itensGabarito(tarefa) {
+    const tipos = TIPOS_DA_TAREFA[tarefa];
+    if (!tipos) throw new Error(`tarefa desconhecida: ${tarefa}`);
+    const tipo = tipos.gabarito;
+    const formato = tipos.formatoGabarito;
     const out = [];
     for (const item of await this.pasta.listar("gabarito/itens")) {
       if (item.tipo !== "arquivo" || !item.nome.endsWith(".json") || !RE_GABARITO.test(item.nome.slice(0, -5))) continue;
@@ -196,15 +189,15 @@ export class Indice {
   }
 
   /**
-   * Rótulos e revisões válidos da partida (ou do gabarito) na tarefa. Na oclusão, um rótulo cuja
+   * Rótulos e revisões válidos da partida (ou do gabarito) na tarefa. Nos jogadores, um rótulo cuja
    * máscara ainda não chegou (o Drive sincronizando) fica em `esperando`, e não entra em nada.
    */
-  async partida(partida, tarefa = "camera") {
+  async partida(partida, tarefa) {
     const tipos = TIPOS_DA_TAREFA[tarefa];
     if (!tipos) throw new Error(`tarefa desconhecida: ${tarefa}`);
     const ip = new IndicePartida(partida);
     const dir = this.pasta.rotulos(partida, tarefa);
-    const mascaras = tarefa === "oclusao"
+    const mascaras = tarefa === "jogadores"
       ? new Set((await this.pasta.listar(dir)).filter((i) => i.tipo === "arquivo" && i.nome.endsWith(".png")).map((i) => i.nome))
       : null;
     for (const a of await this.pasta.listarArquivos(dir)) {

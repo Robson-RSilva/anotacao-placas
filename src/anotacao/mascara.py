@@ -1,8 +1,9 @@
-"""Máscara da oclusão: PNG de índices, 8 bits por pixel, só com a biblioteca padrão (zlib).
+"""Máscaras: PNG de índices, 8 bits por pixel, só com a biblioteca padrão (zlib).
 
-Cada pixel guarda o número da classe (`oclusao.CLASSES`); a paleta só serve para quem abre o arquivo
-num visualizador de imagens ver as cores. Lê também o PNG em tons de cinza que o OpenCV grava (a
-previsão de um modelo, por exemplo). Espelho de `web/js/nucleo/png.js`.
+Cada pixel guarda um número — nos rótulos dos jogadores, 1 onde há jogador e 0 no resto; no gabarito,
+o número de cada jogador. A paleta só serve para quem abre o arquivo num visualizador de imagens ver
+as cores. Lê também o PNG em tons de cinza que o OpenCV grava (a previsão de um modelo, por
+exemplo). Espelho de `web/js/nucleo/png.js`.
 
 O OpenCV não serve para ler a máscara: ele troca a paleta pelas cores.
 """

@@ -1,11 +1,14 @@
-"""Molde do campo — a mesma definição do laboratório: 26 elementos e 43 pontos-chave.
+"""O campo — a mesma definição do laboratório: 26 elementos e 43 pontos-chave.
 
 * 26 elementos: 17 retas no gramado, 3 arcos e 6 segmentos dos gols (traves e travessões).
-* 43 pontos-chave: cruzamentos de linhas, pontos de círculo, marcas e pés e topos das traves.
-* Dimensões do pacote do estádio (nem todo campo tem 105 x 68 m); medidas internas pela regra.
+* 43 pontos-chave: cruzamentos de linhas, pontos de círculo, marcas e pés e topos das traves. Na
+  tarefa de pontos se marcam 39: os quatro que não ficam num cruzamento nem numa marca
+  (`PONTOS_SEM_MARCA`) não têm o que clicar na imagem.
+* Medidas internas pela regra; o comprimento e a largura mudam de um estádio para outro.
 * A permutação dos nomes sob a rotação de 180 graus sai da geometria, não de uma tabela à mão.
 
-Os nomes são os do Manual de anotação (ex.: `lateral_cab`, `grande_area_esq_frente`).
+Os nomes são os do Manual de anotação (ex.: `canto_esq_cab`, `ga_dir_frente_opo`). O espelho em
+JavaScript (`web/js/nucleo/campo.js`) desenha o mapa da página de pontos.
 """
 
 from __future__ import annotations
@@ -226,5 +229,19 @@ class Campo:
         }
 
 
-def campo_do_pacote(comprimento: float, largura: float) -> Campo:
-    return Campo(L=float(comprimento), W=float(largura))
+#: Pontos que não se marcam à mão: o mais à esquerda e o mais à direita do círculo central e o topo
+#: de cada meia-lua não ficam num cruzamento de linhas nem numa marca — na imagem não há o que clicar.
+PONTOS_SEM_MARCA = ("circ_esq", "circ_dir", "ml_esq_topo", "ml_dir_topo")
+
+
+def pontos_marcaveis() -> list[str]:
+    """Os 39 pontos da tarefa de pontos, na ordem do laboratório."""
+    return [n for n in Campo().nomes_pontos if n not in PONTOS_SEM_MARCA]
+
+
+def perm180_dos_nomes() -> dict[str, str]:
+    """Nome de cada ponto -> o nome dele visto do outro lado do campo (rotação de 180 graus)."""
+    campo = Campo()
+    _, pk = campo.perm180()
+    nomes = campo.nomes_pontos
+    return {nomes[i]: nomes[j] for i, j in enumerate(pk)}

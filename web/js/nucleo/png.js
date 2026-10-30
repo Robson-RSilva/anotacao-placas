@@ -1,6 +1,7 @@
-// PNG de índices (8 bits por pixel, com paleta ou em tons de cinza), sem dependências: a máscara da
-// oclusão nas placas. Cada pixel guarda o número da classe; a paleta só serve para quem abre o
-// arquivo num visualizador de imagens ver as cores. Espelho de src/anotacao/mascara.py.
+// PNG de índices (8 bits por pixel, com paleta ou em tons de cinza), sem dependências: as máscaras dos
+// jogadores. Cada pixel guarda um número (1 onde há jogador, 0 no resto; no gabarito, o número de
+// cada pessoa); a paleta só serve para quem abre o arquivo num visualizador de imagens ver as cores.
+// Espelho de src/anotacao/mascara.py.
 
 import { crc32 } from "./zip.js";
 

@@ -1,12 +1,10 @@
 """Arquivos que saem das definições em Python e que as páginas (ou os testes delas) leem.
 
 * `web/esquemas/*.json` — JSON Schemas dos formatos (as páginas validam por eles antes de gravar);
-* `web/exemplo/*.json` — o pacote do estádio sintético e a equipe da pasta de exemplo;
-* `tests/fixtures/convencoes.json` e `tests/fixtures/pacote_generico.json` — as convenções e o campo
-  genérico, para os testes dos espelhos em JavaScript;
-* `tests/fixtures/oclusao.json` — as faixas de placas, onde as placas caem em três câmeras, as contas
-  por placa, uma comparação de máscaras e dois PNGs (do Python e do OpenCV, com os bytes fixos), para o
-  espelho da oclusão.
+* `tests/fixtures/convencoes.json` — as convenções, os pontos que se marcam e os nomes sob a rotação
+  de 180 graus, para os testes dos espelhos em JavaScript;
+* `tests/fixtures/png.json` — dois PNGs (do Python e do OpenCV, com os bytes fixos), para o leitor de
+  PNG das páginas.
 
 `python scripts/gerar_arquivos_web.py` grava todos; `tests/test_arquivos_gerados.py` falha quando
 algum fica desatualizado.
@@ -19,39 +17,30 @@ from pathlib import Path
 
 import numpy as np
 
-from . import __version__, oclusao
-from .camera import Camera
+from . import __version__
+from .campo import PONTOS_SEM_MARCA, perm180_dos_nomes, pontos_marcaveis
 from .convencoes import (
     MANUAL,
     PARTIDA_GABARITO,
     RE_DISPOSITIVO,
     RE_ESTADIO,
     RE_GABARITO,
+    RE_MASCARA,
     RE_PACOTE_REF,
     RE_PARTIDA,
     RE_PESSOA,
     RE_QUADRO,
     RE_VERSAO_PACOTE,
     REF_H,
-    REF_PACOTE_GENERICO,
     REF_W,
+    TAREFAS,
     id_partida,
     id_quadro,
     slug,
 )
-from .formatos import ESQUEMAS, Divisao, Equipe, Membro, esquema_json
-from .pacote import pacote_generico, pacote_sintetico
+from .formatos import ESQUEMAS, MOTIVOS_DESCARTE, esquema_json
 
 RAIZ = Path(__file__).resolve().parents[2]
-
-
-def equipe_exemplo() -> Equipe:
-    return Equipe(
-        membros=[
-            Membro(codigo="A01", nome="Anotador 1", papeis=["anotador", "revisor"]),
-            Membro(codigo="A02", nome="Anotador 2", papeis=["anotador", "revisor"]),
-        ]
-    )
 
 
 def _json(obj) -> str:
@@ -69,9 +58,13 @@ def convencoes_para_teste() -> dict:
         "descricao": "Gerado por scripts/gerar_arquivos_web.py a partir de src/anotacao; não editar à mão.",
         "versao": __version__,
         "ref": [REF_W, REF_H],
+        "tarefas": list(TAREFAS),
         "manual": MANUAL,
         "partida_gabarito": PARTIDA_GABARITO,
-        "ref_pacote_generico": REF_PACOTE_GENERICO,
+        "motivos_descarte": list(MOTIVOS_DESCARTE),
+        "pontos_marcaveis": pontos_marcaveis(),
+        "pontos_sem_marca": list(PONTOS_SEM_MARCA),
+        "perm180": perm180_dos_nomes(),
         "regex": {
             "RE_ESTADIO": RE_ESTADIO.pattern,
             "RE_VERSAO_PACOTE": RE_VERSAO_PACOTE.pattern,
@@ -81,6 +74,7 @@ def convencoes_para_teste() -> dict:
             "RE_PESSOA": RE_PESSOA.pattern,
             "RE_PACOTE_REF": RE_PACOTE_REF.pattern,
             "RE_DISPOSITIVO": RE_DISPOSITIVO.pattern,
+            "RE_MASCARA": RE_MASCARA.pattern,
         },
         "slug": [[t, slug(t)] for t in textos],
         "id_quadro": [[p, id_quadro(p)] for p in pts],
@@ -88,19 +82,10 @@ def convencoes_para_teste() -> dict:
     }
 
 
-def _rle(a) -> list[list[int]]:
-    """[[valor, quantos], ...] de uma matriz percorrida linha a linha."""
-    v = a.ravel()
-    corte = np.flatnonzero(np.diff(v)) + 1
-    inicios = np.r_[0, corte]
-    fins = np.r_[corte, len(v)]
-    return [[int(v[i]), int(f - i)] for i, f in zip(inicios, fins, strict=True)]
-
-
 # Os dois PNGs do fixture ficam fixos aqui, e não são gerados a cada vez: o zlib de cada Python (e de
 # cada sistema) comprime do seu jeito, e o que o teste do espelho confere é a leitura, não os bytes.
-# Gerados uma vez com `gravar_png(PNG_PALETA_INDICES, oclusao.PALETA)` e com o OpenCV
-# (`cv2.imencode(".png", PNG_CINZA_INDICES)`); `tests/test_oclusao.py` confere que dizem esses pixels.
+# Gerados uma vez com `gravar_png(PNG_PALETA_INDICES, <uma paleta de 8 cores>)` e com o OpenCV
+# (`cv2.imencode(".png", PNG_CINZA_INDICES)`); `tests/test_mascara.py` confere que dizem esses pixels.
 PNG_PALETA_B64 = (
     "iVBORw0KGgoAAAANSUhEUgAAAAcAAAAFCAMAAAC+RAbqAAAAGFBMVEUAAAA0mNvnTDzxxA+bWbbmfiIavJx/jI01gnpBAAAAH0lEQVR42mNgYGRiZmFl"
     "Y2CHMBjYIAwGVgiDgQXCAAAI6AB0bj4AVwAAAABJRU5ErkJggg=="
@@ -114,54 +99,11 @@ PNG_PALETA_INDICES = np.arange(7 * 5, dtype=np.uint8).reshape(5, 7) % 8
 PNG_CINZA_INDICES = (np.arange(37 * 23).reshape(23, 37) * 7 % 251).astype(np.uint8)
 
 
-def oclusao_para_teste() -> dict:
-    """Geometria das placas, estatísticas e máscaras PNG calculadas aqui, para os testes do espelho em
-    JavaScript acharem os mesmos pixels (`tests/js/oclusao.test.js`)."""
-    w, h = 480, 270
-    campo = (100.0, 64.0)
-    faixas = {
-        "laterais": {"distancia": 3.5, "altura": 0.9, "comprimento": None, "vao": 0.0, "ligada": True},
-        "fundos": {"distancia": 6.0, "altura": 1.2, "comprimento": 62.0, "vao": 11.0, "ligada": True},
-    }
-    placas = oclusao.placas_das_faixas(*campo, faixas)
-    cameras = {
-        "principal": Camera.look_at([2.0, -56.0, 17.0], [-14.0, 10.0, 0.0], 38.0, w, h, k1=-0.04),
-        "fundo": Camera.look_at([63.0, 3.0, 11.0], [-20.0, 0.0, 0.0], 52.0, w, h),
-        "baixa": Camera.look_at([-10.0, -37.0, 2.4], [8.0, 30.0, 0.8], 30.0, w, h, roll=1.5, k1=-0.02),
-    }
-    casos = []
-    for nome, cam in cameras.items():
-        geo = oclusao.geometria(cam, placas, w, h)
-        pintura = np.zeros((h, w), np.uint8)
-        pintura[90:150, 100:180] = oclusao.PESSOA
-        pintura[120:140, 300:330] = oclusao.GRAFISMO
-        pintura[60:200, 400:420] = oclusao.NAO_PLACA
-        pintura[100:110, 200:204] = oclusao.BOLA
-        mascara = oclusao.mascara_efetiva(pintura, geo.roi)
-        # outra pintura do mesmo quadro: a pessoa 1 px mais larga (tolerado) e o grafismo 6 px ao lado
-        outra = np.zeros_like(pintura)
-        outra[89:151, 99:181] = oclusao.PESSOA
-        outra[120:140, 306:336] = oclusao.GRAFISMO
-        outra[60:200, 400:420] = oclusao.NAO_PLACA
-        casos.append(
-            {
-                "nome": nome,
-                "camera": cam.para_rotulo(),
-                "info": geo.info,
-                "regiao": _rle(geo.regiao),
-                "roi": _rle(geo.roi.astype(np.uint8)),
-                "estatisticas": oclusao.estatisticas(mascara, geo),
-                "comparacao": oclusao.comparar_mascaras(mascara, oclusao.mascara_efetiva(outra, geo.roi), geo),
-            }
-        )
+def png_para_teste() -> dict:
+    """Dois PNGs com os bytes fixos e os pixels deles, para o leitor de PNG das páginas
+    (`tests/js/png.test.js`) ler o mesmo que o Python."""
     return {
-        "descricao": "Gerado por scripts/gerar_arquivos_web.py a partir de src/anotacao/oclusao.py; não editar à mão.",
-        "largura": w,
-        "altura": h,
-        "campo": {"comprimento": campo[0], "largura": campo[1]},
-        "faixas": faixas,
-        "placas": placas,
-        "casos": casos,
+        "descricao": "Gerado por scripts/gerar_arquivos_web.py a partir de src/anotacao/geracao.py; não editar à mão.",
         "png_paleta": {
             "base64": PNG_PALETA_B64,
             "largura": 7,
@@ -180,12 +122,8 @@ def oclusao_para_teste() -> dict:
 def arquivos_gerados() -> dict[str, str]:
     """Caminho (relativo à raiz do repositório) -> conteúdo esperado."""
     out = {f"web/esquemas/{nome}": esquema_json(modelo) for nome, modelo in ESQUEMAS.items()}
-    out["tests/fixtures/oclusao.json"] = json.dumps(oclusao_para_teste(), ensure_ascii=False) + "\n"
-    out["web/exemplo/pacote.json"] = pacote_sintetico().model_dump_json(indent=2) + "\n"
-    out["web/exemplo/equipe.json"] = equipe_exemplo().model_dump_json(indent=2) + "\n"
-    out["web/exemplo/divisao.json"] = Divisao().model_dump_json(indent=2) + "\n"
     out["tests/fixtures/convencoes.json"] = _json(convencoes_para_teste())
-    out["tests/fixtures/pacote_generico.json"] = pacote_generico().model_dump_json(indent=2) + "\n"
+    out["tests/fixtures/png.json"] = _json(png_para_teste())
     return out
 
 

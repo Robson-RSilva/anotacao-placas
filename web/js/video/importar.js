@@ -11,7 +11,7 @@
 // 6. tomadas, fila e manifesto — o manifesto por último: partida sem manifesto não existe.
 
 import { Aleatorio } from "../nucleo/aleatorio.js";
-import { REF_PACOTE_GENERICO, VERSAO, arredondarPar, idPartida, partesPacote } from "../nucleo/convencoes.js";
+import { VERSAO, arredondarPar, idPartida } from "../nucleo/convencoes.js";
 import { arredondar, mediana } from "../nucleo/estatistica.js";
 import { validar } from "../nucleo/formatos.js";
 import { Sha256 } from "../nucleo/hash.js";
@@ -515,25 +515,10 @@ async function extrair(leitor, faixa, ap, config, alvos, gravar, { aoProgresso, 
 /**
  * Importa um vídeo (File) para a pasta. `cadastro`: estádio (o nome, que entra no ID da partida),
  * emissora, competição, data e hora (ISO com fuso), mandante, visitante, iluminação, chuva e
- * observações. `pacote`: o molde do campo — o genérico, ou o de um estádio levantado. `trechos`:
- * [[início, fim], ...] em segundos, ou null para o vídeo inteiro.
+ * observações. `trechos`: [[início, fim], ...] em segundos, ou null para o vídeo inteiro.
  */
-export async function importarVideo({
-  pasta,
-  arquivo,
-  cadastro: dados,
-  pacote = REF_PACOTE_GENERICO,
-  trechos = null,
-  alvo = PARAMETROS.alvo,
-  aoProgresso = () => {},
-  sinal = null,
-}) {
+export async function importarVideo({ pasta, arquivo, cadastro, trechos = null, alvo = PARAMETROS.alvo, aoProgresso = () => {}, sinal = null }) {
   const t0 = performance.now();
-  const ref = pacote;
-  if (ref === REF_PACOTE_GENERICO) await pasta.garantirPacoteGenerico();
-  else if (!(await pasta.existe(pasta.pacoteRef(ref)))) throw new Error(`não há o pacote ${ref} na pasta de trabalho`);
-  await pasta.lerPacote(ref);
-  const cadastro = { ...dados, pacote_versao: ref === REF_PACOTE_GENERICO ? null : partesPacote(ref)[1] };
   const pid = idPartida(cadastro.data_hora, cadastro.estadio, cadastro.mandante, cadastro.visitante);
   if (await pasta.existe(pasta.manifesto(pid))) throw new PartidaJaExiste(`a partida ${pid} já foi importada`);
 
@@ -541,7 +526,6 @@ export async function importarVideo({
   const provisorio = {
     formato: "manifesto.partida/1",
     partida: pid,
-    pacote: ref,
     cadastro,
     video: { nome_original: arquivo.name, sha256: "0".repeat(64), bytes: arquivo.size, duracao_s: 0, fps: 1, largura: 1, altura: 1, n_quadros: 0 },
     pre_processamento: { ferramenta: VERSAO, criado_em: new Date().toISOString(), segundos: 0, parametros: {}, previsor: null },
@@ -552,13 +536,13 @@ export async function importarVideo({
   await marca.conferir();
   await marca.renovar(true);
   try {
-    return await importarComMarca({ pasta, arquivo, cadastro, trechos, alvo, aoProgresso, sinal, t0, ref, pid, marca });
+    return await importarComMarca({ pasta, arquivo, cadastro, trechos, alvo, aoProgresso, sinal, t0, pid, marca });
   } finally {
     await marca.tirar();
   }
 }
 
-async function importarComMarca({ pasta, arquivo, cadastro, trechos, alvo, aoProgresso: avisar, sinal, t0, ref, pid, marca }) {
+async function importarComMarca({ pasta, arquivo, cadastro, trechos, alvo, aoProgresso: avisar, sinal, t0, pid, marca }) {
   const aoProgresso = (etapa, frac) => {
     avisar(etapa, frac);
     marca.renovar().catch(() => {}); // no máximo uma vez por minuto; se falhar, tenta na próxima
@@ -695,7 +679,6 @@ async function importarComMarca({ pasta, arquivo, cadastro, trechos, alvo, aoPro
   await pasta.gravar("manifesto", pasta.manifesto(pid), {
     formato: "manifesto.partida/1",
     partida: pid,
-    pacote: ref,
     cadastro,
     video: {
       nome_original: arquivo.name,

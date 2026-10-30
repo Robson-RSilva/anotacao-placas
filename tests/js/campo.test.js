@@ -3,10 +3,10 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
-import { Molde, amostrar, construirCampo, distanciaElemento, erroNasMedidas } from "../../web/js/nucleo/campo.js";
-import { pacoteGenerico } from "../../web/js/nucleo/pacote.js";
+import { Molde, PONTOS_MARCAVEIS, PONTOS_SEM_MARCA, amostrar, construirCampo, descricaoPonto, distanciaElemento } from "../../web/js/nucleo/campo.js";
 
-const lab = JSON.parse(readFileSync(new URL("../fixtures/camera_laboratorio.json", import.meta.url), "utf-8"));
+const lab = JSON.parse(readFileSync(new URL("../fixtures/campo_laboratorio.json", import.meta.url), "utf-8"));
+const ref = JSON.parse(readFileSync(new URL("../fixtures/convencoes.json", import.meta.url), "utf-8"));
 
 const perto = (a, b, tol = 1e-12) => a.length === b.length && a.every((v, i) => Math.abs(v - b[i]) <= tol);
 
@@ -62,22 +62,13 @@ test("distância exata a retas e arcos", () => {
   assert.ok(Math.abs(distanciaElemento(ml, [-52.5 + 11 - 9.15, 0, 0]) - Math.hypot(ponta[0] - (-52.5 + 11 - 9.15), ponta[1])) < 1e-9);
 });
 
-test("molde do pacote é reaproveitado por dimensão", () => {
-  const a = Molde.doPacote({ campo: { comprimento: 100, largura: 64 } });
-  const b = Molde.doPacote({ campo: { comprimento: 100, largura: 64 } });
-  assert.equal(a, b);
-  assert.equal(a.L, 100);
-  assert.throws(() => a.ponto("nao_existe"));
-});
-
-test("molde esticado: as medidas do campo mudam, as marcações da regra não", () => {
+test("o campo de cada medida é reaproveitado, e as marcações da regra não mudam", () => {
   const padrao = Molde.doCampo(105, 68);
+  assert.equal(Molde.doCampo(), padrao);
   const outro = Molde.doCampo(100, 64);
   assert.equal(Molde.doCampo(100, 64), outro);
-  assert.notEqual(outro, padrao);
-  assert.deepEqual(outro.ponto("centro"), [0, 0, 0]);
   assert.deepEqual(outro.ponto("canto_esq_cab"), [-50, -32, 0]);
-  // a grande área tem 16,5 m de fundo e 40,32 m de largura em qualquer campo
+  assert.throws(() => padrao.ponto("nao_existe"));
   const area = (m) => [m.ponto("ga_esq_frente_cab")[0] - m.ponto("ga_esq_fundo_cab")[0], m.ponto("ga_esq_frente_opo")[1] - m.ponto("ga_esq_frente_cab")[1]];
   for (const m of [padrao, outro]) {
     const [fundo, largura] = area(m);
@@ -85,23 +76,18 @@ test("molde esticado: as medidas do campo mudam, as marcações da regra não", 
   }
 });
 
-test("molde do rótulo: as medidas que a pessoa usou, ou as do pacote", () => {
-  const pacote = pacoteGenerico();
-  assert.equal(Molde.doRotulo({ campo: null }, pacote), Molde.doCampo(105, 68));
-  assert.equal(Molde.doRotulo({}, pacote), Molde.doPacote(pacote));
-  assert.equal(Molde.doRotulo({ campo: { comprimento: 102.5, largura: 66 } }, pacote), Molde.doCampo(102.5, 66));
+test("os 39 pontos que se marcam e os nomes do outro lado: os mesmos do Python", () => {
+  assert.deepEqual([...PONTOS_MARCAVEIS], ref.pontos_marcaveis);
+  assert.deepEqual([...PONTOS_SEM_MARCA], ref.pontos_sem_marca);
+  const m = Molde.doCampo();
+  for (const [nome, outro] of Object.entries(ref.perm180)) assert.equal(m.espelharPonto(nome), outro, nome);
 });
 
-test("o campo genérico é o mesmo do Python", () => {
-  const ref = JSON.parse(readFileSync(new URL("../fixtures/pacote_generico.json", import.meta.url), "utf-8"));
-  assert.deepEqual(pacoteGenerico(), ref);
-  assert.notEqual(pacoteGenerico(), pacoteGenerico()); // cada um com o seu (ninguém muda o do outro)
-});
-
-test("medidas do campo que a regra aceita", () => {
-  for (const [L, W] of [[105, 68], [90, 45], [120, 90], [100.5, 64]]) assert.equal(erroNasMedidas(L, W), null, `${L} × ${W}`);
-  for (const [L, W] of [[89.5, 68], [121, 68], [105, 44], [105, 91], [Number.NaN, 68], [0, 0]]) {
-    assert.match(erroNasMedidas(L, W), /fora da regra/, `${L} × ${W}`);
-  }
-  assert.match(erroNasMedidas(90, 90), /maior que a largura/);
+test("cada ponto dito em português", () => {
+  assert.equal(descricaoPonto("canto_esq_cab"), "Canto · fundo esquerdo, lado das cabines");
+  assert.equal(descricaoPonto("pa_dir_fundo_opo"), "Pequena área: na linha de fundo · fundo direito, lado oposto");
+  assert.equal(descricaoPonto("gol_esq_pe_opo"), "Trave: pé, no gramado · fundo esquerdo, lado oposto");
+  assert.equal(descricaoPonto("penalti_dir"), "Marca do pênalti · fundo direito");
+  const textos = PONTOS_MARCAVEIS.map(descricaoPonto);
+  assert.equal(new Set(textos).size, textos.length); // nenhum texto repetido
 });

@@ -1,0 +1,101 @@
+{
+  "$defs": {
+    "PontoVerdadeiro": {
+      "additionalProperties": false,
+      "properties": {
+        "ponto": {
+          "description": "nome do ponto do campo (os 39 que se marcam)",
+          "title": "Ponto",
+          "type": "string"
+        },
+        "visivel": {
+          "description": "false: dentro da imagem, mas coberto (por pessoa, trave ou grafismo); marcar é opcional",
+          "title": "Visivel",
+          "type": "boolean"
+        },
+        "x": {
+          "description": "px da imagem, a partir do canto de cima à esquerda",
+          "title": "X",
+          "type": "number"
+        },
+        "y": {
+          "title": "Y",
+          "type": "number"
+        }
+      },
+      "required": [
+        "ponto",
+        "x",
+        "y",
+        "visivel"
+      ],
+      "title": "PontoVerdadeiro",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Item do gabarito dos pontos: a imagem e onde está, de verdade, cada ponto que cai nela.",
+  "properties": {
+    "altura": {
+      "exclusiveMinimum": 0,
+      "title": "Altura",
+      "type": "integer"
+    },
+    "formato": {
+      "const": "gabarito.pontos/1",
+      "default": "gabarito.pontos/1",
+      "title": "Formato",
+      "type": "string"
+    },
+    "id": {
+      "pattern": "^g\\d{4}$",
+      "title": "Id",
+      "type": "string"
+    },
+    "imagem": {
+      "title": "Imagem",
+      "type": "string"
+    },
+    "largura": {
+      "exclusiveMinimum": 0,
+      "title": "Largura",
+      "type": "integer"
+    },
+    "lote": {
+      "default": "",
+      "description": "o lote de ouro de onde o item veio",
+      "title": "Lote",
+      "type": "string"
+    },
+    "observacao": {
+      "default": "",
+      "title": "Observacao",
+      "type": "string"
+    },
+    "origem": {
+      "enum": [
+        "simulador",
+        "arbitrado"
+      ],
+      "title": "Origem",
+      "type": "string"
+    },
+    "pontos": {
+      "items": {
+        "$ref": "#/$defs/PontoVerdadeiro"
+      },
+      "title": "Pontos",
+      "type": "array"
+    }
+  },
+  "required": [
+    "id",
+    "imagem",
+    "largura",
+    "altura",
+    "pontos",
+    "origem"
+  ],
+  "title": "GabaritoPontos",
+  "type": "object"
+}

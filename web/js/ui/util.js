@@ -9,6 +9,18 @@ export function formatarTempo(s) {
   return `${m}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 }
 
+/**
+ * Um número inteiro digitado num campo de texto (com espaços, ponto ou vírgula de milhar), entre `min`
+ * e `max`; null quando não é. Os campos de número da página são de texto: no Chrome, um campo
+ * "number" muda o valor com o clique perto das setinhas e com a roda do mouse.
+ */
+export function lerInteiro(texto, min = -Infinity, max = Infinity) {
+  const limpo = String(texto ?? "").trim().replace(/[\s.]/g, "");
+  if (!/^-?\d+$/.test(limpo)) return null;
+  const n = Number(limpo);
+  return Number.isSafeInteger(n) && n >= min && n <= max ? n : null;
+}
+
 export function numero(v, casas = 1) {
   return v === null || v === undefined || !Number.isFinite(v) ? "—" : Number(v).toLocaleString("pt-BR", { maximumFractionDigits: casas });
 }

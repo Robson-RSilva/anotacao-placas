@@ -1,6 +1,8 @@
 # ADR-0008 — Gabarito no campo genérico: medidas verdadeiras no item e comparação sem o lado
 
-**Situação:** aceita (24/10/2026).
+**Situação:** substituída pela ADR-0010 (30/10/2026): sem molde nem câmera, o item dos pontos traz
+os pontos verdadeiros, e o gabarito compara ponto a ponto (aceitando a leitura do outro lado do
+campo, como aqui). Fica o registro.
 
 ## Contexto
 

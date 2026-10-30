@@ -1,6 +1,6 @@
 // Worker da importação: lê, decodifica e sorteia sem travar a página. Recebe a pasta (a alça da
-// File System Access API, que pode ser passada para o worker), o arquivo de vídeo, o cadastro, o
-// molde do campo e os trechos escolhidos.
+// File System Access API, que pode ser passada para o worker), o arquivo de vídeo, o cadastro e os
+// trechos escolhidos.
 
 import { carregarEsquemas } from "../nucleo/formatos.js";
 import { Pasta } from "../nucleo/pasta.js";
@@ -23,7 +23,6 @@ self.onmessage = async (evento) => {
       pasta: new Pasta(m.raiz),
       arquivo: m.arquivo,
       cadastro: m.cadastro,
-      pacote: m.pacote,
       trechos: m.trechos,
       alvo: m.alvo,
       sinal: controle.signal,

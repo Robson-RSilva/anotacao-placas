@@ -6,9 +6,16 @@ validam por eles (mais as regras entre campos, em `web/js/nucleo/formatos.js`) a
 `python scripts/gerar_arquivos_web.py` atualiza os esquemas, e um teste falha se ficarem
 desatualizados.
 
-Convenções (ADR-0001): mundo com origem no centro do gramado, z para cima, metros; a câmera é
-`x ~ K R (X − C)` com distorção radial `k1`; o ID do quadro é o PTS em milissegundos; métricas em
-pixels na referência 960 × 540.
+Convenções (ADR-0001, em `convencoes.py`):
+
+- **Campo:** origem no centro do gramado, x ao longo do comprimento, y ao longo da largura, z para
+  cima, metros. O lado `cab` (das cabines, da câmera principal) é y < 0; `opo`, y > 0; os fundos
+  `esq` (x < 0) e `dir` (x > 0), vistos da câmera principal. Os nomes dos pontos seguem esses lados.
+- **Imagem:** px do quadro na resolução do vídeo, origem no canto de cima à esquerda — o primeiro
+  pixel vai de 0 a 1 (o centro dele é 0,5) —, x para a direita e y para baixo.
+- **Tempo:** o ID do quadro é o PTS em milissegundos.
+- **Medidas** (erros, tolerâncias, áreas) em px na referência de 960 de largura: px da imagem ×
+  960 / largura.
 
 ## IDs
 
@@ -16,173 +23,138 @@ pixels na referência 960 × 540.
 | --- | --- | --- |
 | partida | `AAAA-MM-DD_<estadio>_<mandante>-<visitante>` | `2026-11-02_arena-x_time-a-time-b` |
 | quadro | `t` + PTS em ms com 10 dígitos | `t0001234567` |
-| item do gabarito | `g` + 4 dígitos | `g0007` |
+| item do gabarito | `g` + 4 dígitos | `g1001` |
 | pessoa | o código que a pessoa digita: letra maiúscula + 1 a 9 letras maiúsculas ou dígitos | `RS`, `A03`, `ANACLARA` |
-| pacote | `<estadio>/pacote-<versão>`; o campo genérico é `generico/pacote-1.0` | `arena-x/pacote-1.0` |
 
 O PTS é o do contêiner, com a lista de edição aplicada e contado a partir do primeiro quadro exibido
 (o mesmo que o FFmpeg e o OpenCV mostram). Extrair de novo o mesmo vídeo dá os mesmos IDs de quadro;
 se o contêiner não tem relógio confiável, vale índice / fps e o manifesto registra `pts: "indice"`.
 
-## `rotulo.camera/1` — o rótulo de câmera
+## Os pontos do campo
 
-`partidas/<partida>/rotulos/camera/<quadro>__<anotador>__v<n>.json`
+São os 43 pontos-chave do laboratório menos os quatro que não ficam num cruzamento nem numa marca
+(`circ_esq`, `circ_dir`, `ml_esq_topo`, `ml_dir_topo`): 39 que se marcam, na ordem do laboratório.
+
+| Pontos | Onde |
+| --- | --- |
+| `canto_<esq\|dir>_<cab\|opo>` | os quatro cantos do campo |
+| `meio_cab`, `meio_opo` | a linha do meio na lateral |
+| `ga_<lado>_fundo_<cab\|opo>`, `ga_<lado>_frente_<cab\|opo>` | a grande área: na linha de fundo e na frente |
+| `pa_<lado>_fundo_<cab\|opo>`, `pa_<lado>_frente_<cab\|opo>` | a pequena área, do mesmo jeito |
+| `circ_meio_cab`, `circ_meio_opo` | o círculo central na linha do meio |
+| `centro`, `penalti_esq`, `penalti_dir` | as marcas |
+| `ml_<lado>_cab`, `ml_<lado>_opo` | a meia-lua na frente da grande área |
+| `gol_<lado>_pe_<cab\|opo>`, `gol_<lado>_topo_<cab\|opo>` | o pé e o topo de cada trave |
+
+O ponto é o centro do cruzamento das linhas (o meio da faixa branca), o centro da marca ou o eixo
+da trave. A rotação de 180° em torno do centro do campo leva cada ponto noutro (`canto_esq_cab` ↔
+`canto_dir_opo`, por exemplo): uma marcação feita como se a câmera estivesse do outro lado do campo
+desenha o mesmo campo, e o gabarito e a concordância aceitam as duas leituras.
+
+## O que vale nas duas tarefas
+
+Rótulo: `partidas/<partida>/rotulos/<tarefa>/<quadro>__<anotador>__v<n>.json` (no gabarito,
+`gabarito/rotulos/<tarefa>/<gNNNN>__<anotador>__v<n>.json`). Revisão:
+`partidas/<partida>/revisoes/<tarefa>/<quadro>__<revisor>__v<n>.json`. A tarefa é `pontos` ou
+`jogadores`. O conteúdo precisa bater com o nome (partida, quadro, pessoa e versão); um arquivo que
+não bate conta como inválido.
+
+- `situacao`: `ok` (anotada; sem pontos, ou sem jogador, também é `ok`) ou `descartada`, com
+  `motivo_descarte`: `transicao` (fusão, corte no meio), `borrao` (borrada ou fora de foco demais),
+  `grafismo` (grafismo da emissora cobre a imagem) ou `outro` (exige `comentario`).
+- `partiu_de.fonte`: `nenhuma`, `modelo` (a previsão da pasta), `rotulo_anterior` (a versão devolvida
+  na revisão, que volta para a mesma pessoa como versão nova) ou `rotulo_revisado` (a correção feita
+  na revisão, com `corrige` apontando o rótulo corrigido).
+- `largura` e `altura`: o tamanho da imagem anotada, em px.
+- `ferramenta` e `manual`: as versões da ferramenta e do Manual de anotação da tarefa
+  (`pontos-0.1`, `jogadores-0.1`; as revisões, `revisao-0.2`).
+- Revisão — `decisao`: `aprovar`, `corrigir` (exige `nova_versao`, o arquivo da correção) ou
+  `devolver` (exige `motivo`, da lista da tarefa; `outro` exige comentário).
+
+## `rotulo.pontos/1` — os pontos do campo
 
 ```json
 {
-  "formato": "rotulo.camera/1",
+  "formato": "rotulo.pontos/1",
   "partida": "2026-11-02_arena-x_time-a-time-b",
-  "pacote": "arena-x/pacote-1.0",
   "quadro": "t0001234567",
   "anotador": "A03",
   "versao": 1,
-  "ferramenta": "0.3.0",
-  "manual": "camera-0.1",
+  "ferramenta": "0.8.0",
+  "manual": "pontos-0.1",
   "criado_em": "2026-11-03T14:05:11Z",
   "segundos_ativos": 41.0,
-  "partiu_de": {"fonte": "modelo", "versao": "detector_A@3f9c", "referencia": null},
-  "campo": {"comprimento": 104.5, "largura": 68.0},
-  "camera": {"hfov_graus": 31.8, "pan": 24.1, "tilt": 12.7, "roll": 0.1, "C": [0.0, -58.0, 18.0], "k1": -0.02},
-  "lado": "canonico",
-  "pontos_travados": [{"ponto": "ga_dir_frente_cab", "x": 512.3, "y": 288.1}],
-  "linhas_travadas": [{"elemento": "lateral_opo", "x": 1210.0, "y": 140.5}],
+  "largura": 1280,
+  "altura": 720,
+  "partiu_de": {"fonte": "nenhuma", "versao": null, "referencia": null},
   "situacao": "ok",
+  "motivo_descarte": null,
   "comentario": "",
-  "residuo_mediano_px": 0.8,
-  "corrige": null
+  "corrige": null,
+  "pontos": [
+    {"ponto": "ga_dir_frente_cab", "x": 512.3, "y": 288.1},
+    {"ponto": "pa_dir_fundo_cab", "x": 861.0, "y": 240.6},
+    {"ponto": "penalti_dir", "x": 702.4, "y": 251.9}
+  ]
 }
 ```
 
-- **A câmera é o rótulo**: pontos-chave e linhas para o treino se recalculam dela, com o molde do
-  campo nas medidas de `campo`. `hfov_graus` é relativo à largura da imagem, então o rótulo não
-  depende da resolução em que o quadro foi extraído.
-- `campo`: comprimento e largura (m) do campo no molde que a pessoa usou — as marcações (áreas,
-  círculo, gols) têm sempre a medida da regra; só o tamanho do campo muda. Sem `campo` (rótulos da
-  0.2), valem as medidas do pacote.
-- `pontos_travados` e `linhas_travadas` estão em pixels do quadro original; ficam para auditoria e
-  para o `residuo_mediano_px` (distância, em px na referência 960, dos travados até o molde).
-- `lado` é calculado da câmera (semiespaço canônico da simetria de 180°, o mesmo do laboratório).
-- `situacao`: `ok`, `sem_marcacoes`, `impossivel_transicao`, `impossivel_borrao` ou `duvida`. Só
-  `ok` e `duvida` levam câmera; `duvida` exige comentário.
-- `partiu_de.fonte`: `modelo`, `quadro_anotado`, `registro`, `rotulo_anterior`, `rotulo_revisado`.
-- `corrige`: preenchido quando a versão é a correção feita na revisão cruzada (aponta o rótulo
-  corrigido).
+- `pontos`: os pontos que aparecem, cada um uma vez, em px da imagem (dentro dela: de 0 à largura e
+  de 0 à altura). Lista vazia com `situacao: "ok"`: nenhum ponto à vista (um close, a torcida). Imagem
+  descartada não leva pontos.
+- Ponto coberto (um jogador na frente) só se marca quando dá para saber exatamente onde ele está.
 
-## `revisao.camera/1` — a revisão cruzada
+`revisao.pontos/1` — os motivos de devolver: `ponto_fora_do_lugar` (mais de 2 px), `nome_trocado`,
+`faltou_ponto`, `ponto_que_nao_se_ve`, `descarte_errado` ou `outro`.
 
-`partidas/<partida>/revisoes/camera/<quadro>__<revisor>__v<n>.json`
+## `rotulo.jogadores/1` — a máscara dos jogadores
+
+O rótulo, com a máscara `<quadro>__<anotador>__v<n>.png` ao lado (o mesmo nome, com .png):
 
 ```json
 {
-  "formato": "revisao.camera/1",
+  "formato": "rotulo.jogadores/1",
   "partida": "2026-11-02_arena-x_time-a-time-b",
-  "quadro": "t0001234567",
-  "rotulo": "t0001234567__A03__v1.json",
-  "revisor": "A05",
-  "versao": 1,
-  "decisao": "devolver",
-  "motivo": "lado_trocado",
-  "comentario": "",
-  "nova_versao": null,
-  "ferramenta": "0.3.0",
-  "manual": "revisao-0.1",
-  "criado_em": "2026-11-03T15:20:00Z",
-  "segundos_ativos": 9.0
-}
-```
-
-`decisao`: `aprovar`, `corrigir` (exige `nova_versao`, o arquivo da correção) ou `devolver` (exige
-`motivo`: `lado_trocado`, `molde_fora_da_tolerancia`, `ponto_em_marca_coberta`,
-`deveria_ser_sem_marcacoes` ou `outro`, este com comentário).
-
-## `rotulo.oclusao/1` — a oclusão nas placas
-
-`partidas/<partida>/rotulos/oclusao/<quadro>__<anotador>__v<n>.json`, com a máscara
-`<quadro>__<anotador>__v<n>.png` ao lado (ADR-0009)
-
-```json
-{
-  "formato": "rotulo.oclusao/1",
-  "partida": "2026-11-02_arena-x_time-a-time-b",
-  "pacote": "generico/pacote-1.0",
   "quadro": "t0001234567",
   "anotador": "A03",
   "versao": 1,
-  "ferramenta": "0.7.0",
-  "manual": "oclusao-0.1",
-  "criado_em": "2026-11-04T10:12:40Z",
+  "ferramenta": "0.8.0",
+  "manual": "jogadores-0.1",
+  "criado_em": "2026-11-03T14:12:40Z",
   "segundos_ativos": 95.0,
   "largura": 1280,
   "altura": 720,
-  "camera_de": "t0001234567__A05__v1.json",
-  "camera": {"hfov_graus": 31.8, "pan": 24.1, "tilt": 12.7, "roll": 0.1, "C": [0.0, -58.0, 18.0], "k1": -0.02},
-  "campo": {"comprimento": 104.5, "largura": 68.0},
-  "placas_de": "faixas",
-  "faixas": {
-    "laterais": {"distancia": 4.0, "altura": 0.98, "comprimento": 96.0, "vao": 0.0, "ligada": true},
-    "fundos": {"distancia": 5.0, "altura": 0.98, "comprimento": 60.0, "vao": 12.0, "ligada": true}
-  },
   "partiu_de": {"fonte": "nenhuma", "versao": null, "referencia": null},
-  "mascara": "t0001234567__A03__v1.png",
-  "placas": [
-    {"id": "OPO_07", "lado": "opo", "area_px": 1134, "outra_placa_px": 0, "livre_px": 832, "pessoa_px": 302,
-     "bola_px": 0, "rede_px": 0, "grafismo_px": 0, "objeto_px": 0, "nao_placa_px": 0,
-     "livre_frac": 0.7337, "altura_ref_px": 22.8, "pequena": false}
-  ],
   "situacao": "ok",
+  "motivo_descarte": null,
   "comentario": "",
-  "corrige": null
+  "corrige": null,
+  "mascara": "t0001234567__A03__v1.png",
+  "pixels": 18342
 }
 ```
 
-- **De onde vêm as placas** (`placas_de`): `pacote` (as placas do levantamento do estádio),
-  `faixas` (no campo genérico, as faixas de placas, em `faixas`) ou `gabarito` (as do item do
-  gabarito). As faixas: `distancia` da linha (lateral ou de fundo) até a frente das placas,
-  `altura`, `comprimento` da faixa (centrada no meio do lado; `null` de canto a canto), `vao` sem
-  placas no meio e `ligada`. As duas laterais têm as mesmas medidas, e os dois fundos também; cada
-  faixa se divide em trechos de ~8 m (`OPO_01`, `CAB_01`, `ESQ_01`, `DIR_01`…, crescendo com x nas
-  laterais e com y nos fundos), que contam como placas.
-- **A câmera** é a do rótulo de câmera aprovado (`camera_de`); com ela e com `campo`, as placas caem
-  sempre nos mesmos pixels (a página e o Python fazem as mesmas contas). Só as placas de frente para
-  a câmera aparecem; a mais perto cobre a mais longe.
-- **A máscara** é um PNG de 8 bits com paleta, do tamanho do quadro, uma classe por pixel:
+- **A máscara** é um PNG de 8 bits com paleta, do tamanho da imagem: 1 onde há jogador (goleiros
+  também), 0 no resto — árbitros, gandulas, fotógrafos, comissão técnica, torcida e sombras ficam
+  em 0. Sem nenhum jogador, a máscara é toda 0 (`pixels: 0`). `pixels` é quantos pixels valem 1, e
+  o `validar` confere com a máscara.
+- Imagem descartada não leva máscara (`mascara: null`, `pixels: 0`). O rótulo é gravado depois da
+  máscara; um rótulo cuja máscara ainda não chegou pelo Drive fica esperando nas páginas, e o
+  `validar` e o `unificar` o apontam.
 
-  | Valor | Classe | Cobre a placa? |
-  | --- | --- | --- |
-  | 0 | fora das placas (ou numa placa pequena demais) | — |
-  | 1 | placa livre (sombra, reflexo e brilho também) | não |
-  | 2 | pessoa (jogador, árbitro, gandula, comissão) | sim |
-  | 3 | bola | sim |
-  | 4 | rede do gol | por enquanto não (decide-se depois, com `rede_px`) |
-  | 5 | grafismo da emissora (placar, logo) | sim |
-  | 6 | objeto (trave, câmera, microfone, banco) | sim |
-  | 7 | não é placa (vão dentro da faixa; só nas faixas) | sai da área |
-
-- **`placas`**: o que a máscara diz de cada placa que cai na imagem — `area_px` (pixels do polígono
-  dentro da imagem), `outra_placa_px` (desses, os cobertos por uma placa mais perto), os pixels de
-  cada classe onde a placa está na frente, `altura_ref_px` e `pequena` (mais baixa que 10 px na ref.
-  960: não se pinta). `livre_frac` = (livre + rede) / (área − não é placa); `null` nas pequenas.
-- `situacao`: `ok` (exige a máscara e uma placa para pintar), `sem_placas`, `camera_errada` (o
-  contorno não fecha com as placas; sem máscara) ou `duvida` (com comentário; a máscara é opcional).
-- `partiu_de.fonte`: `nenhuma`, `modelo` (a pré-pintura em `previsoes/oclusao/<quadro>.png`),
-  `rotulo_anterior` (a versão devolvida) ou `rotulo_revisado` (a correção na revisão, com `corrige`).
-
-## `revisao.oclusao/1` — a revisão cruzada da oclusão
-
-`partidas/<partida>/revisoes/oclusao/<quadro>__<revisor>__v<n>.json` — como `revisao.camera/1`, com
-os motivos da oclusão: `pintura_fora_da_tolerancia`, `classe_errada`, `faixa_fora_das_placas`,
-`camera_errada` (deveria ser "câmera errada") ou `outro` (com comentário).
+`revisao.jogadores/1` — os motivos de devolver: `faltou_jogador`, `contorno_impreciso` (mais de
+1 px), `pintou_quem_nao_e_jogador`, `descarte_errado` ou `outro`.
 
 ## Por partida
 
 | Arquivo | Formato | O que tem |
 | --- | --- | --- |
-| `manifesto.json` | `manifesto.partida/1` | o molde (`pacote`: `generico/pacote-1.0` ou o de um estádio levantado; `cadastro.pacote_versao` fica `null` no genérico), cadastro (estádio, emissora, competição, data e hora com fuso, mandante, visitante, iluminação, chuva), vídeo (nome, sha256 do arquivo inteiro, duração, fps, resolução, quadros) e parâmetros da importação (sorteio, origem do PTS, codec, decodificador, cortes, quadros perdidos, quadros sem chave no início, quadros não extraídos, amostras além do fim de um arquivo cortado e, quando a importação foi só de uns trechos, `trechos` em segundos — `"300-3000;3900-6600"` — e `quadros_nos_trechos`). Gravado por último: a partida só existe quando o manifesto existe — e um manifesto vazio (escrita interrompida) não conta. |
+| `manifesto.json` | `manifesto.partida/1` | cadastro (estádio, emissora, competição, data e hora com fuso, mandante, visitante, iluminação, chuva), vídeo (nome, sha256 do arquivo inteiro, duração, fps, resolução, quadros) e parâmetros da importação (sorteio, origem do PTS, codec, decodificador, cortes, quadros perdidos, quadros sem chave no início, quadros não extraídos, amostras além do fim de um arquivo cortado e, quando a importação foi só de uns trechos, `trechos` em segundos — `"300-3000;3900-6600"` — e `quadros_nos_trechos`). Gravado por último: a partida só existe quando o manifesto existe — e um manifesto vazio (escrita interrompida) não conta. `pacote` e `cadastro.pacote_versao` são das versões até a 0.7 e são ignorados. |
 | `tomadas.json` | `tomadas.partida/1` | cortes, transições e tomadas (índices, PTS, zoom e grupo aproximados — só para o sorteio). `replay` fica `null`: replays são conferidos na solução assistida. Com trechos, o começo e o fim de cada trecho também são cortes, e os quadros de fora não são sorteados. |
-| `fila.json` | `fila.partida/1` | quadros sorteados e as marcas de dupla às cegas e de "sem previsão". A fila é aberta (`equipe` e `atribuido_a` vazios): um quadro precisa de um rótulo, ou de duas pessoas diferentes na dupla. Filas da 0.2 com `atribuido_a` preenchido continuam valendo como foram atribuídas. |
+| `fila.json` | `fila.partida/1` | quadros sorteados e as marcas de dupla às cegas e de "sem previsão". A fila é aberta (`equipe` e `atribuido_a` vazios) e vale para as duas tarefas: em cada uma, um quadro precisa de um rótulo, ou de duas pessoas diferentes na dupla. |
 | `quadros/<quadro>.jpg` | JPEG | os quadros sorteados, na resolução original do vídeo. |
-| `previsoes/<quadro>.json` | `previsao.camera/1` | câmera prevista e confiança, gravadas por `anotacao prever` (nunca nos quadros "sem previsão"). |
-| `previsoes/oclusao/<quadro>.png` | PNG de índices | a pré-pintura da oclusão de um modelo (as classes da tabela acima; o resto é ignorado), gravada por `anotacao prever --tarefa oclusao`. A página pinta com ela, dentro das placas, o começo do quadro. |
+| `previsoes/pontos/<quadro>.json` | `previsao.pontos/1` | os pontos de um modelo (`fonte`, `versao` e a lista de pontos, como no rótulo), gravados por `anotacao prever --tarefa pontos` (nunca nos quadros "sem previsão"). A página começa com eles. |
+| `previsoes/jogadores/<quadro>.png` | PNG de 8 bits | a pré-pintura de um modelo (diferente de 0: jogador), gravada por `anotacao prever --tarefa jogadores`. A página começa com ela. |
 | `importando.json` | — | só durante a importação: quem está importando a partida (some no fim; não vai para o .zip). Uma marca sem renovação há 10 minutos é de uma importação que parou. |
 
 ## Da pasta
@@ -193,25 +165,98 @@ os motivos da oclusão: `pintura_fora_da_tolerancia`, `classe_errada`, `faixa_fo
 | `pessoas/<codigo>/<dispositivo>.json` | `pessoa.dispositivo/1` | que o código é usado num navegador (um identificador aleatório, guardado nele) e desde quando; um arquivo por computador, gravado uma vez. A página avisa quando o código digitado já é usado em outro computador. |
 | `projeto.json` | `projeto/1` | opcional: nome do projeto e link (https) do Manual de anotação, mostrados nas páginas. |
 | `divisao.json` | `divisao/1` | partidas de validação, teste congelado e teste externo; o resto é treino. |
-| `estadios/<estadio>/pacote-<v>/pacote.json` | `pacote.estadio/1` | medidas do campo, placas (vértices BL, BR, TR, TL vistos de frente; tipo; lado; patrocinador) e câmeras do registro (posição do tripé). `estadios/generico/pacote-1.0` é o campo genérico: 105 × 68 m, sem placas, com posições típicas de câmera; a página o grava ao criar a pasta, e o Python e a página o têm embutido para pastas mais antigas. |
-| `gabarito/itens/<id>.json` | `gabarito.camera/1` | imagem, tamanho, o pacote com que o item abre (o campo genérico, nos lotes de ouro), a câmera verdadeira e, quando o campo não tem as medidas do pacote, as medidas verdadeiras (`campo`, de 90 a 120 por 45 a 90 m); origem `simulador` ou `arbitrado`. Sem placas no pacote, a comparação com a câmera verdadeira aceita o lado espelhado (ADR-0008). |
-| `gabarito/itens/<id>.json` + `<id>.png` | `gabarito.oclusao/1` | o item da oclusão: imagem, tamanho, a câmera exata, as placas exatas (como as do pacote) e a máscara verdadeira (`mascara`, o PNG ao lado). A pintura se compara com ela placa a placa, com 1 px de tolerância na borda; a meta é até 5% de cada placa (ADR-0009). O formato dentro do arquivo diz a tarefa do item. |
+| `gabarito/itens/<id>.json` + `.jpg` | `gabarito.pontos/1` | um item dos pontos (abaixo). |
+| `gabarito/itens/<id>.json` + `.jpg` + `.png` | `gabarito.jogadores/1` | um item dos jogadores (abaixo). O formato dentro do arquivo diz a tarefa do item. |
+
+## O gabarito
+
+Itens com a resposta verdadeira — do simulador (`origem: "simulador"`, os lotes de ouro) ou de
+rótulos reais já arbitrados (`"arbitrado"`). `lote` diz de que lote o item veio: o teste de quem
+começa usa primeiro os lotes com "treino" no nome, e os itens escondidos na fila, primeiro os outros.
+Os rótulos do gabarito ficam em `gabarito/rotulos/<tarefa>/` e nunca entram no treino.
+
+### `gabarito.pontos/1`
+
+```json
+{
+  "formato": "gabarito.pontos/1",
+  "id": "g1001",
+  "lote": "P1-treino",
+  "imagem": "g1001.jpg",
+  "largura": 1280,
+  "altura": 720,
+  "pontos": [
+    {"ponto": "canto_esq_opo", "x": 214.36, "y": 102.77, "visivel": true},
+    {"ponto": "ga_esq_fundo_opo", "x": 385.02, "y": 131.58, "visivel": true},
+    {"ponto": "pa_esq_fundo_opo", "x": 452.19, "y": 143.4, "visivel": false}
+  ],
+  "origem": "simulador",
+  "observacao": "simulador do laboratório, domínio A, semente 81003"
+}
+```
+
+`pontos`: cada ponto que cai dentro da imagem. `visivel: false` quando marcar é opcional — algo na
+frente (gente, placa, grafismo, ou a trave na frente de um ponto do gramado), rente à borda (a menos
+de 3 px, ref. 960) ou num cruzamento de linhas quase paralelas na imagem (menos de 15°).
+
+Um item dá **certo** quando nenhum ponto marcado está errado (com um nome que o item não tem, ou a
+mais de 8 px do lugar certo), pelo menos 80% dos pontos visíveis foram marcados e o erro mediano dos
+visíveis é de até 2 px (ref. 960). Um ponto opcional marcado não conta no erro, mas também não pode
+estar errado. Vale a leitura do mesmo lado do campo ou do outro (a rotação de 180°), a que acha mais
+pontos. Libera com 8 certos dos últimos 10.
+
+### `gabarito.jogadores/1`
+
+```json
+{
+  "formato": "gabarito.jogadores/1",
+  "id": "g2001",
+  "lote": "J1-treino",
+  "imagem": "g2001.jpg",
+  "mascara": "g2001.png",
+  "largura": 1280,
+  "altura": 720,
+  "jogadores": 5,
+  "outras_pessoas": 1,
+  "origem": "simulador",
+  "observacao": "simulador do laboratório, domínio A, semente 84031"
+}
+```
+
+A máscara verdadeira (`mascara`, o PNG ao lado) tem um número por pessoa: os jogadores de 1 a
+`jogadores` (N), as outras pessoas (árbitro, gandula, fotógrafo…) de 255 para baixo (255, 254… —
+`outras_pessoas` delas) e 0 no resto. A importação confere que não há outro número.
+
+A pintura dá **certo** quando, sem contar a borda de 1 px dos jogadores (os pixels com um vizinho do
+outro lado do contorno), cada jogador está pintado em pelo menos metade da área, nenhuma outra pessoa
+está pintada em 25% ou mais e a sobreposição com a resposta (IoU) é de pelo menos 80%. Jogador com
+menos de 30 px de área (ref. 960) não precisa ser pintado. Libera com 4 certos dos últimos 5.
+
+Descartar um item do gabarito conta como erro: todo item tem resposta (uma imagem sem pontos ou sem
+jogador se salva vazia).
 
 ## Saída do unificar
 
-`conjuntos/<data-hora>/camera.parquet` — um quadro por linha: conjunto (`treino`, `validacao`,
-`teste_congelado`, `teste_externo`), partida, quadro, caminho da imagem, resolução, PTS, tomada,
-câmera (`hfov_graus`, `pan`, `tilt`, `roll`, `Cx`, `Cy`, `Cz`, `k1`), medidas do campo no molde
-(`campo_comprimento`, `campo_largura`), lado, resíduo, anotador, versão, revisor, decisão, versões
-do manual e da ferramenta, pacote e as condições do jogo.
-`conjuntos/<data-hora>/oclusao.parquet` — um quadro por linha, dos que têm a pintura aprovada: os
-mesmos dados do quadro, o caminho da máscara, a câmera, `placas_de` e `faixas` (JSON), quantas placas
-e quantas pintadas, os pixels de cada classe nas placas pintadas e a menor fração livre.
-`oclusao_placas.parquet` — uma placa por linha: as contas da tabela acima e o retângulo da placa na
-imagem (`x0`, `y0`, `x1`, `y1`, onde ela está na frente), para recortar. As contas são refeitas da
-máscara.
-`manifesto.json` (`conjuntos/2`) traz as contagens por conjunto e o hash do conteúdo, e a seção
-`oclusao`; `problemas.json`, os arquivos inválidos, os quadros ainda sem rótulo aprovado e as
-pinturas aprovadas que voltaram com "câmera errada" (para refazer a câmera do quadro). Um arquivo de
-rótulo ou revisão cujo conteúdo não bate com o nome (partida, quadro, pessoa ou versão) conta como
-inválido.
+Em `conjuntos/<data-hora>/`, só os rótulos aprovados na revisão (ou a correção de quem revisou); num
+quadro em dupla, o aprovado primeiro. Imagens descartadas ficam de fora; imagem sem pontos ou sem
+jogador entra.
+
+- `pontos.parquet` — um quadro por linha: conjunto (`treino`, `validacao`, `teste_congelado`,
+  `teste_externo`), partida, quadro, caminho da imagem, largura, altura, PTS, tomada, `n_pontos`,
+  anotador, versão, revisor, decisão, versões do manual e da ferramenta e as condições do jogo
+  (estádio, emissora, competição, data e hora, iluminação, chuva).
+- `pontos_lista.parquet` — um ponto por linha: conjunto, partida, quadro, `ponto`, `x`, `y` (px da
+  imagem).
+- `jogadores.parquet` — um quadro por linha: os mesmos dados do quadro, o caminho da máscara e
+  `pixels` (quantos valem 1).
+- `manifesto.json` (`conjuntos/3`) — por tarefa, os quadros, as contagens por conjunto, quantos sem
+  pontos ou sem jogador e o hash do conteúdo; os descartes por tarefa e motivo; as partidas de cada
+  conjunto e a divisão usada.
+- `problemas.json` — os arquivos inválidos e os quadros ainda sem rótulo aprovado em cada tarefa.
+
+## Das versões até a 0.7
+
+`rotulo.camera/1`, `revisao.camera/1`, `gabarito.camera/1`, `rotulo.oclusao/1`,
+`revisao.oclusao/1`, `gabarito.oclusao/1`, `previsao.camera/1` e `pacote.estadio/1` (com a pasta
+`estadios/`) ficam onde estão, mas nenhuma página nem o `unificar` os lê, e os .zip não os levam
+(ADR-0010).

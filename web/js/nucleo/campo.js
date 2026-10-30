@@ -1,7 +1,8 @@
-// Molde do campo — espelho de src/anotacao/campo.py, que é a mesma definição do laboratório:
-// 26 elementos (17 retas no gramado, 3 arcos e 6 segmentos dos gols) e 43 pontos-chave.
-// As dimensões vêm do pacote do estádio; as medidas internas são as da regra. A permutação dos
-// nomes sob a rotação de 180° sai da geometria (tests/js/campo.test.js confere com o laboratório).
+// O campo — espelho de src/anotacao/campo.py, que é a mesma definição do laboratório: 26 elementos
+// (17 retas no gramado, 3 arcos e 6 segmentos dos gols) e 43 pontos-chave, dos quais 39 se marcam
+// na tarefa de pontos. As medidas internas são as da regra. A permutação dos nomes sob a rotação de
+// 180° sai da geometria (tests/js/campo.test.js confere com o laboratório). O mapa da página de
+// pontos (ui/mapa.js) desenha esta geometria.
 
 const MEDIDAS = Object.freeze({
   grande_area_fundo: 16.5,
@@ -187,16 +188,10 @@ function perm180(elementos, pontos) {
 const MOLDES = new Map();
 
 /**
- * Medidas que a regra aceita para o campo: comprimento de 90 a 120 m, largura de 45 a 90 m, e mais
- * comprido que largo. Devolve o problema, ou null.
+ * Pontos que não se marcam à mão: o mais à esquerda e o mais à direita do círculo central e o topo de
+ * cada meia-lua não ficam num cruzamento de linhas nem numa marca — na imagem não há o que clicar.
  */
-export function erroNasMedidas(comprimento, largura) {
-  if (!(comprimento >= 90 && comprimento <= 120 && largura >= 45 && largura <= 90)) {
-    return "medidas fora da regra: comprimento de 90 a 120 m e largura de 45 a 90 m";
-  }
-  if (comprimento <= largura) return "o comprimento precisa ser maior que a largura";
-  return null;
-}
+export const PONTOS_SEM_MARCA = Object.freeze(["circ_esq", "circ_dir", "ml_esq_topo", "ml_dir_topo"]);
 
 export class Molde {
   constructor(geo) {
@@ -210,21 +205,11 @@ export class Molde {
     this._amostras = new Map();
   }
 
-  /** Molde do campo com estas medidas, em metros (um por medida, reaproveitado). */
-  static doCampo(comprimento, largura) {
+  /** O campo com estas medidas, em metros (um por medida, reaproveitado). */
+  static doCampo(comprimento = 105, largura = 68) {
     const chave = `${comprimento}|${largura}`;
     if (!MOLDES.has(chave)) MOLDES.set(chave, new Molde(construirCampo(comprimento, largura)));
     return MOLDES.get(chave);
-  }
-
-  /** Molde do campo com as medidas do pacote do estádio. */
-  static doPacote(pacote) {
-    return Molde.doCampo(pacote.campo.comprimento, pacote.campo.largura);
-  }
-
-  /** Molde de um rótulo: as medidas que ele usou, ou as do pacote. */
-  static doRotulo(rotulo, pacote) {
-    return rotulo.campo ? Molde.doCampo(rotulo.campo.comprimento, rotulo.campo.largura) : Molde.doPacote(pacote);
   }
 
   ponto(nome) {
@@ -252,5 +237,40 @@ export class Molde {
 
   espelharElemento(nome) {
     return this.elementos[this.perm.elementos[this._iElemento.get(nome)]].nome;
+  }
+}
+
+/** Os 39 pontos da tarefa de pontos, na ordem do laboratório. */
+export const PONTOS_MARCAVEIS = Object.freeze(Molde.doCampo().pontos.map((p) => p.nome).filter((n) => !PONTOS_SEM_MARCA.includes(n)));
+
+const FUNDO = { esq: "fundo esquerdo", dir: "fundo direito" };
+const LADO = { cab: "lado das cabines", opo: "lado oposto" };
+
+/** O ponto dito em português, para quem anota ("Canto · fundo esquerdo, lado das cabines"). */
+export function descricaoPonto(nome) {
+  const p = nome.split("_");
+  const onde = (f, l) => [FUNDO[f], LADO[l]].filter(Boolean).join(", ");
+  switch (p[0]) {
+    case "canto":
+      return `Canto · ${onde(p[1], p[2])}`;
+    case "meio":
+      return `Linha do meio na lateral · ${LADO[p[1]]}`;
+    case "ga":
+    case "pa": {
+      const area = p[0] === "ga" ? "Grande área" : "Pequena área";
+      return `${area}: ${p[2] === "fundo" ? "na linha de fundo" : "canto da frente"} · ${onde(p[1], p[3])}`;
+    }
+    case "circ":
+      return `Círculo central na linha do meio · ${LADO[p[2]]}`;
+    case "centro":
+      return "Centro do campo (a marca)";
+    case "penalti":
+      return `Marca do pênalti · ${FUNDO[p[1]]}`;
+    case "ml":
+      return `Meia-lua na linha da grande área · ${onde(p[1], p[2])}`;
+    case "gol":
+      return `Trave: ${p[2] === "pe" ? "pé, no gramado" : "topo, no travessão"} · ${onde(p[1], p[3])}`;
+    default:
+      return nome;
   }
 }

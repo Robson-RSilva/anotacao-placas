@@ -5,6 +5,75 @@ Formato de [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); versões
 
 ## [Não lançado]
 
+## [0.8.0] - 2026-10-30
+
+Marcar e pintar direto na imagem: sai o molde do campo que se esticava e arrastava (a câmera do
+quadro) e sai a oclusão nas placas; entram os pontos do campo, clicados um a um com o mapa do campo,
+e a pintura de todos os jogadores da imagem. Mais: descartar imagem, a página do gabarito e a revisão
+com passo a passo (ADR-0010).
+
+### Adicionado
+
+- Página "Pontos do campo" (`#/pontos`): a imagem sem nada por cima e, ao lado, o mapa do campo com
+  os 39 pontos que se marcam. Escolher o ponto no mapa e clicar na imagem (ou o contrário), arrastar
+  para ajustar, botão direito (ou `Delete`) para apagar, desfazer e refazer, zoom pela roda do mouse
+  com a lupa do pixel, girar o mapa de 90 em 90 graus (`R`) e os nomes na imagem (`L`). A mesma
+  marcação vista do outro lado do campo (girada 180°) vale.
+- Página "Jogadores" (`#/jogadores`): pintar todos os jogadores da imagem, goleiros inclusive (não
+  árbitros, gandulas, fotógrafos, comissão técnica, torcida nem a sombra), com pincel, laço (à mão ou
+  clique a clique) e borracha; a máscara (1 onde há jogador) vai num PNG ao lado do rótulo.
+- Descartar imagem (`D`) nas duas tarefas, com o motivo: transição, borrão, grafismo da emissora ou
+  outro (com comentário). O descarte vai para a revisão como qualquer rótulo. Imagem sem nenhum
+  ponto, ou sem jogador, é salva vazia (a página confirma) e entra no treino.
+- Revisão às cegas de cada tarefa (`#/revisao-pontos`, `#/revisao-jogadores`), com o passo a passo
+  "Como revisar", a correção ali mesmo e "Descartar em vez disso".
+- Página do gabarito (`#/gabarito`): como funciona o teste, o andamento de cada tarefa com "Fazer o
+  teste", os seus resultados item a item (com o motivo de cada erro e "Ver": a sua resposta e a
+  certa) e os lotes de ouro da pasta, com "Importar lote de ouro (.zip)". A central troca "Marcar
+  pontos" e "Pintar jogadores" por "Fazer o teste" enquanto a pessoa não foi liberada.
+- No teste, o resultado na hora: nos pontos, cada ponto no lugar, perto, errado ou que faltou, na
+  imagem e no mapa; nos jogadores, o que acertou, o que faltou e o que pintou a mais. "Ver a resposta"
+  (`V`) e "Próximo" (`N`).
+- Formatos `rotulo.pontos/1`, `revisao.pontos/1`, `gabarito.pontos/1`, `previsao.pontos/1`,
+  `rotulo.jogadores/1`, `revisao.jogadores/1` e `gabarito.jogadores/1` (a máscara verdadeira com um
+  número por pessoa: os jogadores de 1 a N, as outras pessoas de 255 para baixo).
+- Lotes de ouro novos, em `scripts/lotes_de_ouro.py`: P1-treino (g1001–g1030), P2-variado
+  (g1101–g1140) e P3-noite (g1201–g1220) nos pontos; J1-treino (g2001–g2012) e J2-variado
+  (g2101–g2116) nos jogadores. A resposta sai do renderizador do laboratório (os pontos onde ele os
+  desenhou; cada pessoa à vista, separada das outras), e as regras foram conferidas com anotadores
+  simulados nesses lotes — `scripts/conferir_regras.py` refaz a conferência com as contas da própria
+  página.
+- `anotacao unificar`: `pontos.parquet`, `pontos_lista.parquet` (um ponto por linha) e
+  `jogadores.parquet`, com o manifesto `conjuntos/3` e os descartes por motivo.
+  `anotacao prever --tarefa pontos|jogadores`.
+
+### Mudado
+
+- Os campos de número (quadros a sortear, na importação) viram campos de texto conferidos ao
+  processar: no Chrome, um clique perto da borda do campo (nas setinhas) ou a roda do mouse por cima
+  mudavam o número sem querer.
+- O gabarito, por tarefa. Pontos: um item dá certo sem ponto errado (a mais de 8 px ou com o nome
+  trocado), com 80% dos pontos que aparecem marcados e o erro mediano até 2 px (ref. 960); libera com
+  8 certos dos últimos 10. Jogadores: com 1 px de tolerância na borda, cada jogador pintado pelo menos
+  na metade, ninguém que não é jogador pintado e a sobreposição (IoU) de 80%; libera com 4 dos
+  últimos 5. Os itens escondidos continuam a cada 15 rótulos, e quem cai volta para o teste.
+- O placar tem uma aba por tarefa, com os descartes, a concordância dos quadros em dupla (a distância
+  mediana dos pontos; a sobreposição das máscaras) e os acertos no gabarito.
+- O manifesto da partida não leva mais o pacote do estádio (`pacote` fica opcional e é ignorado): as
+  partidas importadas antes continuam valendo.
+- `tests/fixtures/campo_laboratorio.json` (era `camera_laboratorio.json`) guarda só o campo do
+  laboratório, que é o que a ferramenta ainda copia.
+
+### Removido
+
+- O molde do campo arrastável, a câmera do quadro, as medidas do campo, o campo genérico e os
+  pacotes de estádio; a oclusão nas placas e a revisão dela; "Criar pasta de exemplo" na central; os
+  formatos `rotulo`, `revisao` e `gabarito` `.camera` e `.oclusao`, `pacote.estadio/1` e
+  `previsao.camera/1`; `scripts/gabarito_do_laboratorio.py`.
+- Os rótulos, as revisões e os itens do gabarito das versões até a 0.7 ficam na pasta, mas não entram
+  em nada: nem no placar, nem no `unificar`, nem nos .zip (um .zip com um item antigo do gabarito é
+  recusado com o motivo).
+
 ## [0.7.0] - 2026-10-24
 
 A segunda tarefa do Manual: pintar o que cobre as placas — com revisão cruzada, gabarito próprio,

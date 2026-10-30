@@ -25,8 +25,8 @@
       "type": "string"
     },
     "formato": {
-      "const": "revisao.oclusao/1",
-      "default": "revisao.oclusao/1",
+      "const": "revisao.jogadores/1",
+      "default": "revisao.jogadores/1",
       "title": "Formato",
       "type": "string"
     },
@@ -38,10 +38,10 @@
       "anyOf": [
         {
           "enum": [
-            "faixa_fora_das_placas",
-            "pintura_fora_da_tolerancia",
-            "classe_errada",
-            "camera_errada",
+            "faltou_jogador",
+            "contorno_impreciso",
+            "pintou_quem_nao_e_jogador",
+            "descarte_errado",
             "outro"
           ],
           "type": "string"
@@ -109,6 +109,6 @@
     "criado_em",
     "segundos_ativos"
   ],
-  "title": "RevisaoOclusao",
+  "title": "RevisaoJogadores",
   "type": "object"
 }

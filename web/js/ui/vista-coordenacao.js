@@ -1,9 +1,8 @@
-// Vista "Coordenação" (opcional): nomes, projeto, pacotes de estádio, gabarito e divisão por partida.
+// Vista "Coordenação" (opcional): nomes, projeto, gabarito (itens soltos) e divisão por partida.
 
 import { RE_GABARITO, codigoPessoa } from "../nucleo/convencoes.js";
-import { ErroFormato, conferir, conjuntoDe, validar } from "../nucleo/formatos.js";
-import { validarGeometria } from "../nucleo/pacote.js";
-import { ArquivoExiste } from "../nucleo/pasta.js";
+import { ErroFormato, conferir, conjuntoDe, tipoDoItem, validar } from "../nucleo/formatos.js";
+import { REGRA } from "../nucleo/gabarito.js";
 import { ehPng } from "../nucleo/png.js";
 import { celula, el, linhaVazia, mensagemDeErro } from "./util.js";
 
@@ -90,50 +89,16 @@ export async function montar(raiz, ctx) {
     }
   };
 
-  // ------------------------------------------------------------------ pacotes
-  async function listarPacotes() {
-    const lista = $("pacotes");
-    lista.replaceChildren();
-    const refs = await pasta.listarPacotes();
-    if (!refs.length) lista.append(Object.assign(document.createElement("li"), { className: "sutil", textContent: "Nenhum pacote ainda." }));
-    for (const ref of refs) {
-      const p = await indice.pacote(ref).catch(() => null);
-      const li = document.createElement("li");
-      li.textContent = p ? `${ref} — ${p.nome}: campo ${p.campo.comprimento} × ${p.campo.largura} m, ${p.placas.length} placas, ${p.cameras.length} câmeras` : `${ref} (inválido)`;
-      lista.append(li);
-    }
-  }
-  await listarPacotes();
-  $("arquivo-pacote").onchange = async (e) => {
-    const arquivo = e.target.files[0];
-    e.target.value = "";
-    if (!arquivo) return;
-    $("erro-pacote").textContent = "";
-    try {
-      const p = validar("pacote", await lerJsonDoArquivo(arquivo));
-      const erros = validarGeometria(p);
-      if (erros.length) throw new Error(erros.join("; "));
-      await pasta.gravar("pacote", pasta.pacote(p.estadio, p.versao), p);
-      await listarPacotes();
-    } catch (erro) {
-      $("erro-pacote").textContent = erro instanceof ArquivoExiste
-        ? "este pacote já existe: medida nova vira versão nova"
-        : erro instanceof ErroFormato ? erro.erros.join("; ") : mensagemDeErro(erro);
-    }
-  };
-
   // ------------------------------------------------------------------ gabarito
   async function contarGabarito() {
-    const itens = await indice.itensGabarito("camera");
-    const oclusao = await indice.itensGabarito("oclusao");
-    const partes = [
-      itens.length
-        ? `Câmera: ${itens.length} itens. Quem começa anota até a mediana dos últimos 10 ficar em até 2 px; depois, um escondido a cada 15 rótulos.`
-        : "Câmera: sem gabarito, ninguém passa por treino antes dos dados reais.",
-      oclusao.length
-        ? `Oclusão: ${oclusao.length} itens. Quem começa pinta até a mediana dos últimos 5 ficar em até 5% de cada placa diferente da resposta (com 1 px de tolerância na borda); depois, um escondido a cada 15 pinturas.`
-        : "Oclusão: sem gabarito, ninguém passa por treino antes dos quadros reais.",
-    ];
+    const partes = [];
+    for (const [tarefa, nome] of [["pontos", "Pontos"], ["jogadores", "Jogadores"]]) {
+      const itens = await indice.itensGabarito(tarefa);
+      const r = REGRA[tarefa];
+      partes.push(itens.length
+        ? `${nome}: ${itens.length} itens. Quem começa faz o teste até ${r.meta}; depois, um item escondido a cada 15 imagens.`
+        : `${nome}: sem gabarito, ninguém passa pelo teste antes das imagens reais.`);
+    }
     $("st-gabarito").textContent = partes.join(" ");
   }
   await contarGabarito();
@@ -147,23 +112,23 @@ export async function montar(raiz, ctx) {
     for (const a of arquivos.filter((x) => /^g\d{4}\.json$/.test(x.name))) {
       try {
         const bruto = await lerJsonDoArquivo(a);
-        const tipo = bruto?.formato === "gabarito.oclusao/1" ? "gabarito_oclusao" : "gabarito";
-        const g = validar(tipo, bruto);
+        const doItem = tipoDoItem(bruto);
+        if (!doItem) throw new Error("item de uma versão anterior (câmera ou oclusão): esta versão não usa");
+        const g = validar(doItem.tipo, bruto);
         if (!RE_GABARITO.test(g.id) || `${g.id}.json` !== a.name) throw new Error("o nome do arquivo precisa ser o id do item");
         const img = porNome.get(g.imagem);
         if (!img) throw new Error(`falta a imagem ${g.imagem}`);
         const cabeca = new Uint8Array(await img.slice(0, 3).arrayBuffer());
         if (!(cabeca[0] === 0xff && cabeca[1] === 0xd8 && cabeca[2] === 0xff)) throw new Error(`${g.imagem} precisa ser JPEG`);
-        const mascara = tipo === "gabarito_oclusao" ? porNome.get(g.mascara) : null;
-        if (tipo === "gabarito_oclusao") {
+        const mascara = doItem.tarefa === "jogadores" ? porNome.get(g.mascara) : null;
+        if (doItem.tarefa === "jogadores") {
           if (!mascara) throw new Error(`falta a máscara ${g.mascara}`);
           if (!ehPng(new Uint8Array(await mascara.slice(0, 8).arrayBuffer()))) throw new Error(`${g.mascara} precisa ser PNG`);
         }
-        if (!(await pasta.existe(pasta.pacoteRef(g.pacote)))) throw new Error(`o pacote ${g.pacote} não está na pasta`);
         if (await pasta.existe(pasta.itemGabarito(g.id))) continue;
         await pasta.escrever(pasta.quadro("gabarito", g.id), img, { sobrescrever: true });
         if (mascara) await pasta.escrever(pasta.mascaraGabarito(g.id), mascara, { sobrescrever: true });
-        await pasta.gravar(tipo, pasta.itemGabarito(g.id), { ...g, imagem: `${g.id}.jpg`, ...(mascara ? { mascara: `${g.id}.png` } : {}) });
+        await pasta.gravar(doItem.tipo, pasta.itemGabarito(g.id), { ...g, imagem: `${g.id}.jpg`, ...(mascara ? { mascara: `${g.id}.png` } : {}) });
         novos += 1;
       } catch (erro) {
         problemas.push(`${a.name}: ${erro instanceof ErroFormato ? erro.erros.join("; ") : mensagemDeErro(erro)}`);

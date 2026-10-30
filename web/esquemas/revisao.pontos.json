@@ -25,8 +25,8 @@
       "type": "string"
     },
     "formato": {
-      "const": "revisao.camera/1",
-      "default": "revisao.camera/1",
+      "const": "revisao.pontos/1",
+      "default": "revisao.pontos/1",
       "title": "Formato",
       "type": "string"
     },
@@ -38,10 +38,11 @@
       "anyOf": [
         {
           "enum": [
-            "lado_trocado",
-            "molde_fora_da_tolerancia",
-            "ponto_em_marca_coberta",
-            "deveria_ser_sem_marcacoes",
+            "ponto_fora_do_lugar",
+            "nome_trocado",
+            "faltou_ponto",
+            "ponto_que_nao_se_ve",
+            "descarte_errado",
             "outro"
           ],
           "type": "string"
@@ -109,6 +110,6 @@
     "criado_em",
     "segundos_ativos"
   ],
-  "title": "RevisaoCamera",
+  "title": "RevisaoPontos",
   "type": "object"
 }

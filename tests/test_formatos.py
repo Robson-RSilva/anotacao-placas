@@ -5,112 +5,184 @@ from datetime import UTC, datetime
 import pytest
 from pydantic import ValidationError
 
-from anotacao.camera import Camera
-from anotacao.formatos import DispositivoPessoa, Divisao, GabaritoCamera, Projeto, RevisaoCamera, RotuloCamera
+from anotacao.formatos import (
+    DispositivoPessoa,
+    Divisao,
+    GabaritoJogadores,
+    GabaritoPontos,
+    Manifesto,
+    PrevisaoPontos,
+    Projeto,
+    RevisaoJogadores,
+    RevisaoPontos,
+    RotuloJogadores,
+    RotuloPontos,
+)
 
-CAM = Camera.look_at([0.0, -58.0, 14.0], [5.0, 0.0, 0.0], 35.0, 1280, 720).para_rotulo()
+PARTIDA = "2026-11-02_estadio-sintetico_time-a-time-b"
 
 
-def rotulo(**kw):
+def _base(**kw):
     base = dict(
-        partida="2026-11-02_estadio-sintetico_time-a-time-b",
-        pacote="estadio-sintetico/pacote-1.0",
+        partida=PARTIDA,
         quadro="t0000012340",
         anotador="A01",
         versao=1,
-        ferramenta="0.1.0",
-        manual="camera-0.1",
+        ferramenta="0.8.0",
         criado_em=datetime.now(UTC),
         segundos_ativos=31.0,
-        partiu_de={"fonte": "registro"},
-        camera=CAM,
-        lado="canonico",
-        pontos_travados=[{"ponto": "centro", "x": 640.0, "y": 360.0}],
+        largura=1280,
+        altura=720,
+        partiu_de={"fonte": "nenhuma"},
         situacao="ok",
     )
     base.update(kw)
-    return RotuloCamera(**base)
+    return base
 
 
-def test_rotulo_valido():
-    r = rotulo()
-    assert r.formato == "rotulo.camera/1"
-    assert RotuloCamera.model_validate_json(r.model_dump_json()) == r
+def pontos(**kw):
+    kw.setdefault("pontos", [{"ponto": "centro", "x": 640.0, "y": 360.0}, {"ponto": "meio_cab", "x": 600.5, "y": 700}])
+    return RotuloPontos(**_base(manual="pontos-0.1", **kw))
+
+
+def jogadores(**kw):
+    kw.setdefault("mascara", "t0000012340__A01__v1.png")
+    kw.setdefault("pixels", 1500)
+    return RotuloJogadores(**_base(manual="jogadores-0.1", **kw))
+
+
+def test_rotulos_validos():
+    r = pontos()
+    assert r.formato == "rotulo.pontos/1"
+    assert RotuloPontos.model_validate_json(r.model_dump_json()) == r
+    assert next(iter(r.model_dump())) == "formato"  # o formato vem primeiro no arquivo
+    assert pontos(pontos=[]).pontos == []  # nenhum ponto à vista: vale (a imagem entra sem pontos)
+    d = pontos(pontos=[], situacao="descartada", motivo_descarte="transicao")
+    assert d.motivo_descarte == "transicao"
+    j = jogadores()
+    assert j.formato == "rotulo.jogadores/1" and j.pixels == 1500
+    assert jogadores(pixels=0).pixels == 0  # nenhum jogador: a máscara toda 0
+    assert jogadores(mascara=None, pixels=0, situacao="descartada", motivo_descarte="borrao").mascara is None
 
 
 @pytest.mark.parametrize(
     "mudanca, trecho",
     [
-        (dict(camera=None, lado=None), "exige a câmera"),
-        (dict(situacao="sem_marcacoes"), "não leva câmera"),
-        (dict(situacao="duvida", comentario=""), "exige comentário"),
-        (dict(lado="espelhado"), "lado deveria ser"),
-        (dict(pontos_travados=[{"ponto": "nao_existe", "x": 1, "y": 2}]), "ponto-chave desconhecido"),
+        (dict(pontos=[{"ponto": "nao_existe", "x": 1, "y": 2}]), "ponto desconhecido"),
+        (dict(pontos=[{"ponto": "circ_esq", "x": 1, "y": 2}]), "ponto desconhecido"),  # não se marca
+        (dict(pontos=[{"ponto": "centro", "x": 1, "y": 2}, {"ponto": "centro", "x": 3, "y": 4}]), "duas vezes"),
+        (dict(pontos=[{"ponto": "centro", "x": 1290, "y": 2}]), "fora da imagem"),
+        (dict(pontos=[{"ponto": "centro", "x": -0.5, "y": 2}]), "fora da imagem"),
+        (dict(situacao="descartada"), "motivo do descarte"),
+        (dict(motivo_descarte="borrao"), "motivo do descarte"),
+        (dict(situacao="descartada", motivo_descarte="borrao"), "não leva pontos"),
+        (dict(pontos=[], situacao="descartada", motivo_descarte="outro"), "exige comentário"),
         (dict(quadro="t12"), "quadro inválido"),
         (dict(partida="../fora"), "partida inválida"),
         (dict(anotador="ana"), "pattern"),
     ],
 )
-def test_rotulo_incoerente(mudanca, trecho):
+def test_rotulo_de_pontos_incoerente(mudanca, trecho):
     with pytest.raises(ValidationError, match=trecho):
-        rotulo(**mudanca)
+        pontos(**mudanca)
 
 
-def test_medidas_do_campo_no_rotulo():
-    assert rotulo().campo is None  # rótulo da 0.2: valem as do pacote
-    r = rotulo(campo={"comprimento": 100.5, "largura": 64})
-    assert (r.campo.comprimento, r.campo.largura) == (100.5, 64.0)
-    with pytest.raises(ValidationError, match="greater than 40"):
-        rotulo(campo={"comprimento": 100, "largura": 30})
-
-
-def test_medidas_verdadeiras_no_item_do_gabarito():
-    def item(**kw):
-        base = dict(
-            id="g0001",
-            pacote="generico/pacote-1.0",
-            imagem="g0001.jpg",
-            largura=1280,
-            altura=720,
-            camera=CAM,
-            origem="simulador",
-        )
-        base.update(kw)
-        return GabaritoCamera(**base)
-
-    assert item().campo is None  # valem as do pacote
-    assert item(campo={"comprimento": 100, "largura": 64}).campo.comprimento == 100
-    for campo in ({"comprimento": 125, "largura": 70}, {"comprimento": 95, "largura": 95}):
-        with pytest.raises(ValidationError, match="fora do que a página aceita"):
-            item(campo=campo)
-
-
-def test_sem_marcacoes_sem_camera():
-    r = rotulo(situacao="sem_marcacoes", camera=None, lado=None, pontos_travados=[])
-    assert r.camera is None
+@pytest.mark.parametrize(
+    "mudanca, trecho",
+    [
+        (dict(mascara=None, pixels=0), "a máscara vem sempre"),
+        (dict(situacao="descartada", motivo_descarte="borrao"), "a máscara vem sempre"),
+        (dict(mascara=None, pixels=3, situacao="descartada", motivo_descarte="borrao"), "pixels pintados só"),
+        (dict(mascara="outra.png"), "nome da máscara"),
+        (dict(pixels=1280 * 720 + 1), "mais pixels"),
+    ],
+)
+def test_rotulo_dos_jogadores_incoerente(mudanca, trecho):
+    with pytest.raises(ValidationError, match=trecho):
+        jogadores(**mudanca)
 
 
 def test_revisao_regras():
     base = dict(
-        partida="2026-11-02_estadio-sintetico_time-a-time-b",
+        partida=PARTIDA,
         quadro="t0000012340",
         rotulo="t0000012340__A01__v1.json",
         revisor="A02",
         versao=1,
-        ferramenta="0.1.0",
-        manual="revisao-0.1",
+        ferramenta="0.8.0",
+        manual="revisao-0.2",
         criado_em=datetime.now(UTC),
         segundos_ativos=5,
     )
-    RevisaoCamera(decisao="aprovar", **base)
-    RevisaoCamera(decisao="devolver", motivo="lado_trocado", **base)
+    for modelo, motivo, alheio in (
+        (RevisaoPontos, "nome_trocado", "faltou_jogador"),
+        (RevisaoJogadores, "faltou_jogador", "nome_trocado"),
+    ):
+        assert modelo(decisao="aprovar", **base).formato.startswith("revisao.")
+        modelo(decisao="devolver", motivo=motivo, **base)
+        modelo(decisao="devolver", motivo="descarte_errado", **base)
+        with pytest.raises(ValidationError):
+            modelo(decisao="devolver", motivo=alheio, **base)  # motivo da outra tarefa
+        with pytest.raises(ValidationError):
+            modelo(decisao="devolver", **base)
+        with pytest.raises(ValidationError):
+            modelo(decisao="corrigir", **base)
+        with pytest.raises(ValidationError):
+            modelo(decisao="devolver", motivo="outro", **base)
+        modelo(decisao="corrigir", nova_versao="t0000012340__A02__v1.json", **base)
+
+
+def test_itens_do_gabarito():
+    g = GabaritoPontos(
+        id="g1001",
+        lote="P1-treino",
+        imagem="g1001.jpg",
+        largura=1280,
+        altura=720,
+        pontos=[
+            {"ponto": "centro", "x": 640, "y": 360, "visivel": True},
+            {"ponto": "meio_cab", "x": 3, "y": 4, "visivel": False},
+        ],
+        origem="simulador",
+    )
+    assert g.pontos[1].visivel is False
+    with pytest.raises(ValidationError, match="duas vezes"):
+        GabaritoPontos(**{**g.model_dump(), "pontos": [g.pontos[0].model_dump()] * 2})
+    with pytest.raises(ValidationError, match="fora da imagem"):
+        GabaritoPontos(**{**g.model_dump(), "pontos": [{"ponto": "centro", "x": 2000, "y": 1, "visivel": True}]})
+    j = GabaritoJogadores(
+        id="g2001", imagem="g2001.jpg", mascara="g2001.png", largura=1280, altura=720, jogadores=12, origem="simulador"
+    )
+    assert j.lote == ""
+    assert j.outras_pessoas == 0
+    with pytest.raises(ValidationError, match="não cabem"):
+        GabaritoJogadores(**{**j.model_dump(), "jogadores": 250, "outras_pessoas": 6})
     with pytest.raises(ValidationError):
-        RevisaoCamera(decisao="devolver", **base)
+        GabaritoPontos(**{**g.model_dump(), "id": "g12"})
+
+
+def test_previsao_de_pontos():
+    p = PrevisaoPontos(
+        partida=PARTIDA, quadro="t0000000040", fonte="det", versao="1", pontos=[{"ponto": "centro", "x": 1, "y": 2}]
+    )
+    assert p.formato == "previsao.pontos/1"
+    with pytest.raises(ValidationError, match="duas vezes"):
+        PrevisaoPontos(**{**p.model_dump(), "pontos": [p.pontos[0].model_dump()] * 2})
+
+
+def test_manifesto_da_0_7_ainda_vale():
+    """As partidas importadas até a 0.7 têm o pacote do estádio no manifesto: continuam valendo."""
+    cadastro = {"estadio": "estadio-sintetico", "emissora": "X", "competicao": "Y", "mandante": "A", "visitante": "B"}
+    cadastro |= {"data_hora": "2026-11-02T16:00:00-03:00", "iluminacao": "dia", "chuva": False}
+    video = {"nome_original": "a.mp4", "sha256": "0" * 64, "bytes": 1, "duracao_s": 1, "fps": 25, "largura": 640}
+    video |= {"altura": 360, "n_quadros": 25}
+    pre = {"ferramenta": "0.7.0", "criado_em": "2026-11-02T16:00:00Z", "segundos": 1, "parametros": {}}
+    base = {"partida": PARTIDA, "cadastro": cadastro, "video": video, "pre_processamento": pre}
+    assert Manifesto(**base).pacote is None
+    antigo = Manifesto(**base, pacote="generico/pacote-1.0")
+    assert antigo.pacote == "generico/pacote-1.0"
     with pytest.raises(ValidationError):
-        RevisaoCamera(decisao="corrigir", **base)
-    with pytest.raises(ValidationError):
-        RevisaoCamera(decisao="devolver", motivo="outro", **base)
-    RevisaoCamera(decisao="corrigir", nova_versao="t0000012340__A02__v1.json", **base)
+        Manifesto(**base, pacote="../x")
 
 
 def test_registro_do_codigo_num_computador():
@@ -122,7 +194,7 @@ def test_registro_do_codigo_num_computador():
 
 
 def test_divisao_sem_sobreposicao():
-    p = "2026-11-02_estadio-sintetico_time-a-time-b"
+    p = PARTIDA
     assert Divisao(teste_congelado=[p]).conjunto(p) == "teste_congelado"
     assert Divisao().conjunto(p) == "treino"
     with pytest.raises(ValidationError):

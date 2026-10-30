@@ -1,9 +1,9 @@
 // Vista "Importar partida": cadastro e vídeo; o processamento roda num worker, que continua mesmo
 // quando a pessoa volta para a página central.
 
-import { REF_PACOTE_GENERICO, isoComFuso, partesPacote, slug } from "../nucleo/convencoes.js";
+import { isoComFuso, slug } from "../nucleo/convencoes.js";
 import { ErroTrechos, lerTrechos } from "../nucleo/trechos.js";
-import { el, mensagemDeErro, numero } from "./util.js";
+import { el, lerInteiro, mensagemDeErro, numero } from "./util.js";
 
 function iniciarImportacao(ctx, mensagem) {
   const worker = new Worker(new URL("../video/trabalhador.js", import.meta.url), { type: "module" });
@@ -53,16 +53,6 @@ function falta(job) {
 export async function montar(raiz, ctx) {
   const $ = (id) => el(id, raiz);
   const form = $("form-importar");
-  // o molde: o campo genérico, ou o pacote de um estádio levantado (quando a pasta tem algum)
-  const outros = (await ctx.pasta.listarPacotes()).filter((r) => r !== REF_PACOTE_GENERICO);
-  form.querySelector("select[name=pacote]").replaceChildren(
-    new Option("Campo genérico", REF_PACOTE_GENERICO),
-    ...outros.map((r) => {
-      const [estadio, versao] = partesPacote(r);
-      return new Option(`${estadio} (v${versao})`, r);
-    }),
-  );
-  $("rotulo-pacote").hidden = !outros.length;
   let ouvinte = null;
 
   const suportado = typeof VideoDecoder !== "undefined" && typeof OffscreenCanvas !== "undefined" && typeof Worker !== "undefined";
@@ -117,6 +107,14 @@ export async function montar(raiz, ctx) {
       $("erro-importar").textContent = "Escreva o nome do estádio (ele entra no nome da partida).";
       return;
     }
+    // um campo de texto, e não "number": no Chrome, o clique perto das setinhas e a roda do mouse
+    // mudam o número de um campo "number" sem a pessoa perceber
+    const alvo = lerInteiro(f.get("alvo"), 1, 5000);
+    if (alvo === null) {
+      $("erro-importar").textContent = "Quadros a sortear: um número inteiro de 1 a 5000.";
+      form.elements.alvo.focus();
+      return;
+    }
     let trechos = null;
     try {
       trechos = lerTrechos(f.get("trechos"));
@@ -137,8 +135,7 @@ export async function montar(raiz, ctx) {
       observacoes: String(f.get("observacoes") || "").trim(),
     };
     $("res-importar").textContent = "";
-    const pacote = String(f.get("pacote") || REF_PACOTE_GENERICO);
-    acompanhar(iniciarImportacao(ctx, { arquivo, cadastro, pacote, trechos, alvo: Number(f.get("alvo") || 100) }));
+    acompanhar(iniciarImportacao(ctx, { arquivo, cadastro, trechos, alvo }));
   };
   $("cancelar").onclick = () => ctx.importacao?.worker?.postMessage({ tipo: "cancelar" });
 

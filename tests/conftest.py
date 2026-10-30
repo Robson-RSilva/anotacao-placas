@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import os
 import sys
 from datetime import UTC, datetime, timedelta
@@ -12,12 +11,8 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from anotacao import oclusao
-from anotacao.camera import Camera
-from anotacao.campo import Campo
 from anotacao.formatos import (
     Cadastro,
-    CameraRotulo,
     Divisao,
     Equipe,
     Fila,
@@ -25,21 +20,22 @@ from anotacao.formatos import (
     Manifesto,
     Membro,
     PreProcessamento,
-    RevisaoCamera,
-    RevisaoOclusao,
-    RotuloCamera,
-    RotuloOclusao,
+    RevisaoJogadores,
+    RevisaoPontos,
+    RotuloJogadores,
+    RotuloPontos,
     Tomada,
     Tomadas,
     VideoInfo,
 )
 from anotacao.mascara import gravar_png
-from anotacao.pacote import pacote_sintetico
 from anotacao.pasta import Pasta, escrever_bytes, escrever_json, mascara_de, nome_arquivo
+from anotacao.previsores import PALETA_JOGADORES
 
-from sintetico import renderizar
+from sintetico import PLANOS, Camera, renderizar
 
 FIXTURES = Path(__file__).parent / "fixtures"
+W, H = 640, 360
 
 
 def _escapar(texto: str, propriedade: bool = False) -> str:
@@ -63,19 +59,15 @@ PARTIDA = "2026-11-02_estadio-sintetico_time-a-time-b"
 
 @pytest.fixture(scope="session")
 def laboratorio() -> dict:
-    return json.loads((FIXTURES / "camera_laboratorio.json").read_text(encoding="utf-8"))
+    import json
+
+    return json.loads((FIXTURES / "campo_laboratorio.json").read_text(encoding="utf-8"))
 
 
 @pytest.fixture
-def pacote():
-    return pacote_sintetico()
-
-
-@pytest.fixture
-def pasta(tmp_path, pacote) -> Pasta:
+def pasta(tmp_path) -> Pasta:
     p = Pasta(tmp_path / "trabalho")
     p.criar()
-    escrever_json(p.pacote_path(pacote.estadio, pacote.versao), pacote)
     escrever_json(
         p.equipe_path,
         Equipe(
@@ -90,24 +82,24 @@ def pasta(tmp_path, pacote) -> Pasta:
     return p
 
 
-def camera_exemplo(alvo=(-8.0, 0.0, 0.0), hfov=38.0, w=640, h=360) -> Camera:
-    return Camera.look_at(np.asarray(pacote_sintetico().cameras[0].T, float), alvo, hfov, w, h)
+def camera_exemplo(k: int = 0) -> Camera:
+    C, alvo, hfov = PLANOS[0]
+    return Camera.look_at(C, np.asarray(alvo, float) + np.array([k, 0.0, 0.0]), hfov, W, H)
 
 
 def criar_partida(pasta: Pasta, itens: list[dict], partida: str = PARTIDA, imagens: bool = True) -> Fila:
     """Uma partida como a página grava ao importar: manifesto, tomadas, fila e os quadros em JPEG."""
-    pac = pasta.ler_pacote_ref("estadio-sintetico/pacote-1.0")
     fila = Fila(
         partida=partida,
         criado_em=AGORA,
-        equipe=["A01", "A02"],
+        equipe=[],
         itens=[
             ItemFila(
                 quadro=it.get("quadro", f"t{1000 * (k + 1):010d}"),
                 tomada=it.get("tomada", 0),
                 i=it.get("i", k),
                 pts_ms=it.get("pts_ms", 1000 * (k + 1)),
-                atribuido_a=it.get("atribuido_a", ["A01"]),
+                atribuido_a=it.get("atribuido_a", []),
                 dupla=it.get("dupla", False),
                 sem_previsao=it.get("sem_previsao", False),
             )
@@ -125,20 +117,16 @@ def criar_partida(pasta: Pasta, itens: list[dict], partida: str = PARTIDA, image
     )
     escrever_json(pasta.fila(partida), fila)
     if imagens:
-        campo = Campo()
         pasta.quadros(partida).mkdir(parents=True, exist_ok=True)
         for k, it in enumerate(fila.itens):
-            cv2.imwrite(
-                str(pasta.quadro(partida, it.quadro)), renderizar(camera_exemplo((-8.0 + k, 0.0, 0.0)), campo, pac, k)
-            )
+            img, _ = renderizar(camera_exemplo(k), k)
+            cv2.imwrite(str(pasta.quadro(partida, it.quadro)), img)
     escrever_json(
         pasta.manifesto(partida),
         Manifesto(
             partida=partida,
-            pacote="estadio-sintetico/pacote-1.0",
             cadastro=Cadastro(
                 estadio="estadio-sintetico",
-                pacote_versao="1.0",
                 emissora="Emissora X",
                 competicao="Estadual",
                 data_hora=datetime.fromisoformat("2026-11-02T16:00:00-03:00"),
@@ -153,134 +141,86 @@ def criar_partida(pasta: Pasta, itens: list[dict], partida: str = PARTIDA, image
                 bytes=1000,
                 duracao_s=4,
                 fps=25,
-                largura=640,
-                altura=360,
+                largura=W,
+                altura=H,
                 n_quadros=100,
             ),
-            pre_processamento=PreProcessamento(ferramenta="0.2.0", criado_em=AGORA, segundos=1, parametros={}),
+            pre_processamento=PreProcessamento(ferramenta="0.8.0", criado_em=AGORA, segundos=1, parametros={}),
         ),
     )
     return fila
 
 
-def gravar_rotulo(
-    pasta: Pasta, quadro: str, pessoa: str, cam: Camera | None, versao=1, minutos=0, partida=PARTIDA, **kw
+def _comum(partida, quadro, pessoa, versao, minutos, manual):
+    return {
+        "partida": partida,
+        "quadro": quadro,
+        "anotador": pessoa,
+        "versao": versao,
+        "ferramenta": "0.8.0",
+        "manual": manual,
+        "criado_em": AGORA + timedelta(minutes=minutos),
+        "segundos_ativos": 20,
+        "largura": W,
+        "altura": H,
+        "partiu_de": {"fonte": "nenhuma"},
+    }
+
+
+def gravar_pontos(
+    pasta: Pasta, quadro: str, pessoa: str, pontos: dict | None, versao=1, minutos=0, partida=PARTIDA, **kw
 ) -> str:
-    kw.setdefault("pacote", "estadio-sintetico/pacote-1.0")
-    r = RotuloCamera(
-        partida=partida,
-        quadro=quadro,
-        anotador=pessoa,
-        versao=versao,
-        ferramenta="0.2.0",
-        manual="camera-0.1",
-        criado_em=AGORA + timedelta(minutes=minutos),
-        segundos_ativos=20,
-        partiu_de={"fonte": "registro"},
-        camera=None if cam is None else CameraRotulo(**cam.para_rotulo()),
-        lado=None if cam is None else ("canonico" if cam.C[1] < 0 else "espelhado"),
-        situacao="ok" if cam is not None else "sem_marcacoes",
+    """Um rótulo de pontos ({nome: (x, y)}); None é a imagem descartada (por transição)."""
+    r = RotuloPontos(
+        **_comum(partida, quadro, pessoa, versao, minutos, "pontos-0.1"),
+        pontos=[{"ponto": n, "x": x, "y": y} for n, (x, y) in (pontos or {}).items()],
+        situacao="ok" if pontos is not None else "descartada",
+        motivo_descarte=None if pontos is not None else "transicao",
         **kw,
     )
     nome = nome_arquivo(quadro, pessoa, versao)
-    escrever_json(pasta.rotulos(partida, "camera") / nome, r)
+    escrever_json(pasta.rotulos(partida, "pontos") / nome, r)
+    return nome
+
+
+def gravar_jogadores(
+    pasta: Pasta, quadro: str, pessoa: str, mascara: np.ndarray | None, versao=1, minutos=0, partida=PARTIDA, **kw
+) -> str:
+    """Um rótulo dos jogadores como a página grava: a máscara (0/1) e o rótulo; None é a imagem descartada."""
+    nome = nome_arquivo(quadro, pessoa, versao)
+    if mascara is not None:
+        escrever_bytes(pasta.rotulos(partida, "jogadores") / mascara_de(nome), gravar_png(mascara, PALETA_JOGADORES))
+    r = RotuloJogadores(
+        **_comum(partida, quadro, pessoa, versao, minutos, "jogadores-0.1"),
+        mascara=None if mascara is None else mascara_de(nome),
+        pixels=0 if mascara is None else int(np.count_nonzero(mascara)),
+        situacao="ok" if mascara is not None else "descartada",
+        motivo_descarte=None if mascara is not None else "borrao",
+        **kw,
+    )
+    escrever_json(pasta.rotulos(partida, "jogadores") / nome, r)
     return nome
 
 
 def gravar_revisao(
-    pasta: Pasta, quadro: str, rotulo: str, revisor: str, decisao="aprovar", minutos=0, versao=1, **kw
+    pasta: Pasta, tarefa: str, quadro: str, rotulo: str, revisor: str, decisao="aprovar", minutos=0, versao=1, **kw
 ) -> None:
+    modelo = RevisaoPontos if tarefa == "pontos" else RevisaoJogadores
+    motivo = ("ponto_fora_do_lugar" if tarefa == "pontos" else "faltou_jogador") if decisao == "devolver" else None
     escrever_json(
-        pasta.revisoes(PARTIDA, "camera") / nome_arquivo(quadro, revisor, versao),
-        RevisaoCamera(
+        pasta.revisoes(PARTIDA, tarefa) / nome_arquivo(quadro, revisor, versao),
+        modelo(
             partida=PARTIDA,
             quadro=quadro,
             rotulo=rotulo,
             revisor=revisor,
             versao=versao,
             decisao=decisao,
-            motivo="lado_trocado" if decisao == "devolver" else None,
-            ferramenta="0.2.0",
-            manual="revisao-0.1",
+            motivo=kw.pop("motivo", motivo),
+            ferramenta="0.8.0",
+            manual="revisao-0.2",
             criado_em=AGORA + timedelta(minutes=minutos),
             segundos_ativos=4,
-            **kw,
-        ),
-    )
-
-
-def placas_do_pacote() -> list[dict]:
-    return [p.model_dump() for p in pacote_sintetico().placas]
-
-
-def gravar_pintura(
-    pasta: Pasta,
-    quadro: str,
-    pessoa: str,
-    cam: Camera,
-    pintura: np.ndarray | None = None,
-    *,
-    versao: int = 1,
-    minutos: int = 0,
-    situacao: str = "ok",
-    camera_de: str | None = None,
-    partida: str = PARTIDA,
-    **kw,
-) -> str:
-    """Uma pintura da oclusão como a página grava: a máscara (só dentro das placas) e o rótulo, com o que
-    ela diz de cada placa. As placas são as do pacote sintético."""
-    w, h = cam.w, cam.h
-    nome = nome_arquivo(quadro, pessoa, versao)
-    placas, mascara = [], None
-    if situacao in ("ok", "duvida") and pintura is not None:
-        geo = oclusao.geometria(cam, placas_do_pacote(), w, h)
-        m = oclusao.mascara_efetiva(pintura, geo.roi)
-        placas = oclusao.estatisticas(m, geo)
-        mascara = mascara_de(nome)
-        escrever_bytes(pasta.rotulos(partida, "oclusao") / mascara, gravar_png(m, oclusao.PALETA))
-    r = RotuloOclusao(
-        partida=partida,
-        pacote="estadio-sintetico/pacote-1.0",
-        quadro=quadro,
-        anotador=pessoa,
-        versao=versao,
-        ferramenta="0.7.0",
-        manual="oclusao-0.1",
-        criado_em=AGORA + timedelta(minutes=minutos),
-        segundos_ativos=60,
-        largura=w,
-        altura=h,
-        camera_de=camera_de,
-        camera=CameraRotulo(**cam.para_rotulo()),
-        placas_de="pacote",
-        partiu_de={"fonte": "nenhuma"},
-        mascara=mascara,
-        placas=placas,
-        situacao=situacao,
-        comentario=kw.pop("comentario", "dúvida" if situacao == "duvida" else ""),
-        **kw,
-    )
-    escrever_json(pasta.rotulos(partida, "oclusao") / nome, r)
-    return nome
-
-
-def gravar_revisao_oclusao(
-    pasta: Pasta, quadro: str, rotulo: str, revisor: str, decisao="aprovar", minutos=0, versao=1, **kw
-) -> None:
-    escrever_json(
-        pasta.revisoes(PARTIDA, "oclusao") / nome_arquivo(quadro, revisor, versao),
-        RevisaoOclusao(
-            partida=PARTIDA,
-            quadro=quadro,
-            rotulo=rotulo,
-            revisor=revisor,
-            versao=versao,
-            decisao=decisao,
-            motivo="pintura_fora_da_tolerancia" if decisao == "devolver" else None,
-            ferramenta="0.7.0",
-            manual="revisao-0.1",
-            criado_em=AGORA + timedelta(minutes=minutos),
-            segundos_ativos=5,
             **kw,
         ),
     )

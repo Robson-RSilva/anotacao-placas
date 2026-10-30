@@ -1,0 +1,74 @@
+{
+  "$defs": {
+    "Ponto": {
+      "additionalProperties": false,
+      "properties": {
+        "ponto": {
+          "description": "nome do ponto do campo (os 39 que se marcam)",
+          "title": "Ponto",
+          "type": "string"
+        },
+        "x": {
+          "description": "px da imagem, a partir do canto de cima à esquerda",
+          "title": "X",
+          "type": "number"
+        },
+        "y": {
+          "title": "Y",
+          "type": "number"
+        }
+      },
+      "required": [
+        "ponto",
+        "x",
+        "y"
+      ],
+      "title": "Ponto",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Os pontos de um modelo para um quadro: a página começa com eles (quem anota corrige).",
+  "properties": {
+    "fonte": {
+      "title": "Fonte",
+      "type": "string"
+    },
+    "formato": {
+      "const": "previsao.pontos/1",
+      "default": "previsao.pontos/1",
+      "title": "Formato",
+      "type": "string"
+    },
+    "partida": {
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}_[a-z0-9]+(?:-[a-z0-9]+)*_[a-z0-9]+(?:-[a-z0-9]+)*$",
+      "title": "Partida",
+      "type": "string"
+    },
+    "pontos": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/Ponto"
+      },
+      "title": "Pontos",
+      "type": "array"
+    },
+    "quadro": {
+      "pattern": "^t\\d{10}$",
+      "title": "Quadro",
+      "type": "string"
+    },
+    "versao": {
+      "title": "Versao",
+      "type": "string"
+    }
+  },
+  "required": [
+    "partida",
+    "quadro",
+    "fonte",
+    "versao"
+  ],
+  "title": "PrevisaoPontos",
+  "type": "object"
+}

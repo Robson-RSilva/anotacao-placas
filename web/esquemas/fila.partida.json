@@ -13,7 +13,7 @@
         },
         "dupla": {
           "default": false,
-          "description": "rótulo cego: duas pessoas anotam do zero",
+          "description": "às cegas: duas pessoas anotam do zero, sem ver o rótulo da outra",
           "title": "Dupla",
           "type": "boolean"
         },

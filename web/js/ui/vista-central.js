@@ -1,26 +1,15 @@
 // Vista central: quem está anotando, filas, partidas, placar e a pasta de trabalho.
 
 import { codigoPessoa } from "../nucleo/convencoes.js";
-import { pendentesRevisaoOclusao, situacaoOclusao } from "../nucleo/filas-oclusao.js";
-import { pendentesRevisao, situacaoAnotador } from "../nucleo/filas.js";
+import { pendentesRevisao, situacao } from "../nucleo/filas.js";
+import { REGRA } from "../nucleo/gabarito.js";
 import { calcularPlacar } from "../nucleo/placar.js";
 import { exportarZip, importarZip, soDaPessoa } from "../nucleo/transferencia.js";
 import { espaco } from "./armazenamento.js";
-import { diferenca } from "./painel-oclusao.js";
 import { baixar, carimbo, celula, el, formatarTempo, linhaVazia, local, mensagemDeErro, numero } from "./util.js";
 import { vigiar } from "./vigia.js";
 
 const porcento = (a, b) => (b ? `${a} (${Math.round((100 * a) / b)}%)` : String(a));
-
-async function criarExemplo(pasta) {
-  await pasta.criar();
-  const ler = async (nome) => (await fetch(new URL(`../../exemplo/${nome}`, import.meta.url))).json();
-  const pacote = await ler("pacote.json");
-  const caminho = pasta.pacote(pacote.estadio, pacote.versao);
-  if (!(await pasta.existe(caminho))) await pasta.gravar("pacote", caminho, pacote);
-  const equipe = await pasta.lerEquipe();
-  if (!equipe.membros.length) await pasta.gravar("equipe", "equipe.json", await ler("equipe.json"), { sobrescrever: true });
-}
 
 export async function montar(raiz, ctx) {
   const { pasta, indice } = ctx;
@@ -39,14 +28,10 @@ export async function montar(raiz, ctx) {
     $("conteudo-central").hidden = true;
     $("pessoa").disabled = true;
     $("nome-vazia").textContent = ctx.modo === "navegador"
-      ? "O armazenamento deste navegador está vazio. Crie a pasta, comece pelo exemplo, ou traga a cópia da pasta (.zip) que outra pessoa mandou."
+      ? "O armazenamento deste navegador está vazio. Crie a pasta, ou traga a cópia da pasta (.zip) que outra pessoa mandou."
       : `A pasta «${pasta.nome}» ainda não tem os arquivos da anotação. Se for a pasta da equipe no Drive, espere ele terminar de sincronizar (a página percebe sozinha); se for uma pasta nova, crie a pasta de trabalho.`;
     $("criar-vazia").onclick = async () => {
       await pasta.criar();
-      ctx.ir("#/");
-    };
-    $("criar-exemplo").onclick = async () => {
-      await criarExemplo(pasta);
       ctx.ir("#/");
     };
     $("trocar-vazia").onclick = () => ctx.trocarPasta();
@@ -112,7 +97,7 @@ export async function montar(raiz, ctx) {
     setTimeout(recarregar, 0);
   };
   if (!pessoa) $("dica-pessoa").textContent = "digite o seu código para começar";
-  for (const id of ["ir-camera", "ir-revisao", "ir-oclusao", "ir-revisao-oclusao"]) {
+  for (const id of ["ir-pontos", "ir-jogadores", "ir-revisao-pontos", "ir-revisao-jogadores"]) {
     $(id).classList.toggle("desligado", !pessoa);
     $(id).addEventListener("click", (e) => {
       if (e.currentTarget.classList.contains("desligado")) e.preventDefault();
@@ -157,49 +142,45 @@ export async function montar(raiz, ctx) {
   };
 
   // ------------------------------------------------------------------ situação de cada tarefa
+  function textoDaTarefa(tarefa, s) {
+    const regra = REGRA[tarefa];
+    if (!s.gabarito_total) return "Pode anotar (ainda não há gabarito desta tarefa na pasta).";
+    if (s.liberado) return `Liberado: ${s.acertos} certos nos últimos ${Math.min(regra.n, s.ultimos)} itens do gabarito.`;
+    if (!s.n) return `Primeiro, o teste do gabarito: imagens com resposta, até ${regra.meta}.`;
+    return `Primeiro, o teste do gabarito: ${s.acertos} certo(s) em ${s.ultimos} feito(s) (a meta é ${regra.meta}).`;
+  }
+
   async function atualizarSituacao() {
     if (!pessoa) {
-      $("st-camera").textContent = "Digite o seu código no alto da página.";
-      $("st-revisao").textContent = "—";
-      $("st-oclusao").textContent = "—";
-      $("st-revisao-oclusao").textContent = "";
+      for (const id of ["st-pontos", "st-jogadores", "st-revisao", "st-gabarito"]) $(id).textContent = "Digite o seu código no alto da página.";
       return;
     }
-    const [sit, pend, sitOc, pendOc] = await Promise.allSettled([
-      situacaoAnotador(indice, pessoa),
-      pendentesRevisao(indice, pessoa),
-      situacaoOclusao(indice, pessoa),
-      pendentesRevisaoOclusao(indice, pessoa),
+    const [sp, sj, rp, rj] = await Promise.allSettled([
+      situacao(indice, "pontos", pessoa),
+      situacao(indice, "jogadores", pessoa),
+      pendentesRevisao(indice, "pontos", pessoa),
+      pendentesRevisao(indice, "jogadores", pessoa),
     ]);
     if (!vivo) return;
-    if (sitOc.status === "fulfilled") {
-      const s = sitOc.value;
-      $("st-oclusao").textContent = s.liberado
-        ? s.gabarito_total ? `Liberado (gabarito: ${diferenca(s.mediana)} de diferença por placa, na mediana).` : "Pode pintar os quadros com a câmera aprovada."
-        : `Em treino: ${s.motivo}.`;
-    } else {
-      $("st-oclusao").textContent = mensagemDeErro(sitOc.reason);
+    for (const [tarefa, r] of [["pontos", sp], ["jogadores", sj]]) {
+      $(`st-${tarefa}`).textContent = r.status === "fulfilled" ? textoDaTarefa(tarefa, r.value) : mensagemDeErro(r.reason);
+      const emTeste = r.status === "fulfilled" && !r.value.liberado;
+      $(`ir-${tarefa}`).textContent = emTeste ? "Fazer o teste" : tarefa === "pontos" ? "Marcar pontos" : "Pintar jogadores";
     }
-    if (pendOc.status === "fulfilled") {
-      const n = pendOc.value.length;
-      $("st-revisao-oclusao").textContent = n ? `${n} pintura(s) de outras pessoas esperando revisão.` : "Nenhuma pintura esperando revisão.";
+    if (rp.status === "fulfilled" && rj.status === "fulfilled") {
+      const [np, nj] = [rp.value.length, rj.value.length];
+      $("st-revisao").textContent = np || nj ? `Esperando revisão: ${np} de pontos e ${nj} de jogadores.` : "Nada esperando revisão.";
     } else {
-      $("st-revisao-oclusao").textContent = mensagemDeErro(pendOc.reason);
+      $("st-revisao").textContent = mensagemDeErro(rp.reason ?? rj.reason);
     }
-    if (sit.status === "fulfilled") {
-      const s = sit.value;
-      $("st-camera").textContent = s.liberado
-        ? s.gabarito_total ? `Liberado (gabarito: ${numero(s.mediana_px, 1)} px).` : "Pode anotar."
-        : `Em treino: ${s.motivo}.`;
-    } else {
-      $("st-camera").textContent = mensagemDeErro(sit.reason);
+    const partes = [];
+    for (const [tarefa, r] of [["pontos", sp], ["jogadores", sj]]) {
+      if (r.status !== "fulfilled") continue;
+      const s = r.value;
+      if (!s.gabarito_total) partes.push(`${tarefa}: sem gabarito`);
+      else partes.push(`${tarefa}: ${s.liberado ? "liberado" : s.n ? `em teste (${s.acertos} certo(s) em ${s.ultimos})` : "teste a fazer"}`);
     }
-    if (pend.status === "fulfilled") {
-      const n = pend.value.length;
-      $("st-revisao").textContent = n ? `${n} rótulo(s) de outras pessoas esperando revisão.` : "Nada esperando revisão.";
-    } else {
-      $("st-revisao").textContent = mensagemDeErro(pend.reason);
-    }
+    $("st-gabarito").textContent = partes.length ? `${partes.join(" · ")}.` : "—";
   }
 
   // ------------------------------------------------------------------ importação em curso
@@ -222,26 +203,24 @@ export async function montar(raiz, ctx) {
   // ------------------------------------------------------------------ partidas e placar
   const tPartidas = $("partidas").querySelector("tbody");
   const tPlacar = $("placar").querySelector("tbody");
-  linhaVazia(tPartidas, 8, "calculando…");
+  linhaVazia(tPartidas, 7, "calculando…");
   linhaVazia(tPlacar, 9, "calculando…");
   let ultimoPlacar = null;
-  let tarefaPlacar = local.ler("placar", "camera") === "oclusao" ? "oclusao" : "camera";
+  let tarefaPlacar = local.ler("placar", "pontos") === "jogadores" ? "jogadores" : "pontos";
 
   function mostrarPlacar() {
     const pl = ultimoPlacar;
     for (const b of raiz.querySelectorAll("[data-placar]")) b.setAttribute("aria-pressed", String(b.dataset.placar === tarefaPlacar));
     if (!pl) return;
-    const oc = tarefaPlacar === "oclusao";
-    const dados = oc ? pl.oclusao : pl;
-    $("th-concordancia").textContent = oc ? "Concordância (cegos, % da placa)" : "Concordância (cegos)";
+    const pontos = tarefaPlacar === "pontos";
+    const dados = pl[tarefaPlacar];
+    $("th-concordancia").textContent = pontos ? "Concordância (cegos, px)" : "Concordância (cegos, sobreposição)";
     const linhasPlacar = [];
     for (const p of dados.pessoas) {
-      if (oc && !p.rotulos && !p.revisoes_feitas && !p.gabarito_n) continue; // quem ainda não pintou nada
+      if (!p.rotulos && !p.revisoes_feitas && !p.gabarito_n) continue; // quem ainda não fez nada nesta tarefa
       const tr = document.createElement("tr");
-      const gab = p.gabarito_n
-        ? `${oc ? diferenca(p.gabarito_mediana) : `${numero(p.gabarito_mediana_px, 1)} px`} (${p.gabarito_n})`
-        : "—";
-      const concordancia = oc ? diferenca(p.concordancia) : p.concordancia_px === null ? "—" : `${numero(p.concordancia_px, 1)} px`;
+      const gab = p.gabarito_n ? `${p.gabarito_acertos} certo(s) em ${p.gabarito_n}` : "—";
+      const concordancia = p.concordancia === null ? "—" : pontos ? `${numero(p.concordancia, 1)} px` : `${Math.round(100 * p.concordancia)}%`;
       tr.append(
         celula(`${p.pessoa}${p.nome ? ` · ${p.nome}` : ""}`),
         celula(String(p.aprovados_semana), "num"),
@@ -249,14 +228,14 @@ export async function montar(raiz, ctx) {
         celula(p.taxa_aprovacao === null ? "—" : `${Math.round(100 * p.taxa_aprovacao)}%`, "num"),
         celula(p.tempo_mediano_s === null ? "—" : formatarTempo(p.tempo_mediano_s), "num"),
         celula(concordancia, "num"),
-        celula(gab + (p.liberado ? "" : " · em treino")),
+        celula(gab + (p.liberado ? "" : " · em teste")),
         celula(String(p.dias_seguidos), "num"),
         celula(p.marcos.join(", ") || "—"),
       );
       linhasPlacar.push(tr);
     }
     tPlacar.replaceChildren(...linhasPlacar);
-    if (!linhasPlacar.length) linhaVazia(tPlacar, 9, oc ? "Ninguém pintou ainda." : "Ninguém anotou ainda.");
+    if (!linhasPlacar.length) linhaVazia(tPlacar, 9, pontos ? "Ninguém marcou pontos ainda." : "Ninguém pintou ainda.");
   }
   for (const b of raiz.querySelectorAll("[data-placar]")) {
     b.onclick = () => {
@@ -273,7 +252,7 @@ export async function montar(raiz, ctx) {
     } catch (e) {
       if (!vivo) return;
       tPartidas.replaceChildren();
-      linhaVazia(tPartidas, 8, mensagemDeErro(e));
+      linhaVazia(tPartidas, 7, mensagemDeErro(e));
       return;
     }
     if (!vivo) return;
@@ -281,32 +260,32 @@ export async function montar(raiz, ctx) {
     for (const p of pl.problemas) {
       // incompleta (ainda sincronizando) ou com arquivo inválido: fica fora das filas até se resolver
       const aviso = celula(`fora das filas: ${p.erro}`, "erro");
-      aviso.colSpan = 7;
+      aviso.colSpan = 6;
       const tr = document.createElement("tr");
       tr.append(celula(p.partida), aviso);
       linhasPartidas.push(tr);
     }
-    const oclusaoDe = new Map(pl.oclusao.partidas.map((g) => [g.partida, g]));
-    for (const g of [...pl.partidas].reverse()) {
+    const jogadoresDe = new Map(pl.jogadores.partidas.map((g) => [g.partida, g]));
+    const aprovados = (g) => `${porcento(g.aprovados, g.sorteados)}${g.descartados ? ` (${g.descartados} desc.)` : ""}`;
+    for (const g of [...pl.pontos.partidas].reverse()) {
       const c = (await indice.manifesto(g.partida)).cadastro;
-      const oc = oclusaoDe.get(g.partida);
+      const j = jogadoresDe.get(g.partida);
       const tr = document.createElement("tr");
       tr.append(
         celula(g.partida),
         celula(c.emissora),
         celula(`${c.iluminacao}${c.chuva ? ", chuva" : ""}`),
         celula(String(g.sorteados), "num"),
-        celula(porcento(g.anotados, g.sorteados), "num"),
-        celula(porcento(g.aprovados, g.sorteados), "num"),
-        celula(String(g.pendentes_revisao), "num"),
-        celula(oc ? `${oc.aprovados} de ${oc.elegiveis}${oc.camera_errada ? ` · ${oc.camera_errada} câmera errada` : ""}` : "—", "num"),
+        celula(aprovados(g), "num"),
+        celula(j ? aprovados(j) : "—", "num"),
+        celula(String(g.pendentes_revisao + (j?.pendentes_revisao ?? 0)), "num"),
       );
       linhasPartidas.push(tr);
     }
     if (!vivo) return;
     tPartidas.replaceChildren(...linhasPartidas);
-    if (!linhasPartidas.length) linhaVazia(tPartidas, 8, "Nenhuma partida importada ainda.");
-    const codigos = new Set([...nomes.keys(), ...pl.pessoas.map((x) => x.pessoa)]); // quem já anotou nesta pasta
+    if (!linhasPartidas.length) linhaVazia(tPartidas, 7, "Nenhuma partida importada ainda.");
+    const codigos = new Set([...nomes.keys(), ...pl.pontos.pessoas.map((x) => x.pessoa), ...pl.jogadores.pessoas.map((x) => x.pessoa)]); // quem já anotou nesta pasta
     const chave = [...codigos].sort().join(",");
     if (chave !== sugeridos) {
       sugeridos = chave;

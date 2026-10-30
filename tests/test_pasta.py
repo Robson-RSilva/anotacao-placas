@@ -2,9 +2,8 @@
 
 import pytest
 
-from anotacao.convencoes import REF_PACOTE_GENERICO, id_partida, id_quadro, slug
-from anotacao.pacote import pacote_generico
-from anotacao.pasta import ArquivoExiste, Pasta, escrever_json, ler_json, ler_nome, nome_arquivo
+from anotacao.convencoes import id_partida, id_quadro, slug
+from anotacao.pasta import ArquivoExiste, Pasta, escrever_bytes, escrever_json, ler_json, ler_nome, nome_arquivo
 
 
 def test_ids():
@@ -55,8 +54,13 @@ def test_caminhos_validam_ids(tmp_path):
     with pytest.raises(ValueError):
         pasta.quadro("2026-11-02_e_a-b", "../x")
     with pytest.raises(ValueError):
-        pasta.pacote_path("Estadio Com Espaco", "1.0")
+        pasta.rotulos("2026-11-02_e_a-b", "camera")  # tarefa das versões até a 0.7
     assert pasta.quadro("gabarito", "g0001").name == "g0001.jpg"
+    assert pasta.mascara_gabarito("g2001").name == "g2001.png"
+    assert pasta.rotulos("gabarito", "jogadores") == tmp_path / "gabarito" / "rotulos" / "jogadores"
+    p = "2026-11-02_e_a-b"
+    assert pasta.previsao_pontos(p, "t0000000001").parts[-3:] == ("previsoes", "pontos", "t0000000001.json")
+    assert pasta.previsao_jogadores(p, "t0000000001").parts[-3:] == ("previsoes", "jogadores", "t0000000001.png")
 
 
 def test_proxima_versao(tmp_path):
@@ -68,19 +72,20 @@ def test_proxima_versao(tmp_path):
     escrever_json(d / nome_arquivo("t0000000001", "A02", 1), {})
     assert pasta.proxima_versao(d, "t0000000001", "A01") == 3
     assert pasta.proxima_versao(d, "t0000000001", "A02") == 2
+    # a máscara de uma gravação interrompida (sem o rótulo) também conta: o nome nunca se repete
+    escrever_bytes(d / "t0000000001__A02__v4.png", b"\x89PNG")
+    assert pasta.proxima_versao(d, "t0000000001", "A02") == 5
 
 
-def test_campo_generico_sem_levantamento(tmp_path):
+def test_pasta_nova(tmp_path):
     pasta = Pasta(tmp_path / "nova")
     pasta.criar()
-    assert pasta.listar_pacotes() == [REF_PACOTE_GENERICO]  # a pasta nova já vem com ele
-    assert pasta.ler_pacote_ref(REF_PACOTE_GENERICO) == pacote_generico()
-    antiga = Pasta(tmp_path / "antiga")  # criada antes do campo genérico
-    antiga.raiz.mkdir()
-    assert antiga.listar_pacotes() == []
-    assert antiga.ler_pacote_ref(REF_PACOTE_GENERICO) == pacote_generico()
-    with pytest.raises(OSError):
-        antiga.ler_pacote_ref("arena-x/pacote-1.0")
-    gen = pacote_generico()
-    assert gen.placas == [] and (gen.campo.comprimento, gen.campo.largura) == (105.0, 68.0)
-    assert {c.tipo for c in gen.cameras} >= {"principal", "16m", "fundo", "reversa"}
+    assert sorted(p.name for p in pasta.raiz.iterdir()) == [
+        "conjuntos",
+        "divisao.json",
+        "equipe.json",
+        "gabarito",
+        "partidas",
+    ]
+    assert pasta.ler_equipe().membros == [] and pasta.listar_partidas() == []
+    pasta.criar()  # de novo: não mexe no que existe

@@ -1,58 +1,65 @@
 // Formatos dos arquivos — os mesmos de src/anotacao/formatos.py. A estrutura vem dos JSON Schemas
 // gerados pelo Python (web/esquemas/); as regras entre campos (os `model_validator`) estão aqui.
 
-import { construirCampo, erroNasMedidas } from "./campo.js";
-import { ladoCanonico } from "./camera.js";
+import { PONTOS_MARCAVEIS } from "./campo.js";
 import { RE_GABARITO, RE_MASCARA, RE_PARTIDA, RE_QUADRO } from "./convencoes.js";
 import { validarEsquema } from "./esquema.js";
-import { erroNasFaixas } from "./oclusao.js";
 
 /** Tipo de arquivo -> nome do esquema. */
 export const ESQUEMAS = Object.freeze({
   projeto: "projeto.json",
-  pacote: "pacote.estadio.json",
   equipe: "equipe.json",
   divisao: "divisao.json",
   manifesto: "manifesto.partida.json",
   tomadas: "tomadas.partida.json",
   fila: "fila.partida.json",
-  previsao: "previsao.camera.json",
-  rotulo: "rotulo.camera.json",
-  revisao: "revisao.camera.json",
-  gabarito: "gabarito.camera.json",
   dispositivo: "pessoa.dispositivo.json",
-  rotulo_oclusao: "rotulo.oclusao.json",
-  revisao_oclusao: "revisao.oclusao.json",
-  gabarito_oclusao: "gabarito.oclusao.json",
+  rotulo_pontos: "rotulo.pontos.json",
+  revisao_pontos: "revisao.pontos.json",
+  gabarito_pontos: "gabarito.pontos.json",
+  previsao_pontos: "previsao.pontos.json",
+  rotulo_jogadores: "rotulo.jogadores.json",
+  revisao_jogadores: "revisao.jogadores.json",
+  gabarito_jogadores: "gabarito.jogadores.json",
 });
 
-/** Tipos de arquivo de cada tarefa: o rótulo, a revisão e o item do gabarito. */
+/** Tipos de arquivo de cada tarefa: o rótulo, a revisão e o item do gabarito (e o formato dele). */
 export const TIPOS_DA_TAREFA = Object.freeze({
-  camera: Object.freeze({ rotulo: "rotulo", revisao: "revisao", gabarito: "gabarito" }),
-  oclusao: Object.freeze({ rotulo: "rotulo_oclusao", revisao: "revisao_oclusao", gabarito: "gabarito_oclusao" }),
+  pontos: Object.freeze({ rotulo: "rotulo_pontos", revisao: "revisao_pontos", gabarito: "gabarito_pontos", formatoGabarito: "gabarito.pontos/1" }),
+  jogadores: Object.freeze({
+    rotulo: "rotulo_jogadores",
+    revisao: "revisao_jogadores",
+    gabarito: "gabarito_jogadores",
+    formatoGabarito: "gabarito.jogadores/1",
+  }),
 });
 
-export const SITUACOES = Object.freeze(["ok", "sem_marcacoes", "impossivel_transicao", "impossivel_borrao", "duvida"]);
-export const SEM_CAMERA = Object.freeze(["sem_marcacoes", "impossivel_transicao", "impossivel_borrao"]);
-export const MOTIVOS = Object.freeze([
-  "lado_trocado",
-  "molde_fora_da_tolerancia",
-  "ponto_em_marca_coberta",
-  "deveria_ser_sem_marcacoes",
-  "outro",
-]);
-export const SITUACOES_OCLUSAO = Object.freeze(["ok", "sem_placas", "camera_errada", "duvida"]);
-export const MOTIVOS_OCLUSAO = Object.freeze([
-  "faixa_fora_das_placas",
-  "pintura_fora_da_tolerancia",
-  "classe_errada",
-  "camera_errada",
-  "outro",
-]);
+/** O tipo de um item do gabarito pelo formato dentro dele (null: de uma versão até a 0.7). */
+export function tipoDoItem(obj) {
+  for (const [tarefa, t] of Object.entries(TIPOS_DA_TAREFA)) if (obj?.formato === t.formatoGabarito) return { tarefa, tipo: t.gabarito };
+  return null;
+}
 
-const CAMPO_PADRAO = construirCampo(105, 68);
-export const NOMES_PONTOS = new Set(CAMPO_PADRAO.pontos.map((p) => p.nome));
-export const NOMES_ELEMENTOS = new Set(CAMPO_PADRAO.elementos.map((e) => e.nome));
+/** Motivos de devolução na revisão, com o texto das páginas. */
+export const MOTIVOS = Object.freeze({
+  pontos: Object.freeze({
+    ponto_fora_do_lugar: "Ponto fora do lugar (mais de 2 px)",
+    nome_trocado: "Ponto com o nome trocado",
+    faltou_ponto: "Faltou marcar ponto que aparece",
+    ponto_que_nao_se_ve: "Ponto marcado onde não dá para ver",
+    descarte_errado: "Descarte errado (dava para anotar, ou devia descartar)",
+    outro: "Outro (com comentário)",
+  }),
+  jogadores: Object.freeze({
+    faltou_jogador: "Faltou pintar jogador",
+    contorno_impreciso: "Contorno impreciso (mais de 1 px)",
+    pintou_quem_nao_e_jogador: "Pintou quem não é jogador (árbitro, gandula, torcida…)",
+    descarte_errado: "Descarte errado (dava para anotar, ou devia descartar)",
+    outro: "Outro (com comentário)",
+  }),
+});
+
+const NOMES_PONTOS = new Set(PONTOS_MARCAVEIS);
 
 export class ErroFormato extends Error {
   constructor(tipo, erros) {
@@ -85,13 +92,31 @@ function unicos(lista) {
   return new Set(lista).size === lista.length;
 }
 
+function partidaEQuadro(o, e) {
+  if (!(RE_PARTIDA.test(o.partida) || o.partida === "gabarito")) e.push("partida inválida");
+  if (!(RE_QUADRO.test(o.quadro) || RE_GABARITO.test(o.quadro))) e.push("quadro inválido");
+}
+
+function situacao(o, e) {
+  if ((o.situacao === "descartada") !== (o.motivo_descarte !== null)) e.push("o motivo do descarte vem sempre, e só, com a imagem descartada");
+  if (o.motivo_descarte === "outro" && !o.comentario.trim()) e.push("descarte por 'outro' motivo exige comentário");
+}
+
+function pontosCoerentes(pontos, largura, altura, e) {
+  for (const p of pontos) if (!NOMES_PONTOS.has(p.ponto)) e.push(`ponto desconhecido: ${p.ponto}`);
+  if (!unicos(pontos.map((p) => p.ponto))) e.push("ponto marcado duas vezes");
+  for (const p of pontos) if (!(p.x >= 0 && p.x <= largura && p.y >= 0 && p.y <= altura)) e.push(`o ponto ${p.ponto} está fora da imagem`);
+}
+
+function revisao(o) {
+  const e = [];
+  if ((o.decisao === "devolver") !== (o.motivo !== null)) e.push("motivo é obrigatório ao devolver, e só ao devolver");
+  if ((o.decisao === "corrigir") !== (o.nova_versao !== null)) e.push("nova_versao é obrigatória ao corrigir, e só ao corrigir");
+  if (o.motivo === "outro" && !o.comentario.trim()) e.push("motivo 'outro' exige comentário");
+  return e;
+}
+
 const REGRAS = {
-  pacote(o) {
-    const e = [];
-    if (!unicos(o.placas.map((p) => p.id))) e.push("IDs de placa repetidos");
-    if (!unicos(o.cameras.map((c) => c.nome))) e.push("nomes de câmera repetidos");
-    return e;
-  },
   equipe(o) {
     return unicos(o.membros.map((m) => m.codigo)) ? [] : ["códigos repetidos na equipe"];
   },
@@ -105,64 +130,37 @@ const REGRAS = {
     }
     return [];
   },
-  rotulo(o) {
+  rotulo_pontos(o) {
     const e = [];
-    if (!(RE_PARTIDA.test(o.partida) || o.partida === "gabarito")) e.push("partida inválida");
-    if (!(RE_QUADRO.test(o.quadro) || RE_GABARITO.test(o.quadro))) e.push("quadro inválido");
-    if (o.situacao === "ok" && o.camera === null) e.push("situação 'ok' exige a câmera");
-    if (SEM_CAMERA.includes(o.situacao) && o.camera !== null) e.push(`situação '${o.situacao}' não leva câmera`);
-    if (o.situacao === "duvida" && !o.comentario.trim()) e.push("'dúvida' exige comentário");
-    if (o.camera !== null) {
-      const esperado = ladoCanonico(o.camera.C) ? "canonico" : "espelhado";
-      if (o.lado !== esperado) e.push(`lado deveria ser '${esperado}' para esta câmera`);
-    } else if (o.lado !== null) {
-      e.push("lado só existe com câmera");
-    }
-    for (const p of o.pontos_travados) if (!NOMES_PONTOS.has(p.ponto)) e.push(`ponto-chave desconhecido: ${p.ponto}`);
-    for (const l of o.linhas_travadas) if (!NOMES_ELEMENTOS.has(l.elemento)) e.push(`elemento desconhecido: ${l.elemento}`);
+    partidaEQuadro(o, e);
+    situacao(o, e);
+    if (o.situacao === "descartada" && o.pontos.length) e.push("imagem descartada não leva pontos");
+    pontosCoerentes(o.pontos, o.largura, o.altura, e);
     return e;
   },
-  gabarito(o) {
-    const c = o.campo;
-    return c && erroNasMedidas(c.comprimento, c.largura)
-      ? ["medidas do campo fora do que a página aceita: comprimento de 90 a 120 m, largura de 45 a 90 m e mais comprido que largo"]
-      : [];
-  },
-  revisao(o) {
+  revisao_pontos: revisao,
+  gabarito_pontos(o) {
     const e = [];
-    if ((o.decisao === "devolver") !== (o.motivo !== null)) e.push("motivo é obrigatório ao devolver, e só ao devolver");
-    if ((o.decisao === "corrigir") !== (o.nova_versao !== null)) {
-      e.push("nova_versao é obrigatória ao corrigir, e só ao corrigir");
-    }
-    if (o.motivo === "outro" && !o.comentario.trim()) e.push("motivo 'outro' exige comentário");
+    pontosCoerentes(o.pontos, o.largura, o.altura, e);
     return e;
   },
-  revisao_oclusao(o) {
-    return REGRAS.revisao(o);
-  },
-  rotulo_oclusao(o) {
+  previsao_pontos(o) {
     const e = [];
-    if (!(RE_PARTIDA.test(o.partida) || o.partida === "gabarito")) e.push("partida inválida");
-    if (!(RE_QUADRO.test(o.quadro) || RE_GABARITO.test(o.quadro))) e.push("quadro inválido");
-    if ((o.placas_de === "faixas") !== (o.faixas !== null)) e.push("as faixas vêm sempre, e só, com placas_de 'faixas'");
-    if ((o.partida === "gabarito") !== (o.placas_de === "gabarito")) e.push("as placas do gabarito são só as dos itens do gabarito");
+    for (const p of o.pontos) if (!NOMES_PONTOS.has(p.ponto)) e.push(`ponto desconhecido: ${p.ponto}`);
+    if (!unicos(o.pontos.map((p) => p.ponto))) e.push("ponto previsto duas vezes");
+    return e;
+  },
+  rotulo_jogadores(o) {
+    const e = [];
+    partidaEQuadro(o, e);
+    situacao(o, e);
     if (o.mascara !== null && !RE_MASCARA.test(o.mascara)) e.push("nome da máscara inválido");
-    if (o.mascara === null && o.placas.length) e.push("as placas só vêm com a máscara");
-    if (o.situacao === "ok" && (o.mascara === null || o.placas.every((p) => p.pequena))) {
-      e.push("situação 'ok' exige a máscara e uma placa para pintar");
-    }
-    if (["sem_placas", "camera_errada"].includes(o.situacao) && o.mascara !== null) e.push(`situação '${o.situacao}' não leva máscara`);
-    if (o.situacao === "duvida" && !o.comentario.trim()) e.push("'dúvida' exige comentário");
-    if (!unicos(o.placas.map((p) => p.id))) e.push("placas repetidas");
-    const faixas = o.faixas && erroNasFaixas(o.faixas);
-    if (faixas) e.push(faixas);
+    if ((o.situacao === "ok") !== (o.mascara !== null)) e.push("a máscara vem sempre, e só, com a imagem anotada (não descartada)");
+    if (o.mascara === null && o.pixels) e.push("pixels pintados só com a máscara");
+    if (o.pixels > o.largura * o.altura) e.push("mais pixels pintados que a imagem tem");
     return e;
   },
-  gabarito_oclusao(o) {
-    const e = REGRAS.gabarito(o);
-    if (!unicos(o.placas.map((p) => p.id))) e.push("IDs de placa repetidos");
-    return e;
-  },
+  revisao_jogadores: revisao,
 };
 
 /**

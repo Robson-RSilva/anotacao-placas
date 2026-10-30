@@ -7,12 +7,13 @@ import { FIXTURES, lerJson } from "./apoio.js";
 
 const ref = lerJson(new URL("convencoes.json", FIXTURES));
 
-test("versão, referência, manual e regex iguais aos do Python", () => {
+test("versão, referência, tarefas, manual, motivos e regex iguais aos do Python", () => {
   assert.equal(c.VERSAO, ref.versao);
   assert.deepEqual([c.REF_W, c.REF_H], ref.ref);
+  assert.deepEqual([...c.TAREFAS], ref.tarefas);
   assert.deepEqual({ ...c.MANUAL }, ref.manual);
   assert.equal(c.PARTIDA_GABARITO, ref.partida_gabarito);
-  assert.equal(c.REF_PACOTE_GENERICO, ref.ref_pacote_generico);
+  assert.deepEqual(Object.keys(c.MOTIVOS_DESCARTE), ref.motivos_descarte);
   for (const [nome, padrao] of Object.entries(ref.regex)) assert.equal(c[nome].source, padrao.replaceAll("/", "\\/"), nome);
 });
 
@@ -34,7 +35,8 @@ test("nomes de arquivo por pessoa e versão", () => {
   assert.throws(() => c.nomeArquivo("t1", "A01", 1));
   assert.throws(() => c.nomeArquivo("t0000001000", "a01", 1));
   assert.throws(() => c.nomeArquivo("t0000001000", "A01", 0));
-  assert.deepEqual(c.partesPacote("arena-x/pacote-1.10"), ["arena-x", "1.10"]);
+  assert.deepEqual(c.lerNomeMascara("t0000001000__A01__v2.png"), { quadro: "t0000001000", pessoa: "A01", versao: 2 });
+  assert.equal(c.mascaraDe("g2001__RS__v3.json"), "g2001__RS__v3.png");
 });
 
 test("código da pessoa: o que ela digitar, em maiúsculas, sem acento nem espaço", () => {

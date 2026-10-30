@@ -1,48 +1,37 @@
 // Levar arquivos de uma pasta de trabalho para outra em .zip: para quem guarda no navegador (sem
 // pasta sincronizada) mandar o que fez, e para quem coordena trazer de volta. Nada é sobrescrito.
 
-import {
-  RE_ARQUIVO,
-  RE_DISPOSITIVO,
-  RE_ESTADIO,
-  RE_GABARITO,
-  RE_MASCARA,
-  RE_PARTIDA,
-  RE_PESSOA,
-  RE_QUADRO,
-  RE_VERSAO_PACOTE,
-} from "./convencoes.js";
-import { validar } from "./formatos.js";
+import { RE_ARQUIVO, RE_DISPOSITIVO, RE_GABARITO, RE_MASCARA, RE_PARTIDA, RE_PESSOA, RE_QUADRO, TAREFAS } from "./convencoes.js";
+import { TIPOS_DA_TAREFA, tipoDoItem, validar } from "./formatos.js";
 import { ArquivoExiste } from "./pasta.js";
 import { ehPng } from "./png.js";
 import { criarZip, lerZip } from "./zip.js";
 
-const TOPO = new Set(["equipe.json", "divisao.json", "projeto.json", "estadios", "partidas", "gabarito", "pessoas"]);
+const TOPO = new Set(["equipe.json", "divisao.json", "projeto.json", "partidas", "gabarito", "pessoas"]);
+
+/** Um rótulo, uma revisão ou uma máscara numa pasta de tarefa (rotulos/<tarefa> ou revisoes/<tarefa>). */
+function daTarefa(pasta, tarefa, nome, prefixo) {
+  if (!TAREFAS.includes(tarefa) || !nome.startsWith(prefixo)) return null;
+  if (RE_ARQUIVO.test(nome)) return pasta === "rotulos" ? TIPOS_DA_TAREFA[tarefa].rotulo : pasta === "revisoes" ? TIPOS_DA_TAREFA[tarefa].revisao : null;
+  if (pasta === "rotulos" && tarefa === "jogadores" && RE_MASCARA.test(nome)) return "png";
+  return null;
+}
 
 /**
  * Tipo de arquivo (formatos.js) pelo caminho; "jpg" e "png" para imagens e máscaras; null quando não é
- * da pasta de trabalho. Um item do gabarito é "gabarito" pelo caminho; o formato dentro dele diz se é
- * da câmera ou da oclusão.
+ * da pasta de trabalho (ou é das tarefas das versões até a 0.7). Um item do gabarito é "gabarito"
+ * pelo caminho; o formato dentro dele diz a tarefa.
  */
 export function tipoDoCaminho(caminho) {
   const p = caminho.split("/");
   if (p.length === 1) return { "equipe.json": "equipe", "divisao.json": "divisao", "projeto.json": "projeto" }[p[0]] ?? null;
-  if (p[0] === "estadios") {
-    return p.length === 4 && RE_ESTADIO.test(p[1]) && /^pacote-/.test(p[2]) && RE_VERSAO_PACOTE.test(p[2].slice(7)) && p[3] === "pacote.json"
-      ? "pacote"
-      : null;
-  }
   if (p[0] === "gabarito") {
     if (p.length === 3 && p[1] === "itens") {
       const m = /^(g\d{4})\.(json|jpg|png)$/.exec(p[2]);
       if (m && RE_GABARITO.test(m[1])) return { json: "gabarito", jpg: "jpg", png: "png" }[m[2]];
       return null;
     }
-    if (p.length === 4 && p[1] === "rotulos" && p[3].startsWith("g")) {
-      if (p[2] === "camera" && RE_ARQUIVO.test(p[3])) return "rotulo";
-      if (p[2] === "oclusao" && RE_ARQUIVO.test(p[3])) return "rotulo_oclusao";
-      if (p[2] === "oclusao" && RE_MASCARA.test(p[3])) return "png";
-    }
+    if (p.length === 4 && p[1] === "rotulos") return daTarefa("rotulos", p[2], p[3], "g");
     return null;
   }
   if (p[0] === "pessoas") {
@@ -51,15 +40,12 @@ export function tipoDoCaminho(caminho) {
   if (p[0] === "partidas" && p.length >= 3 && RE_PARTIDA.test(p[1])) {
     if (p.length === 3) return { "manifesto.json": "manifesto", "fila.json": "fila", "tomadas.json": "tomadas" }[p[2]] ?? null;
     if (p.length === 4 && p[2] === "quadros") return /^t\d{10}\.jpg$/.test(p[3]) ? "jpg" : null;
-    if (p.length === 4 && p[2] === "previsoes") return /^t\d{10}\.json$/.test(p[3]) && RE_QUADRO.test(p[3].slice(0, -5)) ? "previsao" : null;
-    if (p.length === 5 && p[2] === "previsoes" && p[3] === "oclusao") return /^t\d{10}\.png$/.test(p[4]) ? "png" : null;
-    if (p.length === 5 && p[3] === "camera" && RE_ARQUIVO.test(p[4]) && p[4].startsWith("t")) {
-      return { rotulos: "rotulo", revisoes: "revisao" }[p[2]] ?? null;
+    if (p.length === 5 && p[2] === "previsoes") {
+      if (p[3] === "pontos") return /^t\d{10}\.json$/.test(p[4]) && RE_QUADRO.test(p[4].slice(0, -5)) ? "previsao_pontos" : null;
+      if (p[3] === "jogadores") return /^t\d{10}\.png$/.test(p[4]) ? "png" : null;
+      return null;
     }
-    if (p.length === 5 && p[3] === "oclusao" && p[4].startsWith("t")) {
-      if (RE_ARQUIVO.test(p[4])) return { rotulos: "rotulo_oclusao", revisoes: "revisao_oclusao" }[p[2]] ?? null;
-      if (p[2] === "rotulos" && RE_MASCARA.test(p[4])) return "png";
-    }
+    if (p.length === 5 && (p[2] === "rotulos" || p[2] === "revisoes")) return daTarefa(p[2], p[3], p[4], "t");
   }
   return null;
 }
@@ -141,7 +127,13 @@ export async function importarZip(pasta, blob, aoProgresso = () => {}) {
         if (!ehPng(e.dados)) throw new Error("não é um PNG");
       } else {
         const obj = JSON.parse(decodificador.decode(e.dados));
-        validar(tipo === "gabarito" && obj.formato === "gabarito.oclusao/1" ? "gabarito_oclusao" : tipo, obj);
+        if (tipo === "gabarito") {
+          const doItem = tipoDoItem(obj);
+          if (!doItem) throw new Error("item do gabarito de uma versão anterior (câmera ou oclusão): esta versão não usa");
+          validar(doItem.tipo, obj);
+        } else {
+          validar(tipo, obj);
+        }
       }
       await pasta.escrever(caminho, e.dados);
       out.gravados += 1;

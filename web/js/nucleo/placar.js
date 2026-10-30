@@ -4,15 +4,14 @@
 // gravado: cada navegador calcula o seu na hora (um arquivo de cache escrito por várias pessoas
 // daria conflito no Drive).
 
-import { distanciaCameras } from "./avaliacao.js";
 import { Molde } from "./campo.js";
+import { REF_W } from "./convencoes.js";
 import { arredondar, mediana } from "./estatistica.js";
-import { cameraAprovada } from "./filas-oclusao.js";
-import { REGRA, liberacao, resultados, resultadosOclusao } from "./gabarito.js";
-import { Camera } from "./camera.js";
-import { compararMascaras, geometria, placasDoRotulo } from "./oclusao.js";
+import { rotuloAprovado } from "./filas.js";
+import { REGRA, liberacao, resultados } from "./gabarito.js";
 
 const DIA = 86_400_000;
+const CAMPO = Molde.doCampo();
 
 function diaLocal(data) {
   const d = data instanceof Date ? data : new Date(data);
@@ -35,56 +34,87 @@ function medianaCurta(valores, casas = 2) {
   return m === null ? null : arredondar(m, casas);
 }
 
-const _concordancias = new WeakMap(); // máscara da primeira pintura -> {outra, valor}
-
 const lista = (mapa, chave) => {
   if (!mapa.has(chave)) mapa.set(chave, []);
   return mapa.get(chave);
 };
 
-/** O que muda de uma tarefa para outra: a concordância dos cegos e o gabarito. */
-const TAREFA = {
-  camera: {
-    casas: 2,
-    async concordancia(a1, a2, { manifesto: man, pacote }) {
-      if (!a1.dados.camera || !a2.dados.camera) return null;
-      const m1 = Molde.doRotulo(a1.dados, pacote); // as medidas do campo que cada pessoa usou
-      const m2 = Molde.doRotulo(a2.dados, pacote);
-      const d = distanciaCameras(a1.dados.camera, a2.dados.camera, pacote, m1, man.video.largura, man.video.altura, m2);
-      return d ? d[0] : null;
-    },
-    async gabarito(indice, cod, itens) {
-      return liberacao(await resultados(indice, cod, itens), itens.length > 0, REGRA.camera);
-    },
+/**
+ * Concordância de dois rótulos de pontos do mesmo quadro: a distância mediana (px, ref. 960) dos
+ * pontos que os dois marcaram — vista do mesmo lado do campo ou do outro, a que casa mais pontos.
+ * null quando não há ponto em comum.
+ */
+export function concordanciaPontos(r1, r2) {
+  const escala = REF_W / r1.largura;
+  const de2 = new Map(r2.pontos.map((p) => [p.ponto, p]));
+  let melhor = null;
+  for (const girar of [false, true]) {
+    const d = [];
+    for (const p of r1.pontos) {
+      const q = de2.get(girar ? CAMPO.espelharPonto(p.ponto) : p.ponto);
+      if (q) d.push(Math.hypot(p.x - q.x, p.y - q.y) * escala);
+    }
+    const m = mediana(d);
+    if (m !== null && (!melhor || d.length > melhor.n || (d.length === melhor.n && m < melhor.m))) melhor = { n: d.length, m };
+  }
+  return melhor ? melhor.m : null;
+}
+
+/** Concordância de duas máscaras dos jogadores: a sobreposição (IoU), sem a borda de 1 px de cada uma. */
+export function concordanciaJogadores(a, b, w, h) {
+  const borda = (m, x, y) => {
+    const v = m[y * w + x] ? 1 : 0;
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        const xx = x + dx;
+        const yy = y + dy;
+        if (xx >= 0 && yy >= 0 && xx < w && yy < h && (m[yy * w + xx] ? 1 : 0) !== v) return true;
+      }
+    }
+    return false;
+  };
+  let inter = 0;
+  let uniao = 0;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = y * w + x;
+      if (!a[i] && !b[i]) continue;
+      if (borda(a, x, y) || borda(b, x, y)) continue;
+      uniao += 1;
+      if (a[i] && b[i]) inter += 1;
+    }
+  }
+  return uniao ? inter / uniao : 1;
+}
+
+const _concordancias = new WeakMap(); // máscara do primeiro rótulo -> {outra, valor}
+
+/** O que muda de uma tarefa para outra: a concordância dos rótulos às cegas. */
+const CONCORDANCIA = {
+  pontos: async (a1, a2) => {
+    if (a1.dados.situacao !== "ok" || a2.dados.situacao !== "ok") return null;
+    return concordanciaPontos(a1.dados, a2.dados);
   },
-  oclusao: {
-    casas: 4,
-    /** As duas máscaras, nas placas da primeira pintura, com a tolerância de 1 px na borda. */
-    async concordancia(a1, a2, { pacote }, indice) {
-      const [r1, r2] = [a1.dados, a2.dados];
-      if (r1.mascara === null || r2.mascara === null || r1.largura !== r2.largura || r1.altura !== r2.altura) return null;
-      const dir = indice.pasta.rotulos(a1.partida, "oclusao");
-      const [m1, m2] = [await indice.mascara(`${dir}/${r1.mascara}`), await indice.mascara(`${dir}/${r2.mascara}`)];
-      const hit = _concordancias.get(m1); // refeita só quando uma das máscaras muda
-      if (hit && hit.outra === m2) return hit.valor;
-      const geo = geometria(Camera.deRotulo(r1.camera, r1.largura, r1.altura), placasDoRotulo(r1, pacote), r1.largura, r1.altura);
-      const valor = compararMascaras(m1.dados, m2.dados, geo).maxima;
-      _concordancias.set(m1, { outra: m2, valor });
-      return valor;
-    },
-    async gabarito(indice, cod, itens) {
-      return liberacao(await resultadosOclusao(indice, cod, itens), itens.length > 0, REGRA.oclusao);
-    },
+  jogadores: async (a1, a2, indice) => {
+    const [r1, r2] = [a1.dados, a2.dados];
+    if (r1.mascara === null || r2.mascara === null || r1.largura !== r2.largura || r1.altura !== r2.altura) return null;
+    const dir = indice.pasta.rotulos(a1.partida, "jogadores");
+    const [m1, m2] = [await indice.mascara(`${dir}/${r1.mascara}`), await indice.mascara(`${dir}/${r2.mascara}`)];
+    const hit = _concordancias.get(m1); // refeita só quando uma das máscaras muda
+    if (hit && hit.outra === m2) return hit.valor;
+    const valor = concordanciaJogadores(m1.dados, m2.dados, r1.largura, r1.altura);
+    _concordancias.set(m1, { outra: m2, valor });
+    return valor;
   },
 };
 
-async function placarDaTarefa(indice, agora, tarefa, prontas, nomes) {
-  const regra = TAREFA[tarefa];
+async function placarDaTarefa(indice, agora, tarefa, nomes) {
+  const { prontas, problemas } = await indice.partidasProntas(tarefa);
   const semana = agora.getTime() - 7 * DIA;
   const conta = new Map();
   const c = (cod) => {
     if (!conta.has(cod)) {
-      conta.set(cod, { rotulos: 0, revisados: 0, aprovados: 0, corrigidos: 0, devolvidos: 0, aprovados_semana: 0, revisoes_feitas: 0 });
+      conta.set(cod, { rotulos: 0, revisados: 0, aprovados: 0, corrigidos: 0, devolvidos: 0, aprovados_semana: 0, revisoes_feitas: 0, descartadas: 0 });
     }
     return conta.get(cod);
   };
@@ -102,16 +132,14 @@ async function placarDaTarefa(indice, agora, tarefa, prontas, nomes) {
 
   const partidas = [];
   for (const p of prontas) {
-    const { partida: pid, fila } = p;
-    const ip = tarefa === "camera" ? p.ip : await indice.partida(pid, tarefa);
-    const aprovadoQuadro = new Set();
+    const { partida: pid, fila, ip } = p;
     for (const a of ip.rotulos) {
       const r = a.dados;
       const s = c(a.pessoa);
       s.rotulos += 1;
+      if (r.situacao === "descartada") s.descartadas += 1;
       lista(temposRot, a.pessoa).push(r.segundos_ativos);
       marcarDia(a.pessoa, r.criado_em);
-      if (r.corrige !== null) aprovadoQuadro.add(a.quadro);
       const rev = ip.ultimaRevisao(a.nome);
       if (!rev) continue;
       s.revisados += 1;
@@ -121,7 +149,6 @@ async function placarDaTarefa(indice, agora, tarefa, prontas, nomes) {
         if (rev.decisao === "aprovar") s.aprovados_semana += 1;
         if (rev.decisao === "devolver") somar(devolvidosSemana, a.pessoa);
       }
-      if (rev.decisao === "aprovar") aprovadoQuadro.add(a.quadro);
     }
     for (const revs of ip.revisoesDe.values()) {
       for (const rv of revs) {
@@ -130,8 +157,8 @@ async function placarDaTarefa(indice, agora, tarefa, prontas, nomes) {
         marcarDia(rv.revisor, rv.criado_em);
       }
     }
-    // concordância nos rótulos cegos (quadros em dupla): o rótulo de cada pessoa, nunca uma correção
-    // que ela fez revisando o da outra
+    // concordância nos rótulos às cegas (quadros em dupla): o rótulo de cada pessoa, nunca uma
+    // correção que ela fez revisando o da outra
     const ultimos = ip.ultimosProprios();
     const doQuadro = new Map();
     for (const a of ultimos.values()) lista(doQuadro, a.quadro).push(a);
@@ -142,7 +169,7 @@ async function placarDaTarefa(indice, agora, tarefa, prontas, nomes) {
       if (!a1 || !a2) continue;
       let d = null;
       try {
-        d = await regra.concordancia(a1, a2, p, indice);
+        d = await CONCORDANCIA[tarefa](a1, a2, indice);
       } catch {
         d = null; // uma máscara ilegível (ou ainda sincronizando) fica fora da concordância
       }
@@ -153,27 +180,30 @@ async function placarDaTarefa(indice, agora, tarefa, prontas, nomes) {
     }
     let pendentes = 0;
     for (const a of ultimos.values()) if (!(ip.revisoesDe.get(a.nome) || []).length) pendentes += 1;
-    const linha = {
+    let aprovados = 0;
+    let descartados = 0;
+    for (const item of fila.itens) {
+      const a = rotuloAprovado(ip, item.quadro);
+      if (!a) continue;
+      aprovados += 1;
+      if (a.dados.situacao === "descartada") descartados += 1;
+    }
+    partidas.push({
       partida: pid,
       sorteados: fila.itens.length,
       anotados: new Set(ip.rotulos.map((a) => a.quadro)).size,
-      aprovados: aprovadoQuadro.size,
+      aprovados,
+      descartados,
       pendentes_revisao: pendentes,
-    };
-    if (tarefa === "oclusao") {
-      // o que dá para pintar: os quadros com a câmera aprovada; e os que voltaram com "câmera errada"
-      linha.elegiveis = fila.itens.filter((it) => cameraAprovada(p.ip, it.quadro)).length;
-      linha.camera_errada = new Set([...ultimos.values()].filter((a) => a.dados.situacao === "camera_errada").map((a) => a.quadro)).size;
-    }
-    partidas.push(linha);
+    });
   }
 
   const itensGab = await indice.itensGabarito(tarefa);
-  const temGabarito = itensGab.length > 0;
   const linhas = [];
   for (const cod of [...new Set([...nomes.keys(), ...conta.keys()])].sort()) {
     const s = c(cod);
-    const lib = await regra.gabarito(indice, cod, itensGab);
+    const res = await resultados(indice, tarefa, cod, itensGab);
+    const lib = liberacao(res, itensGab.length > 0, REGRA[tarefa]);
     const marcos = [];
     if (s.aprovados >= 100) marcos.push("100 aprovados");
     if ((revisadosSemana.get(cod) || 0) >= 10 && !(devolvidosSemana.get(cod) || 0)) marcos.push("uma semana sem devolução");
@@ -181,6 +211,7 @@ async function placarDaTarefa(indice, agora, tarefa, prontas, nomes) {
       pessoa: cod,
       nome: nomes.get(cod) || "",
       rotulos: s.rotulos,
+      descartadas: s.descartadas,
       aprovados: s.aprovados,
       aprovados_semana: s.aprovados_semana,
       devolvidos: s.devolvidos,
@@ -188,11 +219,9 @@ async function placarDaTarefa(indice, agora, tarefa, prontas, nomes) {
       tempo_mediano_s: medianaCurta(temposRot.get(cod)),
       revisoes_feitas: s.revisoes_feitas,
       tempo_mediano_revisao_s: medianaCurta(temposRev.get(cod)),
-      concordancia_px: tarefa === "camera" ? medianaCurta(concord.get(cod)) : null,
-      concordancia: medianaCurta(concord.get(cod), regra.casas),
-      gabarito_n: lib.n,
-      gabarito_mediana_px: tarefa === "camera" && lib.mediana !== null ? arredondar(lib.mediana, 2) : null,
-      gabarito_mediana: lib.mediana === null ? null : arredondar(lib.mediana, regra.casas),
+      concordancia: medianaCurta(concord.get(cod), tarefa === "pontos" ? 2 : 3),
+      gabarito_n: res.length,
+      gabarito_acertos: res.filter((r) => r.acerto).length,
       liberado: lib.liberado,
       dias_seguidos: diasSeguidos(dias.get(cod) || new Set(), agora),
       marcos,
@@ -200,22 +229,15 @@ async function placarDaTarefa(indice, agora, tarefa, prontas, nomes) {
   }
   linhas.sort((x, y) => y.aprovados_semana - x.aprovados_semana || y.aprovados - x.aprovados || (x.pessoa < y.pessoa ? -1 : 1));
   const total = {};
-  for (const k of Object.keys(partidas[0] ?? { sorteados: 0, anotados: 0, aprovados: 0, pendentes_revisao: 0 })) {
-    if (k !== "partida") total[k] = partidas.reduce((soma, x) => soma + x[k], 0);
-  }
-  for (const k of ["sorteados", "anotados", "aprovados", "pendentes_revisao"]) total[k] ??= 0;
-  return { pessoas: linhas, partidas, total, gabarito_importado: temGabarito };
+  for (const k of ["sorteados", "anotados", "aprovados", "descartados", "pendentes_revisao"]) total[k] = partidas.reduce((soma, x) => soma + x[k], 0);
+  return { pessoas: linhas, partidas, total, problemas, gabarito_importado: itensGab.length > 0 };
 }
 
-/**
- * Placar da equipe e progresso das partidas: o da câmera no nível de cima (como sempre) e o da
- * oclusão em `oclusao`, com a mesma forma.
- */
+/** Placar da equipe e progresso das partidas, um para cada tarefa: {pontos, jogadores, problemas}. */
 export async function calcularPlacar(indice, agora = new Date()) {
   const equipe = await indice.equipe();
   const nomes = new Map(equipe.membros.map((m) => [m.codigo, m.nome]));
-  const { prontas, problemas } = await indice.partidasProntas();
-  const camera = await placarDaTarefa(indice, agora, "camera", prontas, nomes);
-  const oclusao = await placarDaTarefa(indice, agora, "oclusao", prontas, nomes);
-  return { calculado_em: agora.toISOString(), ...camera, problemas, oclusao };
+  const pontos = await placarDaTarefa(indice, agora, "pontos", nomes);
+  const jogadores = await placarDaTarefa(indice, agora, "jogadores", nomes);
+  return { calculado_em: agora.toISOString(), pontos, jogadores, problemas: pontos.problemas };
 }

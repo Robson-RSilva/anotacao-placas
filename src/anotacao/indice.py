@@ -14,11 +14,11 @@ from typing import TypeVar
 
 from pydantic import BaseModel, ValidationError
 
-from .formatos import Fila, Manifesto, RevisaoCamera, RevisaoOclusao, RotuloCamera, RotuloOclusao, Tomadas
+from .formatos import TAREFA, Fila, Manifesto, RevisaoJogadores, RevisaoPontos, RotuloJogadores, RotuloPontos, Tomadas
 from .pasta import Pasta, ler_json, mascara_de
 
-#: Modelos do rótulo e da revisão de cada tarefa.
-MODELOS = {"camera": (RotuloCamera, RevisaoCamera), "oclusao": (RotuloOclusao, RevisaoOclusao)}
+Rotulo = RotuloPontos | RotuloJogadores
+Revisao = RevisaoPontos | RevisaoJogadores
 
 M = TypeVar("M", bound=BaseModel)
 
@@ -62,9 +62,9 @@ class IndicePartida:
     partida: str
     rotulos: list[Arquivo]
     revisoes: list[Arquivo]
-    revisoes_de: dict[str, list[RevisaoCamera | RevisaoOclusao]] = field(default_factory=dict)
+    revisoes_de: dict[str, list[Revisao]] = field(default_factory=dict)
     invalidos: list[tuple[Path, str]] = field(default_factory=list)
-    esperando: list[Path] = field(default_factory=list)  # oclusão: o rótulo chegou antes da máscara
+    esperando: list[Path] = field(default_factory=list)  # jogadores: o rótulo chegou antes da máscara
 
     def versoes(self, quadro: str, pessoa: str) -> list[Arquivo]:
         return sorted((a for a in self.rotulos if a.quadro == quadro and a.pessoa == pessoa), key=lambda a: a.versao)
@@ -84,7 +84,7 @@ class IndicePartida:
             out[a.quadro].append(a)
         return out
 
-    def ultima_revisao(self, nome_rotulo: str) -> RevisaoCamera | RevisaoOclusao | None:
+    def ultima_revisao(self, nome_rotulo: str) -> Revisao | None:
         rs = self.revisoes_de.get(nome_rotulo, [])
         return max(rs, key=lambda r: r.criado_em) if rs else None
 
@@ -94,11 +94,8 @@ class Indice:
         self.pasta = pasta
         self.cache = cache or LeitorCache()
 
-    def rotulo(self, a: Arquivo | Path) -> RotuloCamera:
-        return self.cache.ler(a.caminho if isinstance(a, Arquivo) else a, RotuloCamera)
-
-    def rotulo_oclusao(self, a: Arquivo | Path) -> RotuloOclusao:
-        return self.cache.ler(a.caminho if isinstance(a, Arquivo) else a, RotuloOclusao)
+    def rotulo(self, a: Arquivo | Path, tarefa: str) -> Rotulo:
+        return self.cache.ler(a.caminho if isinstance(a, Arquivo) else a, TAREFA[tarefa][0])
 
     def manifesto(self, partida: str) -> Manifesto:
         return self.cache.ler(self.pasta.manifesto(partida), Manifesto)
@@ -109,10 +106,10 @@ class Indice:
     def tomadas(self, partida: str) -> Tomadas:
         return self.cache.ler(self.pasta.tomadas(partida), Tomadas)
 
-    def partida(self, partida: str, tarefa: str = "camera") -> IndicePartida:
+    def partida(self, partida: str, tarefa: str) -> IndicePartida:
         """Rótulos e revisões válidos da partida na tarefa; os inválidos ficam em `invalidos` e não entram
-        em nada. Na oclusão, um rótulo cuja máscara ainda não chegou fica em `esperando`."""
-        modelo_rotulo, modelo_revisao = MODELOS[tarefa]
+        em nada. Nos jogadores, um rótulo cuja máscara ainda não chegou fica em `esperando`."""
+        modelo_rotulo, modelo_revisao, _ = TAREFA[tarefa]
         invalidos: list[tuple[Path, str]] = []
         esperando: list[Path] = []
         rot = []
@@ -121,7 +118,7 @@ class Indice:
                 r = self.cache.ler(p, modelo_rotulo)
                 if (r.partida, r.quadro, r.anotador, r.versao) != (partida, q, pe, v):
                     raise ValueError("o conteúdo não bate com o nome do arquivo")
-                if tarefa == "oclusao" and r.mascara is not None:
+                if tarefa == "jogadores" and r.mascara is not None:
                     if r.mascara != mascara_de(p.name):
                         raise ValueError("a máscara precisa ter o nome do rótulo")
                     if not (p.parent / r.mascara).is_file():

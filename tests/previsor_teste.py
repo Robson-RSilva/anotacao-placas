@@ -1,30 +1,32 @@
-"""Previsores de mentira para os testes de `anotacao prever`: sempre a mesma câmera, e sempre a mesma
-pré-pintura da oclusão."""
+"""Previsores de mentira para os testes de `anotacao prever`: sempre os mesmos pontos, e sempre a mesma
+pré-pintura dos jogadores."""
 
 from __future__ import annotations
 
 import numpy as np
 
-from anotacao.camera import Camera
-from anotacao.formatos import CameraRotulo
 
-
-class PrevisorFixo:
+class PontosFixos:
     nome = "fixo"
     versao = "1"
 
     def __init__(self) -> None:
         self.chamadas = 0
 
-    def __call__(self, imagem, pacote):
+    def __call__(self, imagem):
         self.chamadas += 1
         h, w = imagem.shape[:2]
-        cam = Camera.look_at(pacote.cameras[0].T, [0.0, 0.0, 0.0], 40.0, w, h)
-        return CameraRotulo(**cam.para_rotulo()), 0.5
+        # um fora da imagem e um que não se marca: os dois ficam de fora
+        return {
+            "centro": (w / 2, h / 2),
+            "meio_cab": (w / 2, h - 10.0),
+            "canto_esq_cab": (-5.0, 3.0),
+            "circ_esq": (3.0, 3.0),
+        }
 
 
 class MascaraFixa:
-    """Pré-pintura de mentira para `anotacao prever --tarefa oclusao`: uma "pessoa" no meio do quadro."""
+    """Pré-pintura de mentira para `anotacao prever --tarefa jogadores`: um "jogador" no meio do quadro."""
 
     nome = "mascara-fixa"
     versao = "1"
@@ -32,6 +34,5 @@ class MascaraFixa:
     def __call__(self, imagem):
         h, w = imagem.shape[:2]
         m = np.zeros((h, w), np.uint8)
-        m[h // 4 : h // 2, w // 3 : w // 2] = 2
-        m[0, 0] = 1  # "placa livre" não é pré-pintura: some
+        m[h // 4 : h // 2, w // 3 : w // 2] = 7  # qualquer valor diferente de zero é jogador
         return m

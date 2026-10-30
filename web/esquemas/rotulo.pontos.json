@@ -1,0 +1,205 @@
+{
+  "$defs": {
+    "PartiuDe": {
+      "additionalProperties": false,
+      "properties": {
+        "fonte": {
+          "enum": [
+            "nenhuma",
+            "modelo",
+            "rotulo_anterior",
+            "rotulo_revisado"
+          ],
+          "title": "Fonte",
+          "type": "string"
+        },
+        "referencia": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Referencia"
+        },
+        "versao": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Versao"
+        }
+      },
+      "required": [
+        "fonte"
+      ],
+      "title": "PartiuDe",
+      "type": "object"
+    },
+    "Ponto": {
+      "additionalProperties": false,
+      "properties": {
+        "ponto": {
+          "description": "nome do ponto do campo (os 39 que se marcam)",
+          "title": "Ponto",
+          "type": "string"
+        },
+        "x": {
+          "description": "px da imagem, a partir do canto de cima à esquerda",
+          "title": "X",
+          "type": "number"
+        },
+        "y": {
+          "title": "Y",
+          "type": "number"
+        }
+      },
+      "required": [
+        "ponto",
+        "x",
+        "y"
+      ],
+      "title": "Ponto",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Os pontos do campo que aparecem no quadro. Nenhum ponto é uma resposta válida (um close, a\ntorcida): a imagem entra no treino sem pontos. Imagem descartada não leva pontos.",
+  "properties": {
+    "altura": {
+      "description": "altura da imagem (px)",
+      "exclusiveMinimum": 0,
+      "title": "Altura",
+      "type": "integer"
+    },
+    "anotador": {
+      "pattern": "^[A-Z][A-Z0-9]{1,9}$",
+      "title": "Anotador",
+      "type": "string"
+    },
+    "comentario": {
+      "default": "",
+      "title": "Comentario",
+      "type": "string"
+    },
+    "corrige": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "arquivo do rótulo que esta versão corrige (revisão cruzada)",
+      "title": "Corrige"
+    },
+    "criado_em": {
+      "format": "date-time",
+      "title": "Criado Em",
+      "type": "string"
+    },
+    "ferramenta": {
+      "title": "Ferramenta",
+      "type": "string"
+    },
+    "formato": {
+      "const": "rotulo.pontos/1",
+      "default": "rotulo.pontos/1",
+      "title": "Formato",
+      "type": "string"
+    },
+    "largura": {
+      "description": "largura da imagem (px)",
+      "exclusiveMinimum": 0,
+      "title": "Largura",
+      "type": "integer"
+    },
+    "manual": {
+      "title": "Manual",
+      "type": "string"
+    },
+    "motivo_descarte": {
+      "anyOf": [
+        {
+          "enum": [
+            "transicao",
+            "borrao",
+            "grafismo",
+            "outro"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Motivo Descarte"
+    },
+    "partida": {
+      "description": "ID da partida, ou 'gabarito'",
+      "title": "Partida",
+      "type": "string"
+    },
+    "partiu_de": {
+      "$ref": "#/$defs/PartiuDe"
+    },
+    "pontos": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/Ponto"
+      },
+      "title": "Pontos",
+      "type": "array"
+    },
+    "quadro": {
+      "description": "ID do quadro (t + PTS em ms) ou do item do gabarito (g1001)",
+      "title": "Quadro",
+      "type": "string"
+    },
+    "segundos_ativos": {
+      "minimum": 0,
+      "title": "Segundos Ativos",
+      "type": "number"
+    },
+    "situacao": {
+      "enum": [
+        "ok",
+        "descartada"
+      ],
+      "title": "Situacao",
+      "type": "string"
+    },
+    "versao": {
+      "minimum": 1,
+      "title": "Versao",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "partida",
+    "quadro",
+    "anotador",
+    "versao",
+    "ferramenta",
+    "manual",
+    "criado_em",
+    "segundos_ativos",
+    "largura",
+    "altura",
+    "partiu_de",
+    "situacao"
+  ],
+  "title": "RotuloPontos",
+  "type": "object"
+}

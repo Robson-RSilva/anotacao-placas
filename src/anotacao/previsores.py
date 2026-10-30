@@ -1,54 +1,41 @@
-"""Previsor: de onde vem a câmera prevista que já aparece desenhada na página de câmera.
+"""Previsor: um modelo que já deixa a imagem começada, para quem anota só corrigir.
 
-As páginas não dependem de nenhum modelo. Sem previsão, o molde abre pela câmera de um quadro já
-anotado da mesma tomada ou pela câmera do registro do estádio. Com um previsor, `anotacao prever`
-grava `previsoes/<quadro>.json` para os quadros sorteados, e a página usa essa câmera para começar.
+As páginas não dependem de nenhum modelo. Com um previsor, `anotacao prever` grava, para os quadros
+sorteados (menos os "sem previsão", que medem o viés de ancoragem):
+
+* pontos (`--tarefa pontos`): `previsoes/pontos/<quadro>.json` (formato previsao.pontos/1). O
+  previsor recebe a imagem e devolve os pontos que achou, {nome: (x, y)} em px da imagem;
+* jogadores (`--tarefa jogadores`): `previsoes/jogadores/<quadro>.png`. O previsor recebe a imagem e
+  devolve a máscara (h, w), diferente de zero onde há jogador, ou None.
 
 Um previsor é qualquer objeto chamável com `nome` e `versao`:
 
-    class MeuPrevisor:
+    class MeusPontos:
         nome = "detector_A"
         versao = "3f9c"
-        def __call__(self, imagem_bgr, pacote) -> tuple[CameraRotulo | None, float | None]: ...
+        def __call__(self, imagem_bgr) -> dict[str, tuple[float, float]]: ...
 
 e é carregado por `--previsor pacote.modulo:objeto` (o objeto pode ser a instância, a classe ou uma
 função que devolve a instância).
-
-Na oclusão (`anotacao prever --tarefa oclusao`), o previsor recebe só a imagem e devolve a máscara
-do quadro inteiro, com as classes da oclusão (2 pessoa, 3 bola, 4 rede, 5 grafismo, 6 objeto; o resto
-é ignorado), ou None:
-
-    class MinhaMascara:
-        nome = "pessoas_B"
-        versao = "71a0"
-        def __call__(self, imagem_bgr) -> np.ndarray | None: ...
-
-A página pinta com ela, dentro das placas, o começo de cada quadro: `previsoes/oclusao/<quadro>.png`.
 """
 
 from __future__ import annotations
 
 import importlib
 from collections.abc import Callable
-from typing import Protocol
 
 import cv2
 import numpy as np
 
-from .formatos import CameraRotulo, PacoteEstadio, Previsao
+from .formatos import NOMES_PONTOS, PrevisaoPontos
 from .mascara import gravar_png
-from .oclusao import PALETA
 from .pasta import Pasta, escrever_bytes, escrever_json
 
-
-class Previsor(Protocol):
-    nome: str
-    versao: str
-
-    def __call__(self, imagem: np.ndarray, pacote: PacoteEstadio) -> tuple[CameraRotulo | None, float | None]: ...
+#: As cores da máscara dos jogadores: 0 fundo, 1 jogador (a mesma paleta das páginas).
+PALETA_JOGADORES = [(0, 0, 0), (255, 64, 129)]
 
 
-def carregar_previsor(especificacao: str | None) -> Previsor | None:
+def carregar_previsor(especificacao: str | None):
     if not especificacao:
         return None
     modulo, _, attr = especificacao.partition(":")
@@ -65,80 +52,60 @@ def carregar_previsor(especificacao: str | None) -> Previsor | None:
     return obj
 
 
+def _pontos(achados, w: int, h: int) -> list[dict]:
+    """Os pontos do previsor que esta versão marca, dentro da imagem."""
+    out = []
+    for nome, (x, y) in sorted((achados or {}).items()):
+        if nome in NOMES_PONTOS and 0 <= x <= w and 0 <= y <= h:
+            out.append({"ponto": nome, "x": round(float(x), 2), "y": round(float(y), 2)})
+    return out
+
+
 def prever(
     pasta: Pasta,
-    previsor: Previsor,
+    previsor,
+    tarefa: str,
     partidas: list[str] | None = None,
     *,
     refazer: bool = False,
     progresso: Callable[[str, int, int], None] | None = None,
 ) -> int:
-    """Grava a previsão de cada quadro da fila (menos os "sem previsão"). Devolve quantas gravou.
+    """Grava a previsão de cada quadro da fila na tarefa. Devolve quantas gravou.
 
     Rodar de novo só faz as que faltam (quadros que ainda não chegaram pela sincronização ficam para
     a próxima vez), a não ser com `refazer`.
     """
+    if tarefa not in ("pontos", "jogadores"):
+        raise ValueError(f"tarefa desconhecida: {tarefa}")
     n = 0
     for pid in partidas or pasta.listar_partidas():
         man = pasta.ler_manifesto(pid)
-        pacote = pasta.ler_pacote_ref(man.pacote)
+        w, h = man.video.largura, man.video.altura
         itens = [it for it in pasta.ler_fila(pid).itens if not it.sem_previsao]
         for k, item in enumerate(itens):
-            destino = pasta.previsao(pid, item.quadro)
+            destino = (pasta.previsao_pontos if tarefa == "pontos" else pasta.previsao_jogadores)(pid, item.quadro)
             if destino.exists() and not refazer:
                 continue
             img = cv2.imread(str(pasta.quadro(pid, item.quadro)))
             if img is None:
                 continue
-            cam, confianca = previsor(img, pacote)
-            escrever_json(
-                destino,
-                Previsao(
+            saida = previsor(img)
+            if tarefa == "pontos":
+                prev = PrevisaoPontos(
                     partida=pid,
                     quadro=item.quadro,
                     fonte=previsor.nome,
                     versao=previsor.versao,
-                    camera=cam,
-                    confianca=confianca,
-                ),
-                sobrescrever=True,
-            )
-            n += 1
-            if progresso:
-                progresso(pid, k + 1, len(itens))
-    return n
-
-
-def prever_oclusao(
-    pasta: Pasta,
-    previsor,
-    partidas: list[str] | None = None,
-    *,
-    refazer: bool = False,
-    progresso: Callable[[str, int, int], None] | None = None,
-) -> int:
-    """Grava a pré-pintura da oclusão de cada quadro da fila (menos os "sem previsão"), um PNG com as
-    classes da oclusão. Devolve quantas gravou; rodar de novo só faz as que faltam (ou todas, com
-    `refazer`)."""
-    n = 0
-    for pid in partidas or pasta.listar_partidas():
-        man = pasta.ler_manifesto(pid)
-        itens = [it for it in pasta.ler_fila(pid).itens if not it.sem_previsao]
-        for k, item in enumerate(itens):
-            destino = pasta.previsao_oclusao(pid, item.quadro)
-            if destino.exists() and not refazer:
-                continue
-            img = cv2.imread(str(pasta.quadro(pid, item.quadro)))
-            if img is None:
-                continue
-            m = previsor(img)
-            if m is None:
-                continue
-            m = np.asarray(m)
-            if m.shape != (man.video.altura, man.video.largura):
-                raise ValueError(f"{previsor.nome}: a máscara precisa ter o tamanho do quadro ({m.shape})")
-            m = np.where((m >= 2) & (m <= 7), m, 0).astype(np.uint8)  # só as classes que cobrem a placa
-            escrever_bytes(destino, gravar_png(m, PALETA), sobrescrever=True)
+                    pontos=_pontos(saida, w, h),
+                )
+                escrever_json(destino, prev, sobrescrever=True)
+            else:
+                if saida is None:
+                    continue
+                m = np.asarray(saida)
+                if m.shape != (h, w):
+                    raise ValueError(f"{previsor.nome}: a máscara precisa ter o tamanho do quadro ({m.shape})")
+                escrever_bytes(destino, gravar_png((m != 0).astype(np.uint8), PALETA_JOGADORES), sobrescrever=True)
             n += 1
             if progresso:
                 progresso(pid, k + 1, len(itens))

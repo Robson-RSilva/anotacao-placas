@@ -1,6 +1,7 @@
 // Aplicativo de uma página só: escolhe a pasta de trabalho e troca de vista pelo endereço
-// (#/, #/camera, #/revisao, #/oclusao, #/revisao-oclusao, #/importar, #/coordenacao). Uma página
-// só porque a permissão da pasta vale para a aba aberta: trocar de vista não pede de novo.
+// (#/, #/pontos, #/jogadores, #/revisao-pontos, #/revisao-jogadores, #/gabarito, #/importar,
+// #/coordenacao). Uma página só porque a permissão da pasta vale para a aba aberta: trocar de vista
+// não pede de novo.
 
 import { RE_DISPOSITIVO, VERSAO, codigoPessoa } from "../nucleo/convencoes.js";
 import { carregarEsquemas } from "../nucleo/formatos.js";
@@ -8,21 +9,22 @@ import { Indice } from "../nucleo/indice.js";
 import { Pasta } from "../nucleo/pasta.js";
 import * as armazenamento from "./armazenamento.js";
 import { local, mensagemDeErro } from "./util.js";
-import * as camera from "./vista-camera.js";
 import * as central from "./vista-central.js";
 import * as coordenacao from "./vista-coordenacao.js";
+import * as gabarito from "./vista-gabarito.js";
 import * as importar from "./vista-importar.js";
 import * as inicio from "./vista-inicio.js";
-import * as oclusao from "./vista-oclusao.js";
-import * as revisaoOclusao from "./vista-revisao-oclusao.js";
-import * as revisao from "./vista-revisao.js";
+import * as jogadores from "./vista-jogadores.js";
+import * as pontos from "./vista-pontos.js";
+import { revisaoJogadores, revisaoPontos } from "./vista-revisao.js";
 
 const ROTAS = {
   "": ["central", central],
-  camera: ["camera", camera],
-  revisao: ["revisao", revisao],
-  oclusao: ["oclusao", oclusao],
-  "revisao-oclusao": ["revisao-oclusao", revisaoOclusao],
+  pontos: ["pontos", pontos],
+  jogadores: ["jogadores", jogadores],
+  "revisao-pontos": ["revisao-pontos", revisaoPontos],
+  "revisao-jogadores": ["revisao-jogadores", revisaoJogadores],
+  gabarito: ["gabarito", gabarito],
   importar: ["importar", importar],
   coordenacao: ["coordenacao", coordenacao],
 };

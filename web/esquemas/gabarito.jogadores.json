@@ -1,0 +1,81 @@
+{
+  "additionalProperties": false,
+  "description": "Item do gabarito dos jogadores: a imagem e a máscara verdadeira (PNG ao lado), com um número por\npessoa — os jogadores de 1 a N, as outras pessoas (árbitro, gandula, fotógrafo…: pintá-las é erro)\nde 255 para baixo — e 0 no resto.",
+  "properties": {
+    "altura": {
+      "exclusiveMinimum": 0,
+      "title": "Altura",
+      "type": "integer"
+    },
+    "formato": {
+      "const": "gabarito.jogadores/1",
+      "default": "gabarito.jogadores/1",
+      "title": "Formato",
+      "type": "string"
+    },
+    "id": {
+      "pattern": "^g\\d{4}$",
+      "title": "Id",
+      "type": "string"
+    },
+    "imagem": {
+      "title": "Imagem",
+      "type": "string"
+    },
+    "jogadores": {
+      "description": "quantos jogadores: os números 1 a N da máscara",
+      "maximum": 255,
+      "minimum": 0,
+      "title": "Jogadores",
+      "type": "integer"
+    },
+    "largura": {
+      "exclusiveMinimum": 0,
+      "title": "Largura",
+      "type": "integer"
+    },
+    "lote": {
+      "default": "",
+      "description": "o lote de ouro de onde o item veio",
+      "title": "Lote",
+      "type": "string"
+    },
+    "mascara": {
+      "description": "a máscara verdadeira, ao lado",
+      "title": "Mascara",
+      "type": "string"
+    },
+    "observacao": {
+      "default": "",
+      "title": "Observacao",
+      "type": "string"
+    },
+    "origem": {
+      "enum": [
+        "simulador",
+        "arbitrado"
+      ],
+      "title": "Origem",
+      "type": "string"
+    },
+    "outras_pessoas": {
+      "default": 0,
+      "description": "quantas outras pessoas: os números 255, 254… (de 255 para baixo)",
+      "maximum": 255,
+      "minimum": 0,
+      "title": "Outras Pessoas",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "id",
+    "imagem",
+    "mascara",
+    "largura",
+    "altura",
+    "jogadores",
+    "origem"
+  ],
+  "title": "GabaritoJogadores",
+  "type": "object"
+}

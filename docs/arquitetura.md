@@ -3,8 +3,8 @@
 ```text
 GitHub Pages (site estático)          navegador de cada pessoa                     pasta e Drive
 ┌───────────────────────────┐  baixa  ┌──────────────────────────────────────┐    ┌──────────────────────┐
-│ web/: HTML, CSS, JS,      │ ──────► │ aplicativo de uma página             │    │ pasta de trabalho    │
-│ esquemas e exemplo        │ (uma    │  · filas, gabarito, placar, molde    │───►│ (um arquivo por      │
+│ web/: HTML, CSS, JS       │ ──────► │ aplicativo de uma página             │    │ pasta de trabalho    │
+│ e esquemas                │ (uma    │  · filas, gabarito, placar, pintura  │───►│ (um arquivo por      │
 └───────────────────────────┘  vez)   │  · importação num worker (WebCodecs) │    │  pessoa e versão)    │
                                       │ File System Access API ou OPFS       │    └──────────┬───────────┘
                                       └──────────────────────────────────────┘               │ sincronização
@@ -14,8 +14,8 @@ GitHub Pages (site estático)          navegador de cada pessoa                 
 
 - **Por que só páginas estáticas:** cada pessoa anota no próprio computador sem instalar nada. O
   navegador faz tudo o que antes pedia um servidor local: grava numa pasta escolhida (File System
-  Access API, Chrome e Edge), decodifica vídeo (WebCodecs) e roda o ajuste da câmera. O GitHub Pages
-  só entrega os arquivos do site; nenhum dado passa por ele (ADR-0005).
+  Access API, Chrome e Edge), decodifica vídeo (WebCodecs) e compara as respostas com o gabarito. O
+  GitHub Pages só entrega os arquivos do site; nenhum dado passa por ele (ADR-0005).
 - **Onde ficam os dados:** na pasta escolhida — de preferência a pasta da equipe sincronizada pelo
   Google Drive para computador — ou, sem ela, no armazenamento do próprio navegador (Origin Private
   File System), com entrada e saída por .zip. A alça da pasta fica no IndexedDB, então a página lembra
@@ -30,20 +30,21 @@ GitHub Pages (site estático)          navegador de cada pessoa                 
   que computadores cada código é usado, para avisar duas pessoas que escolheram o mesmo.
 - **Sem cadastro prévio:** ninguém precisa estar numa equipe nem o estádio precisa estar levantado.
   Cada pessoa digita um código, que só separa os arquivos e conta o placar; as filas são abertas
-  (quem chega pega o próximo, cada código começa num ponto diferente da fila). O molde é o campo
-  genérico — as marcações da regra num campo cujo comprimento e largura se ajustam em cada rótulo —
-  ou, quando houver, o pacote de um estádio levantado.
-- **O molde arrastável:** a página projeta o campo inteiro pela câmera; arrastar um ponto roda um
-  Levenberg–Marquardt em 8 parâmetros (pan, tilt, roll, zoom, distorção e posição) que leva aquele
-  ponto ao cursor sem tirar do lugar os já travados. Uma âncora em torno da câmera de partida decide
-  o que se mexe com poucas pistas: com um ponto só giram pan e tilt; com dois entram zoom e roll; com
-  quatro, a posição; com cinco, a distorção.
-- **A oclusão:** a câmera aprovada de cada quadro desenha as placas — as do pacote do estádio ou,
-  no campo genérico, as faixas de placas que quem pinta ajusta por partida (ADR-0009). A página
-  rasteriza cada placa de frente para a câmera (com a distorção da lente, da mais longe para a mais
-  perto) e só deixa pintar dentro delas; a máscara inteira do quadro vai num PNG de índices ao lado do
-  rótulo, gravado e lido por um codificador próprio (a paleta não passa pelo canvas, que mexeria nas
-  cores). Duas pinturas se comparam placa a placa com 1 px de tolerância na borda.
+  (quem chega pega o próximo, cada código começa num ponto diferente da fila), uma por tarefa sobre os
+  mesmos quadros sorteados.
+- **Os pontos, direto na imagem** (ADR-0010): a página só mostra a imagem e um mapa do campo em SVG
+  com os 39 pontos que se marcam, que gira de 90 em 90 graus para ficar como a imagem. Cada clique
+  grava um ponto em px da imagem; a lupa amplia o pixel em volta do cursor. Nada de câmera nem molde:
+  o campo (`nucleo/campo.js`) só dá os nomes, o desenho do mapa e a simetria de 180° com que o
+  gabarito e a concordância aceitam a leitura do outro lado do campo.
+- **Os jogadores, a imagem inteira:** o pintor guarda uma máscara de 1 byte por pixel (1 onde há
+  jogador), com pincel, laço e borracha, desfazer e refazer; a máscara vai num PNG de índices ao lado
+  do rótulo, gravado e lido por um codificador próprio (a paleta não passa pelo canvas, que mexeria
+  nas cores). Duas pinturas — ou a pintura e a resposta do gabarito — se comparam sem a borda de 1 px
+  dos jogadores.
+- **O gabarito:** os itens ficam em `gabarito/itens/`, e os rótulos deles em `gabarito/rotulos/`, fora
+  das partidas. A fila decide quando servir um item (o teste até a liberação; depois, um a cada 15
+  rótulos), e a comparação com a resposta roda na própria página, com o resultado na hora no teste.
 - **A importação:** um worker lê o MP4 em blocos (o índice com um leitor próprio de ISO BMFF), faz o
   SHA-256 por partes, decodifica os quadros com o WebCodecs e guarda só os descritores de quadros
   reduzidos a 160 × 90. Com trechos escolhidos, decodifica só do quadro-chave anterior a cada trecho
@@ -57,23 +58,24 @@ GitHub Pages (site estático)          navegador de cada pessoa                 
 
 | Módulo | Papel |
 | --- | --- |
-| `nucleo/convencoes.js` | referencial, IDs, código da pessoa, versões da ferramenta e do manual |
-| `nucleo/camera.js`, `nucleo/campo.js` | modelo de câmera e molde do campo em qualquer medida — idênticos ao laboratório |
-| `nucleo/pacote.js` | o campo genérico, a câmera de partida e as placas do pacote |
+| `nucleo/convencoes.js` | referencial, IDs, código da pessoa, versões da ferramenta e do manual, motivos de descarte |
+| `nucleo/campo.js` | o campo em qualquer medida — idêntico ao laboratório —, os 39 pontos que se marcam e a simetria de 180° |
 | `nucleo/trechos.js` | ler os trechos do vídeo como a pessoa escreve |
-| `nucleo/solver.js` | ajuste da câmera ao que se arrasta e trava |
 | `nucleo/esquema.js`, `nucleo/formatos.js` | validação pelos JSON Schemas do Python e pelas regras entre campos |
 | `nucleo/pasta.js`, `nucleo/indice.js` | layout da pasta, escrita que nunca sobrescreve, índice com cache |
-| `nucleo/filas.js`, `nucleo/gabarito.js`, `nucleo/placar.js`, `nucleo/avaliacao.js` | o que cada pessoa faz a seguir, liberação, placar e medidas em px |
-| `nucleo/rotulos.js` | montar e gravar rótulos e revisões |
-| `nucleo/oclusao.js`, `nucleo/png.js` | as placas do quadro (faixas, pacote, gabarito), onde caem na imagem, a máscara, as contas por placa e a comparação; o PNG de índices |
-| `nucleo/filas-oclusao.js`, `nucleo/rotulos-oclusao.js` | a fila da oclusão (quadros com a câmera aprovada) e gravar as pinturas e as revisões |
+| `nucleo/filas.js`, `nucleo/gabarito.js`, `nucleo/placar.js` | o que cada pessoa faz a seguir em cada tarefa, a comparação com o gabarito e a liberação, o placar e a concordância |
+| `nucleo/rotulos.js`, `nucleo/png.js` | montar e gravar rótulos (com a máscara) e revisões; o PNG de índices |
 | `nucleo/zip.js`, `nucleo/transferencia.js` | levar e trazer arquivos em .zip |
 | `nucleo/hash.js`, `nucleo/aleatorio.js`, `nucleo/estatistica.js` | SHA-256 por partes, sorteio reprodutível, mediana e percentil |
 | `video/mp4.js` | índice do MP4: codec e tabela de amostras |
 | `video/descritores.js`, `video/cortes.js`, `video/sorteio.js` | do vídeo aos quadros sorteados (as contas da v0.1) |
 | `video/importar.js`, `video/trabalhador.js` | a importação, num worker |
-| `ui/` | as vistas (central, câmera, revisão, oclusão, revisão da oclusão, importar, coordenação), o editor do molde, o pintor da oclusão, a escolha da pasta e a vigia que pega o que chega de outros computadores |
+| `ui/mapa.js`, `ui/marcador.js` | o mapa do campo e a imagem em que se marcam os pontos (zoom, lupa, arrastar, apagar) |
+| `ui/pintor.js` | a pintura dos jogadores (pincel, laço, borracha) e o resultado do teste por cima |
+| `ui/tarefa.js` | o que as duas tarefas têm em comum: abrir a imagem, descartar, confirmar, os avisos |
+| `ui/vista-*.js` | as páginas: central, importar, pontos, jogadores, revisões, gabarito e coordenação |
+| `ui/app.js`, `ui/armazenamento.js` | as rotas (`#/pontos`, `#/jogadores`, …) e onde fica a pasta (escolhida ou do navegador) |
+| `ui/vigia.js`, `ui/tempo.js`, `ui/util.js` | pegar o que chega de outros computadores, o tempo ativo, utilidades |
 
 `nucleo/` e as contas de `video/` não dependem da página: rodam no Node (`node --test`) e no worker.
 
@@ -81,15 +83,16 @@ GitHub Pages (site estático)          navegador de cada pessoa                 
 
 | Módulo | Papel |
 | --- | --- |
-| `convencoes.py`, `camera.py`, `campo.py` | as mesmas convenções e o mesmo modelo, testados contra o laboratório |
+| `convencoes.py`, `campo.py` | as mesmas convenções e o mesmo campo, testados contra o laboratório |
 | `formatos.py` | modelos dos arquivos (pydantic) e JSON Schemas |
 | `pasta.py`, `indice.py` | layout da pasta, escrita atômica, índice |
-| `pacote.py` | validação do pacote, o campo genérico e o estádio sintético |
-| `gabarito.py`, `previsores.py` | importar o gabarito; previsões do modelo para o molde e pré-pintura da oclusão |
-| `oclusao.py`, `mascara.py` | as mesmas contas da oclusão que as páginas, e o PNG de índices |
-| `unificar.py` | conjuntos de treino em Parquet (câmera e oclusão) |
-| `geracao.py` | arquivos que as páginas leem e saem do Python (esquemas, exemplo, convenções) |
+| `gabarito.py`, `previsores.py` | importar o gabarito (conferindo a máscara verdadeira); os pontos e a pré-pintura de um modelo |
+| `mascara.py` | o PNG de índices, o mesmo das páginas |
+| `unificar.py` | conjuntos de treino em Parquet (pontos e jogadores) |
+| `geracao.py` | arquivos que as páginas leem e saem do Python (esquemas, convenções, PNGs de teste) |
 | `cli.py` | linha de comando |
+
+Fora do pacote, `scripts/lotes_de_ouro.py` gera os lotes de ouro com o simulador do laboratório.
 
 ## Segurança e privacidade
 

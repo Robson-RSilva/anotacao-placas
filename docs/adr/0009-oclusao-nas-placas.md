@@ -1,6 +1,7 @@
 # ADR-0009 — Oclusão nas placas: faixas de placas, máscara PNG ao lado do rótulo e comparação com 1 px de tolerância
 
-**Situação:** aceita (24/10/2026).
+**Situação:** substituída pela ADR-0010 (30/10/2026): no lugar da oclusão nas placas, pintam-se
+todos os jogadores da imagem, sem contorno de placas. Fica o registro.
 
 ## Contexto
 

@@ -1,8 +1,8 @@
-"""O molde do campo é o mesmo do laboratório: nomes, geometria, amostras e simetria."""
+"""O campo é o mesmo do laboratório: nomes, geometria, amostras e simetria."""
 
 import numpy as np
 
-from anotacao.campo import Campo
+from anotacao.campo import PONTOS_SEM_MARCA, Campo, perm180_dos_nomes, pontos_marcaveis
 
 
 def test_campo_igual_ao_laboratorio(laboratorio):
@@ -41,3 +41,13 @@ def test_para_web():
     assert geo["L"] == 100 and len(geo["elementos"]) == 26 and len(geo["pontos"]) == 43
     assert {e["tipo"] for e in geo["elementos"]} == {"reta", "arco"}
     assert len(geo["perm180"]["pontos"]) == 43
+
+
+def test_pontos_que_se_marcam():
+    nomes = pontos_marcaveis()
+    assert len(nomes) == 39 and not set(nomes) & set(PONTOS_SEM_MARCA)
+    assert nomes[0] == "canto_esq_cab" and "gol_dir_topo_opo" in nomes
+    p = perm180_dos_nomes()
+    assert p["canto_esq_cab"] == "canto_dir_opo" and p["centro"] == "centro" and p["penalti_esq"] == "penalti_dir"
+    assert all(p[p[n]] == n for n in p)  # a rotação duas vezes é a identidade
+    assert {p[n] for n in nomes} == set(nomes)  # o outro lado de um ponto que se marca também se marca

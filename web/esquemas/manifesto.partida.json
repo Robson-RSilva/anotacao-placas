@@ -58,7 +58,7 @@
             }
           ],
           "default": null,
-          "description": "versão do pacote do estádio, quando há o levantamento; sem ele, o campo genérico",
+          "description": "ignorado (das versões até a 0.7, que usavam o levantamento do estádio)",
           "title": "Pacote Versao"
         },
         "visitante": {
@@ -208,9 +208,18 @@
       "type": "string"
     },
     "pacote": {
-      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*/pacote-\\d+\\.\\d+$",
-      "title": "Pacote",
-      "type": "string"
+      "anyOf": [
+        {
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*/pacote-\\d+\\.\\d+$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "ignorado (das versões até a 0.7, que usavam o levantamento do estádio)",
+      "title": "Pacote"
     },
     "partida": {
       "pattern": "^\\d{4}-\\d{2}-\\d{2}_[a-z0-9]+(?:-[a-z0-9]+)*_[a-z0-9]+(?:-[a-z0-9]+)*$",
@@ -226,7 +235,6 @@
   },
   "required": [
     "partida",
-    "pacote",
     "cadastro",
     "video",
     "pre_processamento"

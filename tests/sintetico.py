@@ -1,4 +1,5 @@
-"""Quadros e vídeos sintéticos para os testes: o molde do campo e as placas desenhados por câmeras conhecidas."""
+"""Quadros e vídeos sintéticos para os testes: o campo e alguns "jogadores" desenhados por câmeras
+conhecidas — com a verdade de cada quadro (onde cai cada ponto do campo, e a máscara dos jogadores)."""
 
 from __future__ import annotations
 
@@ -6,52 +7,97 @@ import shutil
 import struct
 import subprocess
 from collections.abc import Iterator
+from dataclasses import dataclass
 from pathlib import Path
 
 import cv2
 import numpy as np
 
-from anotacao.camera import Camera
-from anotacao.campo import Campo
-from anotacao.formatos import PacoteEstadio
-
-CORES_LADO = {"cab": (200, 120, 30), "opo": (40, 140, 230), "esq": (160, 60, 160), "dir": (120, 160, 40)}
-
-#: Câmera do registro de cada tomada do vídeo sintético (para começar o molde perto da verdade).
-REGISTRO_DA_TOMADA = {0: "principal", 1: "16m_dir", 2: "reversa"}
+from anotacao.campo import Campo, pontos_marcaveis
 
 
-def renderizar(cam: Camera, campo: Campo, pacote: PacoteEstadio, semente: int = 0) -> np.ndarray:
+@dataclass
+class Camera:
+    """Pinhole simples (sem distorção): x ~ K R (X - C), com o ponto principal no centro."""
+
+    f: float
+    R: np.ndarray
+    C: np.ndarray
+    w: int
+    h: int
+
+    @classmethod
+    def look_at(cls, C, alvo, hfov, w=640, h=360) -> Camera:
+        C = np.asarray(C, float)
+        frente = np.asarray(alvo, float) - C
+        frente /= np.linalg.norm(frente)
+        direita = np.cross(frente, [0.0, 0.0, 1.0])
+        direita /= np.linalg.norm(direita)
+        baixo = np.cross(frente, direita)
+        f = (w / 2) / np.tan(np.radians(hfov) / 2)
+        return cls(f, np.stack([direita, baixo, frente]), C, w, h)
+
+    def project(self, X) -> tuple[np.ndarray, np.ndarray]:
+        Xc = (np.atleast_2d(np.asarray(X, float)) - self.C) @ self.R.T
+        z = Xc[:, 2]
+        px = np.full((len(Xc), 2), np.nan)
+        ok = z > 1e-3
+        px[ok] = self.f * Xc[ok, :2] / z[ok, None] + [self.w / 2, self.h / 2]
+        return px, z
+
+
+#: As câmeras das tomadas do vídeo sintético: principal, atrás do gol e do outro lado.
+PLANOS = [
+    ((0.0, -58.0, 16.0), (-8.0, 0.0, 0.0), 40.0),
+    ((-64.0, 4.0, 10.0), (-30.0, 0.0, 0.0), 46.0),
+    ((6.0, 60.0, 14.0), (10.0, 0.0, 0.0), 42.0),
+]
+
+#: Onde ficam os "jogadores" (x, y no campo, em metros) e a cor da camisa (BGR).
+JOGADORES = [
+    (-14.0, 6.0, (40, 40, 220)),
+    (-30.0, -8.0, (220, 220, 220)),
+    (-40.0, 2.0, (40, 40, 220)),
+    (4.0, -4.0, (220, 220, 220)),
+]
+
+
+def renderizar(cam: Camera, semente: int = 0, campo: Campo | None = None) -> tuple[np.ndarray, dict]:
+    """O quadro e a verdade dele: {"pontos": {nome: (x, y)} dos que caem na imagem, "jogadores": a
+    máscara (h, w) com 1 onde há jogador}."""
+    campo = campo or Campo()
     rng = np.random.default_rng(semente)
     img = np.empty((cam.h, cam.w, 3), np.uint8)
     img[:] = (45, 125, 50)
     img = np.clip(img.astype(np.int16) + rng.normal(0, 6, img.shape).astype(np.int16), 0, 255).astype(np.uint8)
-    for placa in pacote.placas:
-        V = np.asarray(placa.vertices, float)
-        px, z = cam.project(V)
-        if np.all(np.isfinite(px)) and np.all(z > 0.5):
-            cor = CORES_LADO[placa.lado] if placa.tipo == "estatica" else (180, 40, 180)
-            cv2.fillPoly(img, [np.round(px * 16).astype(np.int32)], cor, cv2.LINE_AA, 4)
     for el in campo.elementos:
         px, _ = cam.project(el.amostrar(0.1))
-        ok = np.isfinite(px).all(1)
-        pts = px[ok]
-        if len(pts) < 2:
+        pts = px[np.isfinite(px).all(1)]
+        if len(pts) >= 2:
+            cv2.polylines(img, [np.round(pts * 16).astype(np.int32)], False, (235, 235, 235), 2, cv2.LINE_AA, 4)
+    mascara = np.zeros((cam.h, cam.w), np.uint8)
+    for x, y, cor in JOGADORES:
+        base, z = cam.project([[x, y, 0.0], [x, y, 1.8]])
+        if not (np.isfinite(base).all() and (z > 1).all()):
             continue
-        cv2.polylines(img, [np.round(pts * 16).astype(np.int32)], False, (235, 235, 235), 2, cv2.LINE_AA, 4)
-    return img
+        (bx, by), (tx, ty) = base
+        altura = abs(by - ty)
+        centro = (round((bx + tx) / 2), round((by + ty) / 2))
+        eixos = (max(2, int(altura * 0.18)), max(3, int(altura / 2)))
+        cv2.ellipse(img, centro, eixos, 0, 0, 360, cor, -1)
+        cv2.ellipse(mascara, centro, eixos, 0, 0, 360, 1, -1)
+    px, z = cam.project(campo.KP)
+    pontos = {}
+    for nome, (x, y), zz in zip(campo.nomes_pontos, px, z, strict=True):
+        if nome in pontos_marcaveis() and np.isfinite(x) and 0 <= x <= cam.w and 0 <= y <= cam.h and zz > 0:
+            pontos[nome] = (float(x), float(y))
+    return img, {"pontos": pontos, "jogadores": mascara}
 
 
-def cameras_de_tomadas(pacote: PacoteEstadio, w: int, h: int) -> list[list[Camera]]:
+def cameras_de_tomadas(w: int, h: int) -> list[list[Camera]]:
     """Três tomadas de 2 s a 25 fps, de câmeras diferentes, com um pan lento."""
-    reg = {c.nome: np.asarray(c.T, float) for c in pacote.cameras}
-    planos = [
-        (reg["principal"], (-8.0, 0.0, 0.0), 38.0),
-        (reg["16m_dir"], (40.0, 8.0, 0.0), 30.0),
-        (reg["reversa"], (5.0, -5.0, 0.0), 42.0),
-    ]
     tomadas = []
-    for C, alvo, hfov in planos:
+    for C, alvo, hfov in PLANOS:
         cams = []
         for k in range(50):
             a = np.array(alvo) + np.array([0.08 * k, 0.0, 0.0])
@@ -60,15 +106,15 @@ def cameras_de_tomadas(pacote: PacoteEstadio, w: int, h: int) -> list[list[Camer
     return tomadas
 
 
-def gravar_quadros(destino: Path, pacote: PacoteEstadio, w: int = 640, h: int = 360) -> list[Camera]:
-    """Grava os quadros do vídeo sintético em PNG (00000.png, …) e devolve a câmera verdadeira de cada um."""
-    campo = Campo(L=pacote.campo.comprimento, W=pacote.campo.largura)
+def gravar_quadros(destino: Path, w: int = 640, h: int = 360) -> list[dict]:
+    """Grava os quadros do vídeo sintético em PNG (00000.png, …) e devolve a verdade de cada um."""
     destino.mkdir(parents=True, exist_ok=True)
     verdade = []
-    for cams in cameras_de_tomadas(pacote, w, h):
+    for cams in cameras_de_tomadas(w, h):
         for cam in cams:
-            cv2.imwrite(str(destino / f"{len(verdade):05d}.png"), renderizar(cam, campo, pacote, semente=len(verdade)))
-            verdade.append(cam)
+            img, v = renderizar(cam, semente=len(verdade))
+            cv2.imwrite(str(destino / f"{len(verdade):05d}.png"), img)
+            verdade.append(v)
     return verdade
 
 

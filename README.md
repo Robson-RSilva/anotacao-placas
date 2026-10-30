@@ -1,16 +1,20 @@
 # Anotação de dados para treino
 
-Páginas de anotação que geram os dados de **treino e teste** do detector de marcações do projeto de
-exposição de placas. Rodam inteiras no navegador, publicadas no GitHub Pages, e gravam na pasta de
-trabalho de cada pessoa. Só entra aqui o que treina modelo:
+Páginas de anotação que geram os dados de **treino e teste** do projeto de exposição de placas.
+Rodam inteiras no navegador, publicadas no GitHub Pages, e gravam na pasta de trabalho de cada
+pessoa. Duas tarefas, cada uma feita direto na imagem:
 
-| Página | O que grava | Para o treino |
+| Página | O que se faz | Para o treino |
 | --- | --- | --- |
 | Central e importação | cadastro da partida (estádio, emissora, competição, data e hora, iluminação, chuva) e os quadros sorteados, do vídeo inteiro ou só dos trechos escolhidos | separar treino e teste por jogo e equilibrar a amostra |
-| Câmera do quadro | a câmera que faz o molde do campo coincidir com as marcações | alvos de pontos-chave e linhas do detector |
-| Revisão cruzada | aprovar, corrigir ou devolver o rótulo de outra pessoa, às cegas | só entra no treino o que foi aprovado |
-| Oclusão nas placas | o que cobre cada placa (pessoa, bola, rede, grafismo, objeto), pintado por cima do contorno das placas, e a fração livre de cada uma | alvo da máscara de pessoas do detector |
-| Revisão da oclusão | aprovar, corrigir ou devolver a pintura de outra pessoa, às cegas | só entra no treino o que foi aprovado |
+| Pontos do campo | clicar em cada ponto do campo que aparece (cruzamentos de linhas, marcas, traves), dando o nome de cada um pelo mapa do campo | alvo dos pontos-chave do detector |
+| Jogadores | pintar todos os jogadores da imagem, goleiros inclusive (árbitro, gandulas e torcida não) | alvo da máscara de jogadores |
+| Revisão às cegas | aprovar, corrigir ou devolver o trabalho de outra pessoa, sem saber de quem é | só entra no treino o que foi aprovado |
+| Gabarito | o teste de quem começa, com o resultado na hora, e os itens que medem cada pessoa depois | medir a qualidade de cada um |
+
+Em qualquer das duas tarefas, a imagem que não dá para anotar (transição, borrão, grafismo da
+emissora por cima) é **descartada** com um motivo — e o descarte também passa pela revisão. Imagem
+sem nenhum ponto (um close) ou sem jogador é salva vazia: é um exemplo de treino como os outros.
 
 Cortes, replays, grafismos, lado do estádio e artes das placas são resolvidos por regras e pelo
 cadastro do estádio, sem treino, e são conferidos na **solução assistida** — outro projeto, com
@@ -23,8 +27,8 @@ ferramenta e documento próprios (ver [ADR-0003](docs/adr/0003-anotacao-separada
    pelo Google Drive para computador). O navegador pede permissão para ler e gravar nela; da próxima
    vez, um clique em "Continuar nessa pasta" basta.
 3. Digite o seu código em **Seu código**, no alto da página central — as suas iniciais, por
-   exemplo (de 2 a 10 letras e números) — e comece a anotar. Não há cadastro de equipe: o código só
-   separa os arquivos de cada pessoa e conta os pontos do placar.
+   exemplo (de 2 a 10 letras e números) — e comece. Não há cadastro de equipe: o código só separa os
+   arquivos de cada pessoa e conta os pontos do placar.
 
 Nada é instalado e nada vai para a internet: o site são arquivos estáticos (HTML, CSS e JavaScript) e
 todo o processamento — inclusive ler o vídeo — acontece no navegador de cada pessoa. Os vídeos,
@@ -45,10 +49,10 @@ liga os dois é a pasta de trabalho.
 - **Com a pasta da equipe no Google Drive** (o jeito normal): cada pessoa instala o Google Drive para
   computador, abre o site e escolhe a **mesma pasta** da equipe. Cada um digita o **seu** código. O
   rótulo de uma pessoa é um arquivo dela, que o Drive leva para o computador da outra; a revisão
-  volta do mesmo jeito. As páginas paradas sem nada a fazer — a revisão sem rótulos, a câmera sem
-  quadros, a central — conferem sozinhas a cada 15 segundos (e quando você volta para a aba) e
-  mostram o que chegou, sem recarregar. Uma partida importada por uma pessoa aparece para as outras
-  assim que o Drive termina de sincronizar os quadros.
+  volta do mesmo jeito. As páginas paradas sem nada a fazer — a revisão sem rótulos, os pontos ou os
+  jogadores sem imagens, a central — conferem sozinhas a cada 15 segundos (e quando você volta para
+  a aba) e mostram o que chegou, sem recarregar. Uma partida importada por uma pessoa aparece para as
+  outras assim que o Drive termina de sincronizar os quadros.
 - **Sem pasta sincronizada**, pelo armazenamento do navegador e arquivos .zip: quem importou a
   partida e anotou manda **Baixar cópia da pasta (.zip)**; a outra pessoa, com o armazenamento
   vazio, usa **Trazer a cópia de um .zip**, digita o código dela e revisa; depois manda de volta
@@ -77,69 +81,80 @@ Não é preciso cadastrar equipe nem levantar o estádio antes: basta importar a
    Arquivo → Remuxar gravações). A leitura leva tempo: num teste com 2 núcleos e sem decodificação
    pela placa de vídeo, 2 minutos de vídeo em 1080p levaram 1 minuto. Deixe a aba aberta até terminar;
    dá para voltar à central enquanto isso.
-2. **Anotar a câmera.** O molde é o **campo genérico**: as marcações da regra (áreas, círculo, marcas
-   do pênalti, gols) num campo de 105 × 68 m. Como o tamanho do campo muda de um estádio para outro,
-   o comprimento e a largura se ajustam em cada quadro, em **Medidas do campo**: o molde estica e o
-   que está travado continua no lugar; os quadros seguintes da mesma partida já abrem com as últimas
-   medidas usadas nela. O molde abre pela melhor câmera disponível (versão devolvida, previsão do modelo, um
-   quadro já anotado da mesma tomada ou uma posição típica de câmera). Arrastar um ponto move o
-   molde inteiro, porque o que se ajusta por trás é a câmera; cada ponto solto fica travado. Linhas
-   longas também se arrastam.
-3. **Revisão cruzada.** Cada rótulo vai para qualquer outra pessoa (nunca para quem anotou), sem o
+2. **Marcar os pontos do campo.** A imagem abre sem molde por cima (só com os pontos de um modelo,
+   quando há previsão, para corrigir). Ao lado fica o **mapa do campo** com os 39 pontos que se
+   marcam (cruzamentos das linhas, marcas do pênalti e do centro, pés e topos das traves). Escolha o
+   ponto no mapa e clique no lugar dele na imagem — ou ao contrário: clique na imagem e depois no
+   mapa. Marque todo ponto que aparece, no centro exato do cruzamento; a roda do mouse aproxima e a
+   lupa mostra o pixel. Arrastar ajusta, o botão direito apaga. O mapa gira de 90 em 90 graus (`R`)
+   até ficar como a imagem — o lado de baixo é o mais perto da câmera. Os nomes dos lados são os do
+   campo ("cab", o lado das cabines), e a mesma marcação vista do outro lado do campo (girada 180°)
+   também vale.
+3. **Pintar os jogadores.** A imagem inteira, sem nada por cima: pinte cada jogador, do cabelo à
+   chuteira, com o pincel ou o laço (contornar à mão ou clique a clique); a borracha (`E`) apaga.
+   Goleiros são jogadores; árbitros, gandulas, fotógrafos, comissão técnica e torcida não se pintam,
+   nem a sombra. A máscara (1 onde há jogador) vai num PNG ao lado do rótulo.
+4. **Descartar** (`D`), nas duas tarefas, a imagem que não dá para anotar: transição entre tomadas,
+   borrada demais, grafismo da emissora cobrindo a imagem ou outro motivo (com comentário). O
+   descarte é um rótulo como os outros e vai para a revisão.
+5. **Revisão às cegas.** Cada rótulo vai para qualquer outra pessoa (nunca para quem anotou), sem o
    nome de quem anotou: aprovar, corrigir (vira versão nova, com a autoria de quem revisou) ou devolver
-   com um motivo da lista. Nos quadros em dupla às cegas, a revisão só abre depois que as duas
-   pessoas anotaram.
-4. **Pintar a oclusão nas placas.** Depois que a câmera de um quadro é aprovada, ele entra na fila da
-   oclusão. A câmera desenha o contorno das placas — as do estádio levantado ou, no campo genérico,
-   uma **faixa de placas** em cada lado do campo, com a distância da linha, a altura, o comprimento e
-   um vão no meio, ajustados no primeiro quadro da partida (os seguintes já abrem certos). Pinta-se só
-   dentro dos contornos o que está na frente da placa: pessoa, bola, rede, grafismo ou objeto, com o
-   pincel ou o laço. Placas mais baixas que 10 px (ref. 960) ficam de fora. A máscara vai num PNG ao
-   lado do rótulo, e o rótulo traz a fração livre de cada placa. Outra pessoa revisa às cegas, como
-   na câmera ([ADR-0009](docs/adr/0009-oclusao-nas-placas.md)).
-5. **Unificar** (Python, por quem treina). `anotacao unificar` lê tudo, valida de novo e gera
-   `conjuntos/<data-hora>/camera.parquet`, `oclusao.parquet` e `oclusao_placas.parquet` com
+   com um motivo da lista. A página de revisão traz o passo a passo ("Como revisar"): nos pontos,
+   conferir o lugar (até 2 px) e o nome de cada ponto e procurar o que faltou; nos jogadores, conferir
+   o contorno, quem faltou e quem foi pintado sem ser jogador; num descarte, se dava mesmo para
+   anotar. Nos quadros em dupla às cegas, a revisão só abre depois que as duas pessoas anotaram.
+6. **Unificar** (Python, por quem treina). `anotacao unificar` lê tudo, valida de novo e gera
+   `conjuntos/<data-hora>/pontos.parquet`, `pontos_lista.parquet` e `jogadores.parquet` com
    manifesto, respeitando a divisão por partida: quadros de um jogo nunca se misturam entre treino e
-   teste. Cada linha da câmera leva as medidas do campo usadas no molde daquele rótulo; cada placa da
-   oclusão, as contas refeitas da máscara e o retângulo para recortar.
+   teste. Imagens descartadas ficam de fora (o manifesto conta por motivo).
 
-Para experimentar, a página central cria uma pasta de exemplo (o estádio sintético do laboratório).
-
-A página **Coordenação** é opcional: nomes para o placar mostrar ao lado de cada código, link do
-Manual, divisão das partidas entre treino e teste, itens do gabarito e pacotes de estádios
-levantados. Um pacote de estádio (medidas do campo, placas e posição das câmeras) entra como molde
-na importação, no lugar do campo genérico, e mostra as placas com o nome, para conferir o lado do
-estádio.
-
-Quando a pasta tem **gabarito** (quadros com a câmera exata, do simulador ou de rótulos arbitrados),
-quem começa é treinado e liberado por ele: a mediana dos últimos 10 itens precisa ficar em até 2 px.
-Depois, a cada 15 rótulos, um item do gabarito entra escondido na fila. Sem gabarito, todo mundo
-anota direto. Os **lotes de ouro** (`scripts/lotes_de_ouro.py`) são gabaritos prontos, do
-simulador: L1 para treino e liberação, L2 para as medidas do campo, L3 e L4 para controle de dia e à
-noite, cada um num .zip que entra por "Trazer arquivos de um .zip". Os itens abrem no campo
-genérico; os de um campo de outro tamanho só fecham com as medidas certas. Sem placas no molde, nada
-decide o lado do campo, e o gabarito aceita a câmera do lado espelhado ([ADR-0008](docs/adr/0008-gabarito-no-campo-generico.md)).
-A oclusão tem gabarito próprio: os lotes L5 (de dia) e L6 (à noite), com as placas exatas e a
-máscara verdadeira de cada quadro. A pintura se compara com a verdade placa a placa, com 1 px de
-tolerância na borda; a liberação pede a mediana dos últimos 5 itens em até 5% de cada placa.
 Em ~10% dos quadros duas pessoas anotam (e pintam) do zero, às cegas, para medir a concordância; em
 outros ~10% a página começa sem previsão, para medir o viés de ancoragem.
+
+## O gabarito e os lotes de ouro
+
+A página **Gabarito** (pela central) é o teste de quem começa. São imagens com a resposta certa:
+você anota como sempre e, ao salvar, vê o resultado — o que acertou, o que ficou longe, o que faltou
+— e pode ver a resposta. Cada tarefa tem o seu teste e a sua meta:
+
+- **Pontos:** um item dá certo sem nenhum ponto errado (nome trocado, ou a mais de 8 px do lugar
+  certo), com pelo menos 80% dos pontos que aparecem marcados e o erro mediano em até 2 px (px na
+  referência de 960 de largura). Pontos cobertos são opcionais. Libera com 8 certos dos últimos 10.
+- **Jogadores:** com 1 px de tolerância na borda, cada jogador pintado em pelo menos metade da área,
+  ninguém que não é jogador pintado (25% de uma outra pessoa já conta) e a sobreposição com a
+  resposta (IoU) de pelo menos 80%. Libera com 4 certos dos últimos 5.
+
+Até ser liberada, a pessoa só vê o teste na página da tarefa. Depois, uma imagem do gabarito entra
+escondida a cada 15 imagens reais, sem aviso e sem resultado, e a liberação continua contando os
+últimos itens: quem cai muito volta para o teste. Sem gabarito na pasta, todo mundo anota direto.
+
+Os **lotes de ouro** são gabaritos prontos, gerados com o simulador do laboratório
+(`scripts/lotes_de_ouro.py`), e entram pela página do gabarito ("Importar lote de ouro (.zip)"):
+
+| Lote | Itens | Para quê |
+| --- | --- | --- |
+| P1-treino | g1001–g1030 | teste dos pontos: dia, câmeras centrais, imagem nítida |
+| P2-variado | g1101–g1140 | controle dos pontos: todas as câmeras e campos de vários tamanhos, com closes sem pontos |
+| P3-noite | g1201–g1220 | controle dos pontos à noite |
+| J1-treino | g2001–g2012 | teste dos jogadores: planos fechados, poucos jogadores grandes |
+| J2-variado | g2101–g2116 | controle dos jogadores: dia e noite, mais gente, árbitros e gandulas, um item sem jogador |
+
+O teste usa primeiro os lotes com "treino" no nome; os itens escondidos, primeiro os outros. As
+regras foram conferidas com anotadores simulados nesses lotes ([ADR-0010](docs/adr/0010-marcar-e-pintar-direto-na-imagem.md)).
 
 ## Pasta de trabalho
 
 ```text
 trabalho/                                   a pasta da equipe, sincronizada com o Drive
   equipe.json, divisao.json, projeto.json     nomes (opcionais), divisão e projeto
-  estadios/generico/pacote-1.0/pacote.json   o campo genérico (a página grava ao criar a pasta)
-  estadios/<estadio>/pacote-<versão>/pacote.json   estádios levantados (opcional)
   partidas/<partida>/
     manifesto.json, tomadas.json, fila.json
     quadros/<quadro>.jpg                      só os sorteados
-    previsoes/<quadro>.json                   quando há previsor (anotacao prever)
-    previsoes/oclusao/<quadro>.png            pré-pintura de um modelo (anotacao prever --tarefa oclusao)
-    rotulos/camera/<quadro>__<código>__v<n>.json
-    rotulos/oclusao/<quadro>__<código>__v<n>.json + .png   a pintura e a máscara ao lado
-    revisoes/camera/…, revisoes/oclusao/…
+    previsoes/pontos/<quadro>.json            pontos de um modelo (anotacao prever --tarefa pontos)
+    previsoes/jogadores/<quadro>.png          pré-pintura de um modelo (anotacao prever --tarefa jogadores)
+    rotulos/pontos/<quadro>__<código>__v<n>.json
+    rotulos/jogadores/<quadro>__<código>__v<n>.json + .png   o rótulo e a máscara ao lado
+    revisoes/pontos/…, revisoes/jogadores/…
   gabarito/itens/, gabarito/rotulos/          nunca entram no treino
   pessoas/<código>/<navegador>.json           em que computadores cada código é usado
   conjuntos/<data-hora>/                      saída do unificar
@@ -147,7 +162,9 @@ trabalho/                                   a pasta da equipe, sincronizada com 
 
 Um arquivo por pessoa e por versão: ninguém edita o arquivo de outra pessoa, então o Drive nunca
 entra em conflito. A escrita é atômica e nenhum rótulo ou revisão existente é sobrescrito. Os
-formatos estão em [docs/formatos.md](docs/formatos.md), com os JSON Schemas em `web/esquemas/`.
+formatos estão em [docs/formatos.md](docs/formatos.md), com os JSON Schemas em `web/esquemas/`. Os
+arquivos das versões até a 0.7 (câmera, oclusão, pacotes de estádio) ficam onde estão e não entram
+em nada; as partidas importadas antes continuam valendo.
 
 ## Para quem coordena e treina (Python)
 
@@ -155,20 +172,20 @@ formatos estão em [docs/formatos.md](docs/formatos.md), com os JSON Schemas em 
 python -m venv .venv && source .venv/bin/activate     # no Windows: .venv\Scripts\activate
 pip install -e .
 
-anotacao exemplo trabalho                   # pasta de exemplo: estádio sintético e os nomes de A01/A02
-anotacao gabarito ORIGEM --pasta P          # importa itens do gabarito (<id>.json + JPEG; na oclusão, + PNG)
-anotacao prever --pasta P --previsor pacote.modulo:objeto   # câmera prevista para o molde abrir perto
-anotacao prever --tarefa oclusao --pasta P --previsor ...   # pré-pintura da oclusão (máscara de pessoas)
+anotacao exemplo trabalho                   # pasta de exemplo, com os nomes de A01 e A02
+anotacao gabarito ORIGEM --pasta P          # importa itens do gabarito (<id>.json + JPEG; nos jogadores, + PNG)
+anotacao prever --tarefa pontos --pasta P --previsor pacote.modulo:objeto      # pontos de um modelo
+anotacao prever --tarefa jogadores --pasta P --previsor pacote.modulo:objeto   # pré-pintura dos jogadores
 anotacao validar --pasta P                  # confere todos os arquivos
 anotacao unificar --pasta P                 # gera os conjuntos de treino
 anotacao esquemas DESTINO                   # exporta os JSON Schemas
 ```
 
-Para experimentar com dados do laboratório: `scripts/lotes_de_ouro.py` gera os lotes de ouro
-(`--laboratorio ../placas-exposicao --saida lotes`: um .zip por lote, `indice.csv` e
-`indice-oclusao.csv` e um mosaico de cada lote — na oclusão, com a máscara verdadeira por cima), `scripts/gabarito_do_laboratorio.py` gera itens do gabarito no estádio sintético, com
-placas, e `scripts/video_demo_do_laboratorio.py` monta um vídeo MP4 de demonstração a partir de uma
-transmissão sintética.
+Com o laboratório ao lado: `scripts/lotes_de_ouro.py --laboratorio ../placas-exposicao --saida lotes`
+gera os lotes de ouro (um .zip por lote, `indice-pontos.csv`, `indice-jogadores.csv`, `lotes.json` e
+um mosaico de cada lote com a resposta por cima); `scripts/conferir_regras.py` passa anotadores
+simulados por esses lotes, com as regras da página; e `scripts/video_demo_do_laboratorio.py` monta
+um vídeo MP4 de demonstração a partir de uma transmissão sintética.
 
 ## Publicação
 
@@ -190,18 +207,18 @@ pytest -m e2e                             # ponta a ponta no navegador (precisa 
 ```
 
 O endereço local (127.0.0.1) conta como seguro para o navegador, então a escolha de pasta e o
-WebCodecs funcionam como no site publicado. O modelo de câmera e o molde do campo existem em Python e
-em JavaScript e são testados contra o laboratório; a leitura do vídeo e os cortes são testados contra
-a implementação de referência da v0.1. Detalhes em [CONTRIBUTING.md](CONTRIBUTING.md), arquitetura
-em [docs/arquitetura.md](docs/arquitetura.md) e decisões em [docs/adr/](docs/adr/).
+WebCodecs funcionam como no site publicado. O campo (nomes e lugares dos pontos, simetria de 180°)
+existe em Python e em JavaScript e é testado contra o laboratório; a leitura do vídeo e os cortes são
+testados contra a implementação de referência da v0.1. Detalhes em [CONTRIBUTING.md](CONTRIBUTING.md),
+arquitetura em [docs/arquitetura.md](docs/arquitetura.md) e decisões em [docs/adr/](docs/adr/).
 
 ## Próximos passos
 
+- Previsor com o detector do laboratório (`anotacao prever --previsor pacote.modulo:objeto`): os
+  pontos já marcados e a máscara de jogadores como pré-pintura, para quem anota só corrigir.
+- Gabarito arbitrado: rótulos reais aprovados por duas pessoas que concordam viram itens do gabarito
+  (origem `arbitrado`), para medir também nas imagens de verdade.
 - Baixar o vídeo pela própria página (depende de onde os vídeos vêm).
-- Previsor com o detector do laboratório (`anotacao prever --previsor pacote.modulo:objeto`) e a
-  máscara de pessoas como pré-pintura da oclusão (`--tarefa oclusao`).
-- Decidir se a rede do gol conta como oclusão (o rótulo já guarda os pixels dela).
-- Indicador ao vivo da distância entre o molde e as linhas que a rede encontrou.
 
 ## Dados e privacidade
 

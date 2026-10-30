@@ -13,17 +13,19 @@ O mesmo layout existe nas páginas (`web/js/nucleo/pasta.js`).
 
     trabalho/
       equipe.json (opcional: nomes), divisao.json, projeto.json (opcional: nome e link do Manual)
-      estadios/<estadio>/pacote-<versao>/pacote.json    generico/pacote-1.0: o campo genérico
       partidas/<partida>/
         manifesto.json, tomadas.json, fila.json
         quadros/<quadro>.jpg
-        previsoes/<quadro>.json
-        previsoes/oclusao/<quadro>.png              pré-pintura de um modelo (opcional)
-        rotulos/<tarefa>/<quadro>__<anotador>__v<n>.json    na oclusão, com o .png da máscara ao lado
+        previsoes/pontos/<quadro>.json              pontos de um modelo (opcional)
+        previsoes/jogadores/<quadro>.png            pré-pintura de um modelo (opcional)
+        rotulos/<tarefa>/<quadro>__<anotador>__v<n>.json    nos jogadores, com o .png da máscara ao lado
         revisoes/<tarefa>/<quadro>__<revisor>__v<n>.json
-      gabarito/itens/<g0001>.json|.jpg (|.png na oclusão), gabarito/rotulos/<tarefa>/...
+      gabarito/itens/<g1001>.json|.jpg (|.png nos jogadores), gabarito/rotulos/<tarefa>/...
       pessoas/<codigo>/<dispositivo>.json           em que computadores cada código é usado
       conjuntos/<data-hora>/                        saída do unificar
+
+As tarefas são `pontos` e `jogadores`. As pastas das versões até a 0.7 (`rotulos/camera`,
+`rotulos/oclusao`, `estadios/`) ficam onde estão e não entram em nada.
 """
 
 from __future__ import annotations
@@ -37,21 +39,9 @@ from typing import TypeVar
 
 from pydantic import BaseModel
 
-from .convencoes import (
-    PARTIDA_GABARITO,
-    RE_ESTADIO,
-    RE_GABARITO,
-    RE_MASCARA,
-    RE_PARTIDA,
-    RE_PESSOA,
-    RE_QUADRO,
-    RE_VERSAO_PACOTE,
-    REF_PACOTE_GENERICO,
-)
-from .formatos import Divisao, Equipe, Fila, Manifesto, PacoteEstadio, Projeto, Tomadas
-from .pacote import pacote_generico
+from .convencoes import PARTIDA_GABARITO, RE_GABARITO, RE_MASCARA, RE_PARTIDA, RE_PESSOA, RE_QUADRO, TAREFAS
+from .formatos import Divisao, Equipe, Fila, Manifesto, Projeto, Tomadas
 
-TAREFAS = ("camera", "oclusao")
 RE_ARQUIVO = re.compile(r"^(?P<quadro>t\d{10}|g\d{4})__(?P<pessoa>[A-Z][A-Z0-9]{1,9})__v(?P<versao>\d+)\.json$")
 
 M = TypeVar("M", bound=BaseModel)
@@ -87,7 +77,7 @@ def escrever_json(caminho: Path, obj: BaseModel | dict | list, *, sobrescrever: 
 
 
 def escrever_bytes(caminho: Path, dados: bytes, *, sobrescrever: bool = False) -> Path:
-    """Como `escrever_json`, para bytes (as máscaras PNG da oclusão)."""
+    """Como `escrever_json`, para bytes (as máscaras PNG dos jogadores)."""
     caminho = Path(caminho)
     caminho.parent.mkdir(parents=True, exist_ok=True)
     if not sobrescrever and caminho.exists():
@@ -130,13 +120,13 @@ def ler_nome(nome: str) -> tuple[str, str, int] | None:
 
 
 def ler_nome_mascara(nome: str) -> tuple[str, str, int] | None:
-    """A máscara da oclusão (`<quadro>__<pessoa>__v<n>.png`), ou None."""
+    """A máscara dos jogadores (`<quadro>__<pessoa>__v<n>.png`), ou None."""
     m = RE_MASCARA.match(nome)
     return (m[1], m[2], int(m[3])) if m else None
 
 
 def mascara_de(nome_rotulo: str) -> str:
-    """O nome da máscara que acompanha um rótulo da oclusão."""
+    """O nome da máscara que acompanha um rótulo dos jogadores."""
     return nome_rotulo.removesuffix(".json") + ".png"
 
 
@@ -170,10 +160,6 @@ class Pasta:
         return self.raiz / "pessoas"
 
     @property
-    def estadios(self) -> Path:
-        return self.raiz / "estadios"
-
-    @property
     def partidas(self) -> Path:
         return self.raiz / "partidas"
 
@@ -184,11 +170,6 @@ class Pasta:
     @property
     def conjuntos(self) -> Path:
         return self.raiz / "conjuntos"
-
-    def pacote_path(self, estadio: str, versao: str) -> Path:
-        _checar(RE_ESTADIO, estadio, "estádio")
-        _checar(RE_VERSAO_PACOTE, versao, "versão do pacote")
-        return self.estadios / estadio / f"pacote-{versao}" / "pacote.json"
 
     def partida(self, partida: str) -> Path:
         if partida == PARTIDA_GABARITO:
@@ -213,15 +194,20 @@ class Pasta:
         regex = RE_GABARITO if partida == PARTIDA_GABARITO else RE_QUADRO
         return self.quadros(partida) / f"{_checar(regex, quadro, 'quadro')}.jpg"
 
-    def previsao(self, partida: str, quadro: str) -> Path:
-        return self.partida(partida) / "previsoes" / f"{_checar(RE_QUADRO, quadro, 'quadro')}.json"
+    def previsao_pontos(self, partida: str, quadro: str) -> Path:
+        """Os pontos de um modelo para o quadro, quando há."""
+        return self.partida(partida) / "previsoes" / "pontos" / f"{_checar(RE_QUADRO, quadro, 'quadro')}.json"
 
-    def previsao_oclusao(self, partida: str, quadro: str) -> Path:
-        """A pré-pintura de um modelo (PNG com as classes da oclusão), quando há."""
-        return self.partida(partida) / "previsoes" / "oclusao" / f"{_checar(RE_QUADRO, quadro, 'quadro')}.png"
+    def previsao_jogadores(self, partida: str, quadro: str) -> Path:
+        """A pré-pintura de um modelo (PNG: 1 onde há jogador), quando há."""
+        return self.partida(partida) / "previsoes" / "jogadores" / f"{_checar(RE_QUADRO, quadro, 'quadro')}.png"
 
     def item_gabarito(self, item: str) -> Path:
         return self.gabarito / "itens" / f"{_checar(RE_GABARITO, item, 'item do gabarito')}.json"
+
+    def mascara_gabarito(self, item: str) -> Path:
+        """A máscara verdadeira de um item do gabarito dos jogadores."""
+        return self.gabarito / "itens" / f"{_checar(RE_GABARITO, item, 'item do gabarito')}.png"
 
     def rotulos(self, partida: str, tarefa: str) -> Path:
         if tarefa not in TAREFAS:
@@ -235,15 +221,12 @@ class Pasta:
 
     # ------------------------------------------------------------------ criação
     def criar(self) -> None:
-        for p in (self.estadios, self.partidas, self.gabarito / "itens", self.conjuntos):
+        for p in (self.partidas, self.gabarito / "itens", self.conjuntos):
             p.mkdir(parents=True, exist_ok=True)
         if not self.equipe_path.exists():
             escrever_json(self.equipe_path, Equipe(membros=[]))
         if not self.divisao_path.exists():
             escrever_json(self.divisao_path, Divisao())
-        generico = pacote_generico()
-        if not self.pacote_path(generico.estadio, generico.versao).exists():
-            escrever_json(self.pacote_path(generico.estadio, generico.versao), generico)
 
     # ------------------------------------------------------------------ leitura
     def ler_equipe(self) -> Equipe:
@@ -254,25 +237,6 @@ class Pasta:
 
     def ler_divisao(self) -> Divisao:
         return ler_json(self.divisao_path, Divisao) if self.divisao_path.exists() else Divisao()
-
-    def ler_pacote(self, estadio: str, versao: str) -> PacoteEstadio:
-        return ler_json(self.pacote_path(estadio, versao), PacoteEstadio)
-
-    def ler_pacote_ref(self, ref: str) -> PacoteEstadio:
-        estadio, _, resto = ref.partition("/pacote-")
-        if ref == REF_PACOTE_GENERICO and not self.pacote_path(estadio, resto).exists():
-            return pacote_generico()  # pasta criada antes do campo genérico
-        return self.ler_pacote(estadio, resto)
-
-    def listar_pacotes(self) -> list[str]:
-        if not self.estadios.exists():
-            return []
-        refs = []
-        for p in sorted(self.estadios.glob("*/pacote-*/pacote.json")):
-            estadio, versao = p.parent.parent.name, p.parent.name.removeprefix("pacote-")
-            if RE_ESTADIO.match(estadio) and RE_VERSAO_PACOTE.match(versao):
-                refs.append(f"{estadio}/pacote-{versao}")
-        return refs
 
     def ler_manifesto(self, partida: str) -> Manifesto:
         return ler_json(self.manifesto(partida), Manifesto)

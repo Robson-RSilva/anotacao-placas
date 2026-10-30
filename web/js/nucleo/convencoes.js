@@ -1,20 +1,33 @@
 // Convenções compartilhadas com o laboratório (ADR-0001) — espelho de src/anotacao/convencoes.py.
 // tests/js/convencoes.test.js confere contra tests/fixtures/convencoes.json, gerado pelo Python.
 //
-// 1. Mundo: origem no centro do gramado; x ao longo do comprimento; y ao longo da largura; z para
+// 1. Campo: origem no centro do gramado; x ao longo do comprimento; y ao longo da largura; z para
 //    cima; metros. Lado "cab" (cabines, câmera principal) = y < 0; "opo" = y > 0; "esq" = x < 0.
-// 2. Câmera: x ~ K R (X - C), pixel quadrado, ponto principal no centro, distorção radial k1.
+//    Os nomes dos pontos do campo seguem esses lados.
+// 2. Imagem: pixels do quadro na resolução do vídeo, origem no canto de cima à esquerda (o primeiro
+//    pixel vai de 0 a 1), x para a direita e y para baixo.
 // 3. Tempo: sempre pelo PTS do vídeo; o ID do quadro é o PTS em milissegundos.
 // 4. Métricas em pixels na referência 960 x 540.
 
 /** Versão da ferramenta, gravada em cada arquivo (igual a `anotacao.__version__`). */
-export const VERSAO = "0.7.0";
+export const VERSAO = "0.8.0";
 
 export const REF_W = 960;
 export const REF_H = 540;
 
+/** As tarefas: marcar os pontos do campo e pintar os jogadores, cada uma direto na imagem. */
+export const TAREFAS = Object.freeze(["pontos", "jogadores"]);
+
 /** Versão do Manual de anotação que esta versão da ferramenta segue, por tarefa. */
-export const MANUAL = Object.freeze({ camera: "camera-0.1", revisao: "revisao-0.1", oclusao: "oclusao-0.1" });
+export const MANUAL = Object.freeze({ pontos: "pontos-0.1", jogadores: "jogadores-0.1", revisao: "revisao-0.2" });
+
+/** Motivos para descartar uma imagem (em qualquer das tarefas), com o texto das páginas. */
+export const MOTIVOS_DESCARTE = Object.freeze({
+  transicao: "Transição entre tomadas (fusão, corte no meio)",
+  borrao: "Borrada ou fora de foco demais",
+  grafismo: "Grafismo da emissora cobre a imagem",
+  outro: "Outro motivo (com comentário)",
+});
 
 export const RE_ESTADIO = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 export const RE_VERSAO_PACOTE = /^\d+\.\d+$/;
@@ -22,21 +35,16 @@ export const RE_PARTIDA = /^\d{4}-\d{2}-\d{2}_[a-z0-9]+(?:-[a-z0-9]+)*_[a-z0-9]+
 export const RE_QUADRO = /^t\d{10}$/;
 export const RE_GABARITO = /^g\d{4}$/;
 export const RE_PESSOA = /^[A-Z][A-Z0-9]{1,9}$/;
+/** Pacote do estádio dos manifestos das versões até a 0.7 (hoje ignorado). */
 export const RE_PACOTE_REF = /^[a-z0-9]+(?:-[a-z0-9]+)*\/pacote-\d+\.\d+$/;
 /** Navegador de um computador (um identificador aleatório, guardado no próprio navegador). */
 export const RE_DISPOSITIVO = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 export const RE_ARQUIVO = /^(t\d{10}|g\d{4})__([A-Z][A-Z0-9]{1,9})__v(\d+)\.json$/;
-/** A máscara da oclusão, ao lado do rótulo: o mesmo nome, com .png. */
+/** A máscara dos jogadores, ao lado do rótulo: o mesmo nome, com .png. */
 export const RE_MASCARA = /^(t\d{10}|g\d{4})__([A-Z][A-Z0-9]{1,9})__v(\d+)\.png$/;
 
 /** Nome da "partida" que guarda os itens do gabarito (nunca entra nos conjuntos de treino). */
 export const PARTIDA_GABARITO = "gabarito";
-
-/** Pacote do campo genérico (105 x 68 m, sem placas), para anotar sem o levantamento do estádio. */
-export const REF_PACOTE_GENERICO = "generico/pacote-1.0";
-
-/** Tarefas com rótulos por arquivo. */
-export const TAREFAS = Object.freeze(["camera", "oclusao"]);
 
 /** Arredonda como o `round` do Python: meio vai para o par. */
 export function arredondarPar(x) {
@@ -71,17 +79,6 @@ export function idPartida(dataIso, estadio, mandante, visitante) {
   return `${data}_${slug(estadio)}_${slug(mandante)}-${slug(visitante)}`;
 }
 
-export function refPacote(estadio, versao) {
-  return `${estadio}/pacote-${versao}`;
-}
-
-/** "arena-x/pacote-1.0" -> ["arena-x", "1.0"]. */
-export function partesPacote(ref) {
-  if (!RE_PACOTE_REF.test(ref)) throw new Error(`referência de pacote inválida: ${ref}`);
-  const i = ref.indexOf("/pacote-");
-  return [ref.slice(0, i), ref.slice(i + "/pacote-".length)];
-}
-
 /**
  * Texto digitado -> código da pessoa nos nomes de arquivo: maiúsculas, sem acento nem espaço, até 10
  * caracteres, começando por letra ("Ana Clara" -> "ANACLARA", "rs" -> "RS"). null quando não dá.
@@ -110,13 +107,13 @@ export function lerNome(nome) {
   return m ? { quadro: m[1], pessoa: m[2], versao: Number(m[3]) } : null;
 }
 
-/** Nome da máscara da oclusão -> {quadro, pessoa, versao}, ou null. */
+/** Nome da máscara dos jogadores -> {quadro, pessoa, versao}, ou null. */
 export function lerNomeMascara(nome) {
   const m = RE_MASCARA.exec(nome);
   return m ? { quadro: m[1], pessoa: m[2], versao: Number(m[3]) } : null;
 }
 
-/** A máscara que acompanha um rótulo da oclusão: o mesmo nome, com .png. */
+/** A máscara que acompanha um rótulo dos jogadores: o mesmo nome, com .png. */
 export function mascaraDe(nomeRotulo) {
   return nomeRotulo.replace(/\.json$/, ".png");
 }
