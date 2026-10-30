@@ -61,7 +61,7 @@ Anotadores simulados nos lotes novos, com as contas da própria página (`script
 | pintando só os jogadores (a regra da 0.8) | 25% | 0,90 |
 
 Quem pinta só os jogadores acerta apenas os itens em que não há mais ninguém — 3 dos 12 do treino —,
-e com 4 certos em 5 seguidos a chance de ser liberado assim é nula. Quem contorna com cuidado passa
+e com a meta de 4 certos em 5 seguidos não há como ser liberado assim. Quem contorna com cuidado passa
 quase sempre.
 
 ## Consequências
