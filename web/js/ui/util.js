@@ -9,6 +9,15 @@ export function formatarTempo(s) {
   return `${m}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 }
 
+/** Uma duração em segundos, com a unidade, para tabelas: "42 s", "1 min 5 s", "1 h 2 min". */
+export function formatarDuracao(s) {
+  const t = Math.round(s);
+  if (t < 60) return `${t} s`;
+  if (t < 3600) return `${Math.floor(t / 60)} min${t % 60 ? ` ${t % 60} s` : ""}`;
+  const min = Math.floor((t % 3600) / 60);
+  return `${Math.floor(t / 3600)} h${min ? ` ${min} min` : ""}`;
+}
+
 /**
  * Um número inteiro digitado num campo de texto (com espaços, ponto ou vírgula de milhar), entre `min`
  * e `max`; null quando não é. Os campos de número da página são de texto: no Chrome, um campo

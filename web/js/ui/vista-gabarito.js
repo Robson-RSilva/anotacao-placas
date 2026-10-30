@@ -3,12 +3,14 @@
 // pasta (e importar um lote em .zip).
 
 import { situacao } from "../nucleo/filas.js";
-import { REGRA, motivoJogadores, motivoPontos, resumo } from "../nucleo/gabarito.js";
+import { REGRA, motivoPessoas, motivoPontos, resumo } from "../nucleo/gabarito.js";
 import { importarZip } from "../nucleo/transferencia.js";
 import { celula, el, linhaVazia, local, mensagemDeErro } from "./util.js";
 import { vigiar } from "./vigia.js";
 
-const NOME = { pontos: "pontos", jogadores: "jogadores" };
+/** O nome de cada tarefa nas tabelas e frases ("o gabarito dos pontos", "o gabarito da pintura"). */
+const NOME = { pontos: "pontos", pessoas: "pintura" };
+const DO = { pontos: "dos pontos", pessoas: "da pintura" };
 
 function quando(iso) {
   const d = new Date(iso);
@@ -20,11 +22,11 @@ export async function montar(raiz, ctx) {
   const { indice } = ctx;
   const pessoa = ctx.pessoa();
   let vivo = true;
-  let tarefaRes = local.ler("gabarito-tarefa", "pontos") === "jogadores" ? "jogadores" : "pontos";
+  let tarefaRes = local.ler("gabarito-tarefa", "pontos") === "pessoas" ? "pessoas" : "pontos";
   const sits = {};
   $("quem-gabarito").textContent = pessoa ? `Resultados de ${pessoa}` : "Digite o seu código na página central.";
   $("meta-pontos").textContent = `${REGRA.pontos.k} das últimas ${REGRA.pontos.n}`;
-  $("meta-jogadores").textContent = `${REGRA.jogadores.k} das últimas ${REGRA.jogadores.n}`;
+  $("meta-pessoas").textContent = `${REGRA.pessoas.k} das últimas ${REGRA.pessoas.n}`;
 
   function cartao(tarefa, sit) {
     const c = raiz.querySelector(`[data-tarefa=${tarefa}]`);
@@ -34,7 +36,7 @@ export async function montar(raiz, ctx) {
     const barra = c.querySelector(".barra-progresso div");
     c.querySelector(".regra").textContent = tarefa === "pontos"
       ? `Um item dá certo sem nenhum ponto trocado, com ${Math.round(100 * regra.cobertura)}% dos pontos que aparecem achados e o erro mediano até ${String(regra.erro_px).replace(".", ",")} px.`
-      : `Um item dá certo com cada jogador pintado, ninguém que não é jogador pintado e ${Math.round(100 * regra.iou)}% de sobreposição (1 px de folga na borda).`;
+      : `Um item dá certo com cada pessoa pintada (pelo menos ${Math.round(100 * regra.cobertura_pessoa)}% dela) e ${Math.round(100 * regra.iou)}% de sobreposição com a resposta (1 px de folga na borda).`;
     botao.classList.toggle("desligado", !pessoa || !sit?.gabarito_faltam);
     if (!sit) {
       st.textContent = pessoa ? "—" : "Digite o seu código na página central.";
@@ -62,14 +64,14 @@ export async function montar(raiz, ctx) {
     tbody.replaceChildren();
     const sit = sits[tarefaRes];
     if (!sit || !sit.resultados.length) {
-      linhaVazia(tbody, 7, pessoa ? `Você ainda não fez nenhum item do gabarito dos ${NOME[tarefaRes]}.` : "Digite o seu código na página central.");
+      linhaVazia(tbody, 7, pessoa ? `Você ainda não fez nenhum item do gabarito ${DO[tarefaRes]}.` : "Digite o seu código na página central.");
       return;
     }
     const lotes = new Map(sit.itens.map((g) => [g.id, g.lote || "—"]));
     // o mais novo primeiro; os do teste e os escondidos juntos (os escondidos aparecem depois de feitos)
     for (const r of [...sit.resultados].reverse()) {
       const tr = document.createElement("tr");
-      const motivo = tarefaRes === "pontos" ? motivoPontos(r.resultado) : motivoJogadores(r.resultado);
+      const motivo = tarefaRes === "pontos" ? motivoPontos(r.resultado) : motivoPessoas(r.resultado);
       const ok = celula(r.acerto ? "certo" : "errado", `res ${r.acerto ? "bom" : "ruim"}`);
       if (!r.acerto && motivo) ok.title = motivo;
       const ver = document.createElement("td");
@@ -82,7 +84,7 @@ export async function montar(raiz, ctx) {
   async function lotes() {
     const tbody = $("lotes").querySelector("tbody");
     const linhas = [];
-    for (const tarefa of ["pontos", "jogadores"]) {
+    for (const tarefa of ["pontos", "pessoas"]) {
       const porLote = new Map();
       for (const g of await indice.itensGabarito(tarefa)) {
         const nome = g.lote || "(sem lote)";
@@ -103,7 +105,7 @@ export async function montar(raiz, ctx) {
 
   async function atualizar() {
     await lotes();
-    for (const tarefa of ["pontos", "jogadores"]) {
+    for (const tarefa of ["pontos", "pessoas"]) {
       if (!pessoa) {
         cartao(tarefa, null);
         continue;

@@ -10,16 +10,19 @@
 // 4. Métricas em pixels na referência 960 x 540.
 
 /** Versão da ferramenta, gravada em cada arquivo (igual a `anotacao.__version__`). */
-export const VERSAO = "0.8.0";
+export const VERSAO = "0.9.0";
 
 export const REF_W = 960;
 export const REF_H = 540;
 
-/** As tarefas: marcar os pontos do campo e pintar os jogadores, cada uma direto na imagem. */
-export const TAREFAS = Object.freeze(["pontos", "jogadores"]);
+/**
+ * As tarefas: marcar os pontos do campo e pintar as pessoas (todas as que estão no gramado e em volta
+ * dele, do lado de dentro das placas), cada uma direto na imagem.
+ */
+export const TAREFAS = Object.freeze(["pontos", "pessoas"]);
 
 /** Versão do Manual de anotação que esta versão da ferramenta segue, por tarefa. */
-export const MANUAL = Object.freeze({ pontos: "pontos-0.1", jogadores: "jogadores-0.1", revisao: "revisao-0.2" });
+export const MANUAL = Object.freeze({ pontos: "pontos-0.1", pessoas: "pessoas-0.1", revisao: "revisao-0.3" });
 
 /** Motivos para descartar uma imagem (em qualquer das tarefas), com o texto das páginas. */
 export const MOTIVOS_DESCARTE = Object.freeze({
@@ -40,7 +43,7 @@ export const RE_PACOTE_REF = /^[a-z0-9]+(?:-[a-z0-9]+)*\/pacote-\d+\.\d+$/;
 /** Navegador de um computador (um identificador aleatório, guardado no próprio navegador). */
 export const RE_DISPOSITIVO = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 export const RE_ARQUIVO = /^(t\d{10}|g\d{4})__([A-Z][A-Z0-9]{1,9})__v(\d+)\.json$/;
-/** A máscara dos jogadores, ao lado do rótulo: o mesmo nome, com .png. */
+/** A máscara das pessoas, ao lado do rótulo: o mesmo nome, com .png. */
 export const RE_MASCARA = /^(t\d{10}|g\d{4})__([A-Z][A-Z0-9]{1,9})__v(\d+)\.png$/;
 
 /** Nome da "partida" que guarda os itens do gabarito (nunca entra nos conjuntos de treino). */
@@ -107,13 +110,13 @@ export function lerNome(nome) {
   return m ? { quadro: m[1], pessoa: m[2], versao: Number(m[3]) } : null;
 }
 
-/** Nome da máscara dos jogadores -> {quadro, pessoa, versao}, ou null. */
+/** Nome da máscara das pessoas -> {quadro, pessoa, versao}, ou null. */
 export function lerNomeMascara(nome) {
   const m = RE_MASCARA.exec(nome);
   return m ? { quadro: m[1], pessoa: m[2], versao: Number(m[3]) } : null;
 }
 
-/** A máscara que acompanha um rótulo dos jogadores: o mesmo nome, com .png. */
+/** A máscara que acompanha um rótulo das pessoas: o mesmo nome, com .png. */
 export function mascaraDe(nomeRotulo) {
   return nomeRotulo.replace(/\.json$/, ".png");
 }

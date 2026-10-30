@@ -55,12 +55,14 @@ def test_caminhos_validam_ids(tmp_path):
         pasta.quadro("2026-11-02_e_a-b", "../x")
     with pytest.raises(ValueError):
         pasta.rotulos("2026-11-02_e_a-b", "camera")  # tarefa das versões até a 0.7
+    with pytest.raises(ValueError):
+        pasta.rotulos("2026-11-02_e_a-b", "jogadores")  # tarefa da 0.8 (só os jogadores)
     assert pasta.quadro("gabarito", "g0001").name == "g0001.jpg"
-    assert pasta.mascara_gabarito("g2001").name == "g2001.png"
-    assert pasta.rotulos("gabarito", "jogadores") == tmp_path / "gabarito" / "rotulos" / "jogadores"
+    assert pasta.mascara_gabarito("g3001").name == "g3001.png"
+    assert pasta.rotulos("gabarito", "pessoas") == tmp_path / "gabarito" / "rotulos" / "pessoas"
     p = "2026-11-02_e_a-b"
     assert pasta.previsao_pontos(p, "t0000000001").parts[-3:] == ("previsoes", "pontos", "t0000000001.json")
-    assert pasta.previsao_jogadores(p, "t0000000001").parts[-3:] == ("previsoes", "jogadores", "t0000000001.png")
+    assert pasta.previsao_pessoas(p, "t0000000001").parts[-3:] == ("previsoes", "pessoas", "t0000000001.png")
 
 
 def test_proxima_versao(tmp_path):

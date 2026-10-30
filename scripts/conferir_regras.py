@@ -1,20 +1,22 @@
 """Confere as regras do gabarito com anotadores simulados nos lotes de ouro (ADR-0010).
 
 Cada perfil anota todos os itens com erros de tamanho conhecido — nos pontos, o erro do clique, os
-pontos esquecidos, os opcionais marcados e o nome trocado; nos jogadores, o laço no contorno com
-vértices tremidos, o pincel que vaza ou come a borda, os jogadores pequenos esquecidos e o árbitro
-pintado. A conta de certo ou errado é a da própria página (`web/js/nucleo/gabarito.js`), rodada no
-Node por `conferir_regras.mjs`; este script só monta os rótulos simulados.
+pontos esquecidos, os opcionais marcados e o nome trocado; nas pessoas, o laço no contorno com
+vértices tremidos, o pincel que vaza ou come a borda, as pessoas pequenas esquecidas e quem pinta só
+os jogadores (a regra da 0.8: sem o árbitro, os gandulas e os fotógrafos). A conta de certo ou errado
+é a da própria página (`web/js/nucleo/gabarito.js`), rodada no Node por `conferir_regras.mjs`; este
+script só monta os rótulos simulados.
 
     python scripts/conferir_regras.py --lotes lotes --saida /tmp/conferencia
 
-`--lotes` é a pasta com os `ouro-*.zip` de `scripts/lotes_de_ouro.py`. Sementes fixas: o mesmo
-comando dá a mesma tabela.
+`--lotes` é a pasta com os `ouro-*.zip` e o `indice-pessoas.csv` de `scripts/lotes_de_ouro.py` (o
+índice diz quem é quem em cada máscara). Sementes fixas: o mesmo comando dá a mesma tabela.
 """
 
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import shutil
 import subprocess
@@ -40,19 +42,20 @@ PERFIS_PONTOS = {
 }
 
 # eps e sigma: o laço (vértices a cada eps px do contorno, tremidos de sigma px); cresce: px que o
-# pincel vaza para fora (negativo: come da borda); esquece: jogadores com menos que isso de área (px,
-# ref. 960) ficam sem pintar; outras: pinta também quem não é jogador
-PERFIS_JOGADORES = {
-    "laco_fino": {"eps": 0.7, "sigma": 0.4, "cresce": 0, "esquece": 0, "outras": False},
-    "laco_normal": {"eps": 1.2, "sigma": 0.7, "cresce": 0, "esquece": 0, "outras": False},
-    "laco_rapido": {"eps": 2.5, "sigma": 1.0, "cresce": 0, "esquece": 0, "outras": False},
-    "vaza_1px": {"eps": 0.7, "sigma": 0.4, "cresce": 1, "esquece": 0, "outras": False},
-    "vaza_2px": {"eps": 0.7, "sigma": 0.4, "cresce": 2, "esquece": 0, "outras": False},
-    "vaza_3px": {"eps": 0.7, "sigma": 0.4, "cresce": 3, "esquece": 0, "outras": False},
-    "come_1px": {"eps": 0.7, "sigma": 0.4, "cresce": -1, "esquece": 0, "outras": False},
-    "esquece_pequenos": {"eps": 1.2, "sigma": 0.7, "cresce": 0, "esquece": 150, "outras": False},
-    "pinta_o_arbitro": {"eps": 1.2, "sigma": 0.7, "cresce": 0, "esquece": 0, "outras": True},
+# pincel vaza para fora (negativo: come da borda); esquece: pessoas com menos que isso de área (px,
+# ref. 960) ficam sem pintar; so_jogadores: pinta só quem joga (jogadores e goleiros)
+PERFIS_PESSOAS = {
+    "laco_fino": {"eps": 0.7, "sigma": 0.4, "cresce": 0, "esquece": 0, "so_jogadores": False},
+    "laco_normal": {"eps": 1.2, "sigma": 0.7, "cresce": 0, "esquece": 0, "so_jogadores": False},
+    "laco_rapido": {"eps": 2.5, "sigma": 1.0, "cresce": 0, "esquece": 0, "so_jogadores": False},
+    "vaza_1px": {"eps": 0.7, "sigma": 0.4, "cresce": 1, "esquece": 0, "so_jogadores": False},
+    "vaza_2px": {"eps": 0.7, "sigma": 0.4, "cresce": 2, "esquece": 0, "so_jogadores": False},
+    "vaza_3px": {"eps": 0.7, "sigma": 0.4, "cresce": 3, "esquece": 0, "so_jogadores": False},
+    "come_1px": {"eps": 0.7, "sigma": 0.4, "cresce": -1, "esquece": 0, "so_jogadores": False},
+    "esquece_pequenos": {"eps": 1.2, "sigma": 0.7, "cresce": 0, "esquece": 150, "so_jogadores": False},
+    "so_jogadores": {"eps": 1.2, "sigma": 0.7, "cresce": 0, "esquece": 0, "so_jogadores": True},
 }
+JOGADOR = ("jogador", "goleiro")
 
 
 def trocar_lado(nome: str) -> str:
@@ -101,8 +104,9 @@ def laco(mascara: np.ndarray, eps: float, sigma: float, rng: np.random.Generator
     return out
 
 
-def pintar(verdade: np.ndarray, n: int, perfil: dict, rng: np.random.Generator) -> np.ndarray:
-    """A pintura (1 onde pintou) de um anotador com esse perfil, a partir da máscara verdadeira."""
+def pintar(verdade: np.ndarray, tipos: list[str], perfil: dict, rng: np.random.Generator) -> np.ndarray:
+    """A pintura (1 onde pintou) de um anotador com esse perfil, a partir da máscara verdadeira (a pessoa
+    j é do tipo `tipos[j - 1]`)."""
     escala2 = (REF_W / verdade.shape[1]) ** 2
     pintura = np.zeros(verdade.shape, np.uint8)
     nucleo = np.ones((3, 3), np.uint8)
@@ -110,8 +114,9 @@ def pintar(verdade: np.ndarray, n: int, perfil: dict, rng: np.random.Generator) 
         if j == 0:
             continue
         m = (verdade == j).astype(np.uint8)
-        jogador = j <= n
-        if (not jogador and not perfil["outras"]) or (jogador and m.sum() * escala2 < perfil["esquece"]):
+        if perfil["so_jogadores"] and tipos[j - 1] not in JOGADOR:
+            continue
+        if m.sum() * escala2 < perfil["esquece"]:
             continue
         p = laco(m, perfil["eps"], perfil["sigma"], rng)
         if perfil["cresce"] > 0:
@@ -137,8 +142,13 @@ def main() -> None:
 
     rng = np.random.default_rng(7)
     saida = Path(args.saida)
-    (saida / "jogadores").mkdir(parents=True, exist_ok=True)
-    pontos, jogadores = [], []
+    (saida / "pessoas").mkdir(parents=True, exist_ok=True)
+    quem = {}  # o tipo de cada pessoa de cada item, na ordem dos números da máscara
+    indice = Path(args.lotes) / "indice-pessoas.csv"
+    if indice.exists():
+        with indice.open(encoding="utf-8") as f:
+            quem = {linha["id"]: linha["quem_e_quem"].split() for linha in csv.DictReader(f)}
+    pontos, pessoas = [], []
     for z in sorted(Path(args.lotes).glob("ouro-*.zip")):
         with zipfile.ZipFile(z) as zf:
             for nome in sorted(n for n in zf.namelist() if n.endswith(".json")):
@@ -150,26 +160,31 @@ def main() -> None:
                                 {"lote": item["lote"], "perfil": perfil, "item": item, "marcados": marcar(item, p, rng)}
                             )
                     continue
+                if item["formato"] != "gabarito.pessoas/1":
+                    continue  # de uma versão anterior
                 verdade = ler_png(zf.read(nome[: -len(".json")] + ".png"))
+                tipos = quem.get(item["id"]) or ["?"] * item["pessoas"]  # sem o índice, "só os jogadores" não roda
                 arq_verdade = f"{item['id']}.verdade.bin"
-                (saida / "jogadores" / arq_verdade).write_bytes(verdade.tobytes())
-                for perfil, p in PERFIS_JOGADORES.items():
+                (saida / "pessoas" / arq_verdade).write_bytes(verdade.tobytes())
+                for perfil, p in PERFIS_PESSOAS.items():
+                    if p["so_jogadores"] and item["id"] not in quem:
+                        continue
                     arq = f"{item['id']}.{perfil}.bin"
-                    (saida / "jogadores" / arq).write_bytes(pintar(verdade, item["jogadores"], p, rng).tobytes())
-                    jogadores.append(
+                    (saida / "pessoas" / arq).write_bytes(pintar(verdade, tipos, p, rng).tobytes())
+                    pessoas.append(
                         {
                             "lote": item["lote"],
                             "perfil": perfil,
                             "largura": item["largura"],
                             "altura": item["altura"],
-                            "n": item["jogadores"],
+                            "n": item["pessoas"],
                             "pintura": arq,
                             "verdade": arq_verdade,
                         }
                     )
     (saida / "pontos.json").write_text(json.dumps(pontos), encoding="utf-8")
-    (saida / "jogadores.json").write_text(json.dumps(jogadores), encoding="utf-8")
-    print(f"{len(pontos)} marcações simuladas e {len(jogadores)} pinturas em {saida}", flush=True)
+    (saida / "pessoas.json").write_text(json.dumps(pessoas), encoding="utf-8")
+    print(f"{len(pontos)} marcações simuladas e {len(pessoas)} pinturas em {saida}", flush=True)
     node = shutil.which("node")
     if node is None:
         print("sem o Node no PATH: rode `node scripts/conferir_regras.mjs <saida>` para a tabela")

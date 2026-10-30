@@ -1,5 +1,5 @@
-"""Quadros e vídeos sintéticos para os testes: o campo e alguns "jogadores" desenhados por câmeras
-conhecidas — com a verdade de cada quadro (onde cai cada ponto do campo, e a máscara dos jogadores)."""
+"""Quadros e vídeos sintéticos para os testes: o campo e algumas "pessoas" desenhadas por câmeras
+conhecidas — com a verdade de cada quadro (onde cai cada ponto do campo, e a máscara das pessoas)."""
 
 from __future__ import annotations
 
@@ -53,8 +53,8 @@ PLANOS = [
     ((6.0, 60.0, 14.0), (10.0, 0.0, 0.0), 42.0),
 ]
 
-#: Onde ficam os "jogadores" (x, y no campo, em metros) e a cor da camisa (BGR).
-JOGADORES = [
+#: Onde ficam as "pessoas" (x, y no campo, em metros) e a cor da roupa (BGR).
+PESSOAS = [
     (-14.0, 6.0, (40, 40, 220)),
     (-30.0, -8.0, (220, 220, 220)),
     (-40.0, 2.0, (40, 40, 220)),
@@ -63,8 +63,8 @@ JOGADORES = [
 
 
 def renderizar(cam: Camera, semente: int = 0, campo: Campo | None = None) -> tuple[np.ndarray, dict]:
-    """O quadro e a verdade dele: {"pontos": {nome: (x, y)} dos que caem na imagem, "jogadores": a
-    máscara (h, w) com 1 onde há jogador}."""
+    """O quadro e a verdade dele: {"pontos": {nome: (x, y)} dos que caem na imagem, "pessoas": a
+    máscara (h, w) com 1 onde há pessoa}."""
     campo = campo or Campo()
     rng = np.random.default_rng(semente)
     img = np.empty((cam.h, cam.w, 3), np.uint8)
@@ -76,7 +76,7 @@ def renderizar(cam: Camera, semente: int = 0, campo: Campo | None = None) -> tup
         if len(pts) >= 2:
             cv2.polylines(img, [np.round(pts * 16).astype(np.int32)], False, (235, 235, 235), 2, cv2.LINE_AA, 4)
     mascara = np.zeros((cam.h, cam.w), np.uint8)
-    for x, y, cor in JOGADORES:
+    for x, y, cor in PESSOAS:
         base, z = cam.project([[x, y, 0.0], [x, y, 1.8]])
         if not (np.isfinite(base).all() and (z > 1).all()):
             continue
@@ -91,7 +91,7 @@ def renderizar(cam: Camera, semente: int = 0, campo: Campo | None = None) -> tup
     for nome, (x, y), zz in zip(campo.nomes_pontos, px, z, strict=True):
         if nome in pontos_marcaveis() and np.isfinite(x) and 0 <= x <= cam.w and 0 <= y <= cam.h and zz > 0:
             pontos[nome] = (float(x), float(y))
-    return img, {"pontos": pontos, "jogadores": mascara}
+    return img, {"pontos": pontos, "pessoas": mascara}
 
 
 def cameras_de_tomadas(w: int, h: int) -> list[list[Camera]]:

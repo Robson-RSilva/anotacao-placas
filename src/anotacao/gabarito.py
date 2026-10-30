@@ -1,5 +1,5 @@
 """Gabarito: imagens com a resposta verdadeira (do simulador ou de rótulos já arbitrados) — onde está
-cada ponto do campo, na tarefa de pontos; a máscara de cada jogador, na de jogadores.
+cada ponto do campo, na tarefa de pontos; a máscara de cada pessoa, na de pessoas.
 
 Serve para treinar e liberar quem começa (com o resultado na hora), medir cada anotador o tempo
 todo (itens escondidos na fila) e testar a ferramenta antes do primeiro vídeo real. A liberação, os
@@ -13,19 +13,19 @@ import json
 import shutil
 from pathlib import Path
 
-from .formatos import GabaritoJogadores, GabaritoPontos
+from .formatos import GabaritoPessoas, GabaritoPontos
 from .mascara import eh_png, ler_png
 from .pasta import Pasta, escrever_json, ler_json
 
-ItemGabarito = GabaritoPontos | GabaritoJogadores
+ItemGabarito = GabaritoPontos | GabaritoPessoas
 
 #: O formato de cada tarefa (o formato dentro do item diz a tarefa).
-FORMATOS = {"gabarito.pontos/1": ("pontos", GabaritoPontos), "gabarito.jogadores/1": ("jogadores", GabaritoJogadores)}
+FORMATOS = {"gabarito.pontos/1": ("pontos", GabaritoPontos), "gabarito.pessoas/1": ("pessoas", GabaritoPessoas)}
 
 
 def ler_item(p: Path) -> ItemGabarito | None:
     """Um item do gabarito, ou None quando é de um formato que esta versão não usa (os da câmera e da
-    oclusão, das versões até a 0.7)."""
+    oclusão, das versões até a 0.7, e os dos jogadores, da 0.8)."""
     formato = json.loads(p.read_text(encoding="utf-8")).get("formato")
     if formato not in FORMATOS:
         return None
@@ -33,11 +33,11 @@ def ler_item(p: Path) -> ItemGabarito | None:
 
 
 def tarefa_do_item(item: ItemGabarito) -> str:
-    return "jogadores" if isinstance(item, GabaritoJogadores) else "pontos"
+    return "pessoas" if isinstance(item, GabaritoPessoas) else "pontos"
 
 
 def listar_itens(pasta: Pasta, tarefa: str | None = None) -> list[ItemGabarito]:
-    """Os itens do gabarito, de uma tarefa ("pontos" ou "jogadores") ou das duas."""
+    """Os itens do gabarito, de uma tarefa ("pontos" ou "pessoas") ou das duas."""
     d = pasta.gabarito / "itens"
     if not d.exists():
         return []
@@ -45,20 +45,17 @@ def listar_itens(pasta: Pasta, tarefa: str | None = None) -> list[ItemGabarito]:
     return [g for g in itens if tarefa is None or tarefa_do_item(g) == tarefa]
 
 
-def conferir_mascara(dados: bytes, item: GabaritoJogadores) -> None:
-    """A máscara verdadeira tem o tamanho da imagem e só os números do item: 0, os jogadores (1 a N) e
-    as outras pessoas (255, 254…)."""
+def conferir_mascara(dados: bytes, item: GabaritoPessoas) -> None:
+    """A máscara verdadeira tem o tamanho da imagem e só os números do item: 0 e as pessoas (1 a N)."""
     m = ler_png(dados)
     if m.shape != (item.altura, item.largura):
         raise ValueError(f"{item.id}: a máscara não tem o tamanho da imagem")
-    fora = (m > item.jogadores) & (m < 256 - item.outras_pessoas)
-    if fora.any():
-        nj, no = item.jogadores, item.outras_pessoas
-        raise ValueError(f"{item.id}: a máscara tem números além dos {nj} jogadores e das {no} outras pessoas")
+    if (m > item.pessoas).any():
+        raise ValueError(f"{item.id}: a máscara tem números além das {item.pessoas} pessoas")
 
 
 def importar(pasta: Pasta, origem: Path) -> list[str]:
-    """Copia itens (`<id>.json` + imagem JPEG; nos jogadores, + a máscara PNG) para a pasta. Item que
+    """Copia itens (`<id>.json` + imagem JPEG; nas pessoas, + a máscara PNG) para a pasta. Item que
     já existe não é sobrescrito."""
     destino = pasta.gabarito / "itens"
     destino.mkdir(parents=True, exist_ok=True)
@@ -75,7 +72,7 @@ def importar(pasta: Pasta, origem: Path) -> list[str]:
         if img.read_bytes()[:3] != b"\xff\xd8\xff":
             raise ValueError(f"{p.name}: a imagem {item.imagem} precisa ser JPEG")
         mascara = None
-        if isinstance(item, GabaritoJogadores):
+        if isinstance(item, GabaritoPessoas):
             mascara = p.parent / item.mascara
             if not mascara.exists():
                 raise FileNotFoundError(f"{p.name}: máscara {item.mascara} não encontrada")

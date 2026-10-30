@@ -37,11 +37,12 @@ GitHub Pages (site estático)          navegador de cada pessoa                 
   grava um ponto em px da imagem; a lupa amplia o pixel em volta do cursor. Nada de câmera nem molde:
   o campo (`nucleo/campo.js`) só dá os nomes, o desenho do mapa e a simetria de 180° com que o
   gabarito e a concordância aceitam a leitura do outro lado do campo.
-- **Os jogadores, a imagem inteira:** o pintor guarda uma máscara de 1 byte por pixel (1 onde há
-  jogador), com pincel, laço e borracha, desfazer e refazer; a máscara vai num PNG de índices ao lado
-  do rótulo, gravado e lido por um codificador próprio (a paleta não passa pelo canvas, que mexeria
-  nas cores). Duas pinturas — ou a pintura e a resposta do gabarito — se comparam sem a borda de 1 px
-  dos jogadores.
+- **As pessoas em campo, a imagem inteira** (ADR-0011): o pintor guarda uma máscara de 1 byte por
+  pixel (1 onde há pessoa — jogadores, árbitros, gandulas, fotógrafos, comissão: todo mundo no gramado
+  e em volta dele), com pincel, laço e borracha, desfazer e refazer; a máscara vai num PNG de índices
+  ao lado do rótulo, gravado e lido por um codificador próprio (a paleta não passa pelo canvas, que
+  mexeria nas cores). Duas pinturas — ou a pintura e a resposta do gabarito — se comparam sem a
+  borda de 1 px das pessoas.
 - **O gabarito:** os itens ficam em `gabarito/itens/`, e os rótulos deles em `gabarito/rotulos/`, fora
   das partidas. A fila decide quando servir um item (o teste até a liberação; depois, um a cada 15
   rótulos), e a comparação com a resposta roda na própria página, com o resultado na hora no teste.
@@ -71,10 +72,10 @@ GitHub Pages (site estático)          navegador de cada pessoa                 
 | `video/descritores.js`, `video/cortes.js`, `video/sorteio.js` | do vídeo aos quadros sorteados (as contas da v0.1) |
 | `video/importar.js`, `video/trabalhador.js` | a importação, num worker |
 | `ui/mapa.js`, `ui/marcador.js` | o mapa do campo e a imagem em que se marcam os pontos (zoom, lupa, arrastar, apagar) |
-| `ui/pintor.js` | a pintura dos jogadores (pincel, laço, borracha) e o resultado do teste por cima |
+| `ui/pintor.js` | a pintura das pessoas (pincel, laço, borracha) e o resultado do teste por cima |
 | `ui/tarefa.js` | o que as duas tarefas têm em comum: abrir a imagem, descartar, confirmar, os avisos |
-| `ui/vista-*.js` | as páginas: central, importar, pontos, jogadores, revisões, gabarito e coordenação |
-| `ui/app.js`, `ui/armazenamento.js` | as rotas (`#/pontos`, `#/jogadores`, …) e onde fica a pasta (escolhida ou do navegador) |
+| `ui/vista-*.js` | as páginas: central, importar, pontos, pessoas, revisões, gabarito e coordenação |
+| `ui/app.js`, `ui/armazenamento.js` | as rotas (`#/pontos`, `#/pessoas`, …; os endereços da 0.8 levam às páginas novas) e onde fica a pasta (escolhida ou do navegador) |
 | `ui/vigia.js`, `ui/tempo.js`, `ui/util.js` | pegar o que chega de outros computadores, o tempo ativo, utilidades |
 
 `nucleo/` e as contas de `video/` não dependem da página: rodam no Node (`node --test`) e no worker.
@@ -88,7 +89,7 @@ GitHub Pages (site estático)          navegador de cada pessoa                 
 | `pasta.py`, `indice.py` | layout da pasta, escrita atômica, índice |
 | `gabarito.py`, `previsores.py` | importar o gabarito (conferindo a máscara verdadeira); os pontos e a pré-pintura de um modelo |
 | `mascara.py` | o PNG de índices, o mesmo das páginas |
-| `unificar.py` | conjuntos de treino em Parquet (pontos e jogadores) |
+| `unificar.py` | conjuntos de treino em Parquet (pontos e pessoas) |
 | `geracao.py` | arquivos que as páginas leem e saem do Python (esquemas, convenções, PNGs de teste) |
 | `cli.py` | linha de comando |
 

@@ -12,15 +12,16 @@
 //       manifesto.json, tomadas.json, fila.json
 //       quadros/<quadro>.jpg
 //       previsoes/pontos/<quadro>.json      pontos de um modelo (opcional)
-//       previsoes/jogadores/<quadro>.png    pré-pintura de um modelo (opcional)
-//       rotulos/<tarefa>/<quadro>__<anotador>__v<n>.json   nos jogadores, com o .png da máscara ao lado
+//       previsoes/pessoas/<quadro>.png      pré-pintura de um modelo (opcional)
+//       rotulos/<tarefa>/<quadro>__<anotador>__v<n>.json   nas pessoas, com o .png da máscara ao lado
 //       revisoes/<tarefa>/<quadro>__<revisor>__v<n>.json
-//     gabarito/itens/<g1001>.json|.jpg (|.png nos jogadores), gabarito/rotulos/<tarefa>/...
+//     gabarito/itens/<g1001>.json|.jpg (|.png nas pessoas), gabarito/rotulos/<tarefa>/...
 //     pessoas/<codigo>/<dispositivo>.json   em que computadores cada código é usado
 //     conjuntos/<data-hora>/            saída do unificar (Python)
 //
-// As tarefas são `pontos` e `jogadores`. As pastas das versões até a 0.7 (rotulos/camera,
-// rotulos/oclusao, estadios/) ficam onde estão e não entram em nada.
+// As tarefas são `pontos` e `pessoas`. As pastas das versões anteriores (rotulos/camera,
+// rotulos/oclusao e estadios/, até a 0.7; rotulos/jogadores, da 0.8) ficam onde estão e não entram
+// em nada.
 
 import {
   PARTIDA_GABARITO,
@@ -123,12 +124,12 @@ export class Pasta {
     return `${this.partida(partida)}/previsoes/pontos/${checar(RE_QUADRO, quadro, "quadro")}.json`;
   }
 
-  /** A pré-pintura de um modelo para os jogadores (PNG: 1 onde há jogador), quando há. */
-  previsaoJogadores(partida, quadro) {
-    return `${this.partida(partida)}/previsoes/jogadores/${checar(RE_QUADRO, quadro, "quadro")}.png`;
+  /** A pré-pintura de um modelo para as pessoas (PNG: 1 onde há pessoa), quando há. */
+  previsaoPessoas(partida, quadro) {
+    return `${this.partida(partida)}/previsoes/pessoas/${checar(RE_QUADRO, quadro, "quadro")}.png`;
   }
 
-  /** A máscara verdadeira de um item do gabarito dos jogadores. */
+  /** A máscara verdadeira de um item do gabarito das pessoas. */
   mascaraGabarito(id) {
     return `gabarito/itens/${checar(RE_GABARITO, id, "item do gabarito")}.png`;
   }
@@ -308,7 +309,7 @@ export class Pasta {
   }
 
   /**
-   * A versão seguinte à maior da pessoa no quadro. Conta também as máscaras dos jogadores sem rótulo
+   * A versão seguinte à maior da pessoa no quadro. Conta também as máscaras das pessoas sem rótulo
    * (uma gravação interrompida entre a máscara e o rótulo): o nome nunca se repete.
    */
   async proximaVersao(diretorio, quadro, pessoa) {

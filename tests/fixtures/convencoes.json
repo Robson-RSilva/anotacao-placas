@@ -1,18 +1,18 @@
 {
   "descricao": "Gerado por scripts/gerar_arquivos_web.py a partir de src/anotacao; não editar à mão.",
-  "versao": "0.8.0",
+  "versao": "0.9.0",
   "ref": [
     960,
     540
   ],
   "tarefas": [
     "pontos",
-    "jogadores"
+    "pessoas"
   ],
   "manual": {
     "pontos": "pontos-0.1",
-    "jogadores": "jogadores-0.1",
-    "revisao": "revisao-0.2"
+    "pessoas": "pessoas-0.1",
+    "revisao": "revisao-0.3"
   },
   "partida_gabarito": "gabarito",
   "motivos_descarte": [

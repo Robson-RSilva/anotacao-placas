@@ -2,7 +2,7 @@
 
 A geração em si precisa do simulador do laboratório e não roda aqui; estes testes guardam a definição
 dos lotes (faixas de id, sementes, o que cada um pede) e as funções que montam a resposta de cada item
-— onde o ponto aparece, quando marcá-lo é opcional, quem é quem na máscara dos jogadores.
+— onde o ponto aparece, quando marcá-lo é opcional, quem é quem na máscara das pessoas.
 """
 
 import importlib.util
@@ -15,7 +15,7 @@ import numpy as np
 import pytest
 
 from anotacao.campo import Campo, pontos_marcaveis
-from anotacao.formatos import GabaritoJogadores
+from anotacao.formatos import GabaritoPessoas
 from anotacao.gabarito import conferir_mascara
 from anotacao.mascara import gravar_png, ler_png
 
@@ -51,13 +51,14 @@ def _como_o_laboratorio(cam: Camera, k1: float = 0.0):
 
 
 def test_faixas_de_id_separadas(lotes):
-    """Nenhum id se repete entre os lotes, nem nome, nem semente; os pontos em g1xxx, os jogadores em
-    g2xxx, longe dos itens de demonstração (g19xx, g29xx) dos testes e das capturas."""
+    """Nenhum id se repete entre os lotes, nem nome, nem semente; os pontos em g1xxx, as pessoas em
+    g3xxx (os g2xxx eram os jogadores da 0.8, que podem estar na pasta de quem já importou), longe dos
+    itens de demonstração (g19xx, g39xx) dos testes e das capturas."""
     faixas = sorted((lt.primeiro, lt.primeiro + lt.n - 1, lt.tarefa) for lt in lotes.LOTES)
     for (_, fim, _), (inicio, _, _) in itertools.pairwise(faixas):
         assert fim < inicio
     for inicio, fim, tarefa in faixas:
-        milhar = 1000 if tarefa == "pontos" else 2000
+        milhar = 1000 if tarefa == "pontos" else 3000
         assert milhar <= inicio and fim < milhar + 900, (inicio, fim, tarefa)
     assert len({lt.nome for lt in lotes.LOTES}) == len(lotes.LOTES)
     assert len({lt.semente for lt in lotes.LOTES}) == len(lotes.LOTES)
@@ -65,10 +66,10 @@ def test_faixas_de_id_separadas(lotes):
 
 def test_cada_tarefa_tem_treino_e_controle(lotes):
     """O teste de quem começa usa os lotes com "treino" no nome; os itens escondidos, os outros."""
-    for tarefa in ("pontos", "jogadores"):
+    for tarefa in ("pontos", "pessoas"):
         nomes = [lt.nome for lt in lotes.LOTES if lt.tarefa == tarefa]
         assert any("treino" in n for n in nomes) and any("treino" not in n for n in nomes)
-    regra = {"pontos": 10, "jogadores": 5}  # os N últimos itens da liberação (REGRA em gabarito.js)
+    regra = {"pontos": 10, "pessoas": 5}  # os N últimos itens da liberação (REGRA em gabarito.js)
     for lt in lotes.LOTES:
         if "treino" in lt.nome:
             assert lt.n >= 2 * regra[lt.tarefa], f"{lt.nome}: pouco item para treinar e liberar"
@@ -85,9 +86,12 @@ def test_o_que_cada_lote_pede_cabe(lotes):
             assert 1 <= lt.pontos[0] <= lt.pontos[1] <= len(pontos_marcaveis())
             assert lt.sem_pontos < lt.n
         else:
-            assert 1 <= lt.jogadores[0] <= lt.jogadores[1]
-            assert lt.com_outras + lt.sem_jogadores <= lt.n
-            assert lt.inteiros <= lt.jogadores[0]
+            assert 1 <= lt.pessoas[0] <= lt.pessoas[1]
+            assert lt.com_outras + lt.so_outras + lt.so_torcida <= lt.n
+            assert lt.inteiros <= lt.pessoas[0]
+            # a regra nova pinta quem não joga: todo lote de pessoas tem gente que não joga, uma imagem
+            # só com ela e uma só com a torcida (que não se pinta)
+            assert lt.com_outras >= 4 and lt.so_outras >= 1 and lt.so_torcida >= 1
 
 
 def test_medidas_sorteadas(lotes):
@@ -196,8 +200,8 @@ def test_moda_por_bloco(lotes):
 
 
 def test_numerar_pessoas(lotes):
-    """Jogadores e goleiros de 1 a N, da esquerda para a direita; as outras pessoas de 255 para baixo;
-    a máscara passa na conferência da importação."""
+    """Todo mundo (jogadores, goleiros, árbitro, gandulas e fotógrafos) de 1 a N, da esquerda para a
+    direita; a máscara passa na conferência da importação."""
     w, h = 640, 360
     inst = np.zeros((h, w), np.uint16)
     inst[100:160, 300:320] = 1  # jogador no meio
@@ -205,36 +209,38 @@ def test_numerar_pessoas(lotes):
     inst[50:110, 500:520] = 3  # árbitro
     inst[0:20, 600:640] = 4  # gandula, cortado pela borda
     inst[200:204, 100:104] = 5  # jogador pequeno, mas exigido (16 px; 36 na referência de 960)
-    inst[300:302, 200:202] = 6  # jogador pequeno demais (4 px; 9 na referência): a página não exige
-    tipos = ["jogador", "goleiro", "arbitro", "staff", "jogador", "jogador", "jogador"]  # o 7 não aparece
-    m, jogadores, outras = lotes.numerar_pessoas(inst, tipos, w)
-    assert [p["j"] for p in jogadores] == [1, 4, 5, 0]  # da esquerda para a direita
-    assert [p["numero"] for p in jogadores] == [1, 2, 3, 4]
-    assert [p["pequeno"] for p in jogadores] == [False, False, True, False]
-    assert [(p["j"], p["numero"], p["borda"]) for p in outras] == [(2, 255, False), (3, 254, True)]
-    assert m[130, 30] == 1 and m[130, 310] == 4 and m[80, 510] == 255 and m[5, 630] == 254 and m[0, 0] == 0
-    item = GabaritoJogadores(
-        id="g2001",
-        imagem="g2001.jpg",
-        mascara="g2001.png",
+    inst[300:302, 200:202] = 6  # fotógrafo pequeno demais (4 px; 9 na referência): a página não exige
+    tipos = ["jogador", "goleiro", "arbitro", "staff", "jogador", "staff", "jogador"]  # o 7 não aparece
+    m, pessoas = lotes.numerar_pessoas(inst, tipos, w)
+    assert [p["j"] for p in pessoas] == [1, 4, 5, 0, 2, 3]  # da esquerda para a direita
+    assert [p["numero"] for p in pessoas] == [1, 2, 3, 4, 5, 6]
+    assert [p["tipo"] for p in pessoas] == ["goleiro", "jogador", "staff", "jogador", "arbitro", "staff"]
+    assert [p["pequeno"] for p in pessoas] == [False, False, True, False, False, False]
+    assert [p["borda"] for p in pessoas] == [False, False, False, False, False, True]
+    assert m[130, 30] == 1 and m[130, 310] == 4 and m[80, 510] == 5 and m[5, 630] == 6 and m[0, 0] == 0
+    item = GabaritoPessoas(
+        id="g3001",
+        imagem="g3001.jpg",
+        mascara="g3001.png",
         largura=w,
         altura=h,
-        jogadores=len(jogadores),
-        outras_pessoas=len(outras),
+        pessoas=len(pessoas),
         origem="simulador",
     )
-    png = gravar_png(m, lotes.paleta_da_verdade(item.jogadores, item.outras_pessoas))
+    png = gravar_png(m, lotes.paleta_da_verdade(item.pessoas))
     conferir_mascara(png, item)
     assert np.array_equal(ler_png(png), m)
-    with pytest.raises(ValueError, match="além dos 3 jogadores"):
-        conferir_mascara(png, item.model_copy(update={"jogadores": 3}))
+    with pytest.raises(ValueError, match="além das 5 pessoas"):
+        conferir_mascara(png, item.model_copy(update={"pessoas": 5}))
+    vazio, ninguem = lotes.numerar_pessoas(np.zeros((h, w), np.uint16), tipos, w)  # só a torcida
+    assert ninguem == [] and not vazio.any()
 
 
 def test_paleta_da_verdade(lotes):
-    pal = lotes.paleta_da_verdade(3, 2)
+    pal = lotes.paleta_da_verdade(3)
     assert len(pal) == 256 and pal[0] == (0, 0, 0)
     assert len({pal[1], pal[2], pal[3]}) == 3
-    assert pal[255] == pal[254] != pal[253] == (0, 0, 0)
+    assert pal[4] == pal[255] == (0, 0, 0)
 
 
 def test_intercalar(lotes):

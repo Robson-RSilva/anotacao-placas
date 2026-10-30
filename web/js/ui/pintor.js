@@ -1,11 +1,11 @@
-// O pintor dos jogadores: desenha o quadro e a pintura, e pinta os jogadores na imagem inteira.
+// O pintor das pessoas: desenha o quadro e a pintura, e pinta as pessoas na imagem inteira.
 //
-//   arrastar (pincel)      pinta jogador; com a borracha (E), apaga
+//   arrastar (pincel)      pinta; com a borracha (E), apaga
 //   laço: arrastar         contorna à mão e, ao soltar, preenche (ou apaga, com a borracha)
 //   laço: clique a clique  um vértice por clique; feche no primeiro ponto, com dois cliques ou Enter
 //   botão direito, botão do meio ou espaço + arrastar   move a vista; roda do mouse aproxima
 //
-// A pintura guarda, em cada pixel, 1 onde há jogador e 0 no resto. Na tela, ela é listrada (uma
+// A pintura guarda, em cada pixel, 1 onde há pessoa e 0 no resto. Na tela, ela é listrada (uma
 // diagonal clara a cada 4 px): a cor some em cima de uma camisa da mesma cor, a listra não. No treino,
 // o resultado aparece por cima: o que acertou, o que faltou e o que pintou a mais.
 
@@ -13,8 +13,8 @@ const COR = [255, 64, 129];
 const ALFA = 150; // 0 a 255
 const LISTRA = [[255, 255, 255], 170];
 const PERTO_DO_PRIMEIRO = 9; // px na tela: clique que fecha o laço
-/** As cores do resultado do treino: 1 certo, 2 faltou, 3 a mais, 4 outra pessoa pintada. */
-export const CORES_RESULTADO = Object.freeze({ 1: [[46, 160, 67], 140], 2: [[248, 81, 73], 190], 3: [[255, 196, 0], 190], 4: [[255, 140, 0], 210] });
+/** As cores do resultado do treino: 1 certo, 2 faltou, 3 a mais. */
+export const CORES_RESULTADO = Object.freeze({ 1: [[46, 160, 67], 140], 2: [[248, 81, 73], 190], 3: [[255, 196, 0], 190] });
 
 const rgba = ([r, g, b], a) => ((a << 24) | (b << 16) | (g << 8) | r) >>> 0; // ImageData em little-endian
 
@@ -61,7 +61,7 @@ export class Pintor {
     this.apagando = false;
     this.raio = 4; // px da imagem
     this.mostrarPintura = true;
-    this.resultado = null; // no treino: Uint8Array com 0 a 4 (CORES_RESULTADO)
+    this.resultado = null; // no treino: Uint8Array com 0 a 3 (CORES_RESULTADO)
     this.desfeitos = [];
     this.refeitos = [];
     this.vista = { escala: 1, ox: 0, oy: 0 };
@@ -119,7 +119,7 @@ export class Pintor {
     this.desenhar();
   }
 
-  /** A máscara que se grava: 1 onde há jogador. */
+  /** A máscara que se grava: 1 onde há pessoa. */
   mascara() {
     return Uint8Array.from(this.pintura);
   }
@@ -513,16 +513,16 @@ export class Pintor {
 
 /**
  * O mapa do resultado do treino, pixel a pixel (CORES_RESULTADO): 1 pintou certo, 2 faltou, 3 pintou a
- * mais, 4 pintou outra pessoa; a borda de 1 px que não conta fica sem cor.
+ * mais; a borda de 1 px que não conta fica sem cor. Na verdade, as pessoas são os números de 1 a `n`.
  */
 export function mapaDoResultado(pintura, verdade, borda, n) {
   const out = new Uint8Array(pintura.length);
   for (let i = 0; i < pintura.length; i++) {
     if (borda[i]) continue;
     const v = verdade[i];
-    const jogador = v >= 1 && v <= n;
-    if (pintura[i]) out[i] = jogador ? 1 : v > n ? 4 : 3;
-    else if (jogador) out[i] = 2;
+    const pessoa = v >= 1 && v <= n;
+    if (pintura[i]) out[i] = pessoa ? 1 : 3;
+    else if (pessoa) out[i] = 2;
   }
   return out;
 }

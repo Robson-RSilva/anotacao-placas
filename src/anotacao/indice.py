@@ -14,11 +14,11 @@ from typing import TypeVar
 
 from pydantic import BaseModel, ValidationError
 
-from .formatos import TAREFA, Fila, Manifesto, RevisaoJogadores, RevisaoPontos, RotuloJogadores, RotuloPontos, Tomadas
+from .formatos import TAREFA, Fila, Manifesto, RevisaoPessoas, RevisaoPontos, RotuloPessoas, RotuloPontos, Tomadas
 from .pasta import Pasta, ler_json, mascara_de
 
-Rotulo = RotuloPontos | RotuloJogadores
-Revisao = RevisaoPontos | RevisaoJogadores
+Rotulo = RotuloPontos | RotuloPessoas
+Revisao = RevisaoPontos | RevisaoPessoas
 
 M = TypeVar("M", bound=BaseModel)
 
@@ -64,7 +64,7 @@ class IndicePartida:
     revisoes: list[Arquivo]
     revisoes_de: dict[str, list[Revisao]] = field(default_factory=dict)
     invalidos: list[tuple[Path, str]] = field(default_factory=list)
-    esperando: list[Path] = field(default_factory=list)  # jogadores: o rótulo chegou antes da máscara
+    esperando: list[Path] = field(default_factory=list)  # pessoas: o rótulo chegou antes da máscara
 
     def versoes(self, quadro: str, pessoa: str) -> list[Arquivo]:
         return sorted((a for a in self.rotulos if a.quadro == quadro and a.pessoa == pessoa), key=lambda a: a.versao)
@@ -108,7 +108,7 @@ class Indice:
 
     def partida(self, partida: str, tarefa: str) -> IndicePartida:
         """Rótulos e revisões válidos da partida na tarefa; os inválidos ficam em `invalidos` e não entram
-        em nada. Nos jogadores, um rótulo cuja máscara ainda não chegou fica em `esperando`."""
+        em nada. Nas pessoas, um rótulo cuja máscara ainda não chegou fica em `esperando`."""
         modelo_rotulo, modelo_revisao, _ = TAREFA[tarefa]
         invalidos: list[tuple[Path, str]] = []
         esperando: list[Path] = []
@@ -118,7 +118,7 @@ class Indice:
                 r = self.cache.ler(p, modelo_rotulo)
                 if (r.partida, r.quadro, r.anotador, r.versao) != (partida, q, pe, v):
                     raise ValueError("o conteúdo não bate com o nome do arquivo")
-                if tarefa == "jogadores" and r.mascara is not None:
+                if tarefa == "pessoas" and r.mascara is not None:
                     if r.mascara != mascara_de(p.name):
                         raise ValueError("a máscara precisa ter o nome do rótulo")
                     if not (p.parent / r.mascara).is_file():

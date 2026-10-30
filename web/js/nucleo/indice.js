@@ -16,7 +16,7 @@ export class IndicePartida {
     this.revisoes = [];
     this.revisoesDe = new Map(); // nome do rótulo -> [revisão]
     this.invalidos = []; // [{caminho, erro}]
-    this.esperando = []; // rótulos dos jogadores cuja máscara ainda não chegou (o Drive sincronizando)
+    this.esperando = []; // rótulos das pessoas cuja máscara ainda não chegou (o Drive sincronizando)
   }
 
   versoes(quadro, pessoa) {
@@ -145,7 +145,7 @@ export class Indice {
     return { prontas, problemas };
   }
 
-  /** Itens do gabarito válidos da tarefa ("pontos" ou "jogadores"), em ordem de ID. */
+  /** Itens do gabarito válidos da tarefa ("pontos" ou "pessoas"), em ordem de ID. */
   async itensGabarito(tarefa) {
     const tipos = TIPOS_DA_TAREFA[tarefa];
     if (!tipos) throw new Error(`tarefa desconhecida: ${tarefa}`);
@@ -189,7 +189,7 @@ export class Indice {
   }
 
   /**
-   * Rótulos e revisões válidos da partida (ou do gabarito) na tarefa. Nos jogadores, um rótulo cuja
+   * Rótulos e revisões válidos da partida (ou do gabarito) na tarefa. Nas pessoas, um rótulo cuja
    * máscara ainda não chegou (o Drive sincronizando) fica em `esperando`, e não entra em nada.
    */
   async partida(partida, tarefa) {
@@ -197,7 +197,7 @@ export class Indice {
     if (!tipos) throw new Error(`tarefa desconhecida: ${tarefa}`);
     const ip = new IndicePartida(partida);
     const dir = this.pasta.rotulos(partida, tarefa);
-    const mascaras = tarefa === "jogadores"
+    const mascaras = tarefa === "pessoas"
       ? new Set((await this.pasta.listar(dir)).filter((i) => i.tipo === "arquivo" && i.nome.endsWith(".png")).map((i) => i.nome))
       : null;
     for (const a of await this.pasta.listarArquivos(dir)) {

@@ -6,7 +6,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { REGRA, compararJogadores, compararPontos } from "../web/js/nucleo/gabarito.js";
+import { REGRA, compararPessoas, compararPontos } from "../web/js/nucleo/gabarito.js";
 
 const pasta = process.argv[2];
 if (!pasta) {
@@ -34,11 +34,11 @@ for (const c of JSON.parse(readFileSync(join(pasta, "pontos.json"), "utf8"))) {
   const r = compararPontos(c.marcados, c.item);
   contar("pontos", c.perfil, c.lote, r.acerto, r.erro_mediano_px);
 }
-for (const c of JSON.parse(readFileSync(join(pasta, "jogadores.json"), "utf8"))) {
-  const verdade = new Uint8Array(readFileSync(join(pasta, "jogadores", c.verdade)));
-  const pintura = new Uint8Array(readFileSync(join(pasta, "jogadores", c.pintura)));
-  const r = compararJogadores(pintura, verdade, c.largura, c.altura, c.n);
-  contar("jogadores", c.perfil, c.lote, r.acerto, r.iou);
+for (const c of JSON.parse(readFileSync(join(pasta, "pessoas.json"), "utf8"))) {
+  const verdade = new Uint8Array(readFileSync(join(pasta, "pessoas", c.verdade)));
+  const pintura = new Uint8Array(readFileSync(join(pasta, "pessoas", c.pintura)));
+  const r = compararPessoas(pintura, verdade, c.largura, c.altura, c.n);
+  contar("pessoas", c.perfil, c.lote, r.acerto, r.iou);
 }
 
 console.log(`regras: ${JSON.stringify(REGRA)}\n`);

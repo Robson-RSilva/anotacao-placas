@@ -1,5 +1,5 @@
 """Ponta a ponta no navegador: importar um vídeo (inteiro ou só uns trechos), marcar os pontos e pintar
-os jogadores direto na imagem, descartar, revisar às cegas, fazer o teste do gabarito e unificar em
+as pessoas direto na imagem, descartar, revisar às cegas, fazer o teste do gabarito e unificar em
 Python os arquivos que a página gravou.
 
 Roda só com `pytest -m e2e`; precisa do Playwright com o Chromium e do ffmpeg (para o vídeo de
@@ -14,6 +14,7 @@ import functools
 import hashlib
 import json
 import os
+import re
 import threading
 import zipfile
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -27,11 +28,11 @@ import pytest
 from anotacao.cli import main
 from anotacao.formatos import (
     Fila,
-    GabaritoJogadores,
+    GabaritoPessoas,
     GabaritoPontos,
     Manifesto,
     RevisaoPontos,
-    RotuloJogadores,
+    RotuloPessoas,
     RotuloPontos,
     Tomadas,
 )
@@ -233,7 +234,7 @@ def _laco(pagina, contorno: np.ndarray, *, fechar_no_mouse: bool = True) -> None
 
 
 def _contornos(mascara: np.ndarray) -> list[np.ndarray]:
-    """O contorno de cada jogador da máscara, um pouco por fora (o centro do pixel decide no laço)."""
+    """O contorno de cada pessoa da máscara, um pouco por fora (o centro do pixel decide no laço)."""
     m = cv2.dilate(mascara.astype(np.uint8), np.ones((2, 2), np.uint8))
     cs, _ = cv2.findContours(m, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     return [c.reshape(-1, 2).astype(float) + 0.5 for c in cs if len(c) >= 3]
@@ -421,6 +422,9 @@ def test_importar_marcar_revisar_e_unificar(site, video, navegador, capturas, tm
     )
     a01 = next((x for x in linhas if x[0].startswith("A01")), None)
     assert a01 is not None and a01[2] == "1", linhas  # aprovado só o que A02 aprovou (a correção é dela)
+    a02 = next(x for x in linhas if x[0].startswith("A02"))
+    duracao = re.compile(r"^(\d+ s|\d+ min( \d+ s)?|—)$")
+    assert duracao.match(a01[4]) and duracao.match(a02[5]) and a02[5] != "—", linhas  # tempo por imagem e por revisão
     pagina.screenshot(path=str(capturas / "e2e_6_placar.png"), full_page=True)
     with pagina.expect_download() as baixado:
         pagina.click("#baixar-tudo")
@@ -455,34 +459,34 @@ def test_importar_marcar_revisar_e_unificar(site, video, navegador, capturas, tm
     assert not erros, erros
 
 
-# ---------------------------------------------------------------- de ponta a ponta: jogadores
+# ---------------------------------------------------------------- de ponta a ponta: pessoas
 
 
 def test_pintar_revisar_e_unificar(site, video, navegador, capturas, tmp_path):
-    """Os jogadores de ponta a ponta: pintar com o laço (num quadro) e com o pincel e a borracha (no
+    """As pessoas de ponta a ponta: pintar com o laço (num quadro) e com o pincel e a borracha (no
     outro), descartar o terceiro; outra pessoa revisa às cegas, aprova e corrige; o `unificar` monta o
-    conjunto dos jogadores com as máscaras que a página gravou."""
+    conjunto das pessoas com as máscaras que a página gravou."""
     caminho, verdade = video
     erros: list[str] = []
     pagina = _pagina(navegador, erros)
     _importar(pagina, site, caminho)
-    pagina.goto(site + "#/jogadores")
+    pagina.goto(site + "#/pessoas")
     feitos = {}
-    # 1) o laço em volta de cada jogador
-    pagina.wait_for_function("window.itemJogadores && window.pintor")
+    # 1) o laço em volta de cada pessoa
+    pagina.wait_for_function("window.itemPessoas && window.pintor")
     fila = Fila.model_validate_json(_ler(pagina, f"partidas/{PARTIDA}/fila.json"))
-    v = _verdade_do_quadro(pagina, fila, verdade, "itemJogadores")
-    for contorno in _contornos(v["jogadores"]):
+    v = _verdade_do_quadro(pagina, fila, verdade, "itemPessoas")
+    for contorno in _contornos(v["pessoas"]):
         _laco(pagina, contorno)
     pintado = np.array(pagina.evaluate("Array.from(pintor.mascara())"), np.uint8).reshape(360, 640)
-    assert _iou(pintado, v["jogadores"]) > 0.8
-    pagina.screenshot(path=str(capturas / "e2e_7_jogadores.png"))
-    q1 = pagina.evaluate("itemJogadores.quadro")
-    feitos[q1] = v["jogadores"]
+    assert _iou(pintado, v["pessoas"]) > 0.8
+    pagina.screenshot(path=str(capturas / "e2e_7_pessoas.png"))
+    q1 = pagina.evaluate("itemPessoas.quadro")
+    feitos[q1] = v["pessoas"]
     pagina.keyboard.press("s")
-    pagina.wait_for_function("(q) => window.itemJogadores && itemJogadores.quadro !== q", arg=q1)
+    pagina.wait_for_function("(q) => window.itemPessoas && itemPessoas.quadro !== q", arg=q1)
     # 2) o pincel, a borracha e o desfazer
-    q2 = pagina.evaluate("itemJogadores.quadro")
+    q2 = pagina.evaluate("itemPessoas.quadro")
     pagina.keyboard.press("b")
     pagina.evaluate("pintor.raio = 5")
     a, b = _janela(pagina, "pintor", 100, 100), _janela(pagina, "pintor", 140, 100)
@@ -504,14 +508,14 @@ def test_pintar_revisar_e_unificar(site, video, navegador, capturas, tmp_path):
     assert pagina.evaluate("pintor.pixels()") == n
     pagina.keyboard.press("e")
     pagina.keyboard.press("s")
-    pagina.wait_for_function("(q) => window.itemJogadores && itemJogadores.quadro !== q", arg=q2)
+    pagina.wait_for_function("(q) => window.itemPessoas && itemPessoas.quadro !== q", arg=q2)
     # 3) descartar
-    q3 = pagina.evaluate("itemJogadores.quadro")
+    q3 = pagina.evaluate("itemPessoas.quadro")
     pagina.click("#descartar")
     pagina.check("input[name=motivo-descarte][value=borrao]")
     pagina.click("#confirmar-descartar")
     pagina.wait_for_selector("#vazio:has-text('Nada para pintar agora')")
-    d = f"partidas/{PARTIDA}/rotulos/jogadores"
+    d = f"partidas/{PARTIDA}/rotulos/pessoas"
     assert sorted(_listar(pagina, d)) == sorted(
         [
             f"{q1}__A01__v1.json",
@@ -521,16 +525,16 @@ def test_pintar_revisar_e_unificar(site, video, navegador, capturas, tmp_path):
             f"{q3}__A01__v1.json",
         ]
     )
-    r1 = RotuloJogadores.model_validate_json(_ler(pagina, f"{d}/{q1}__A01__v1.json"))
+    r1 = RotuloPessoas.model_validate_json(_ler(pagina, f"{d}/{q1}__A01__v1.json"))
     m1 = ler_png(_bytes(pagina, f"{d}/{r1.mascara}"))
     assert m1.shape == (360, 640) and set(np.unique(m1)) <= {0, 1} and int(m1.sum()) == r1.pixels
     assert _iou(m1, feitos[q1]) > 0.8
-    r3 = RotuloJogadores.model_validate_json(_ler(pagina, f"{d}/{q3}__A01__v1.json"))
+    r3 = RotuloPessoas.model_validate_json(_ler(pagina, f"{d}/{q3}__A01__v1.json"))
     assert (r3.situacao, r3.motivo_descarte, r3.mascara) == ("descartada", "borrao", None)
 
     # 4) outra pessoa revisa às cegas: corrige a pintura do pincel, aprova as outras
     _escolher_pessoa(pagina, site, "A02")
-    pagina.click("#ir-revisao-jogadores")
+    pagina.click("#ir-revisao-pessoas")
     corrigido = None
     for _ in range(3):
         pagina.wait_for_function("window.itemRevisao && !document.querySelector('#painel').hidden")
@@ -541,9 +545,9 @@ def test_pintar_revisar_e_unificar(site, video, navegador, capturas, tmp_path):
             pagina.evaluate("window.pintor = revisando")
             vq = verdade[next(it.i for it in fila.itens if it.quadro == q)]
             pagina.evaluate("pintor.definir(null)")  # apaga tudo e pinta de novo
-            for contorno in _contornos(vq["jogadores"]):
+            for contorno in _contornos(vq["pessoas"]):
                 _laco(pagina, contorno)
-            pagina.fill("#comentario-corr", "a pintura não era de jogador")
+            pagina.fill("#comentario-corr", "a pintura não era de ninguém")
             pagina.click("#salvar-correcao")
             corrigido = q
         else:
@@ -563,12 +567,12 @@ def test_pintar_revisar_e_unificar(site, video, navegador, capturas, tmp_path):
     assert main(["validar", "--pasta", str(raiz)]) == 0
     assert main(["unificar", "--pasta", str(raiz)]) == 0
     conjunto = next((raiz / "conjuntos").iterdir())
-    df = pd.read_parquet(conjunto / "jogadores.parquet").set_index("quadro")
+    df = pd.read_parquet(conjunto / "pessoas.parquet").set_index("quadro")
     assert set(df.index) == {q1, q2}
     assert tuple(df.loc[q2, ["anotador", "decisao"]]) == ("A02", "corrigir")
-    assert df.loc[q1, "mascara"] == f"partidas/{PARTIDA}/rotulos/jogadores/{q1}__A01__v1.png"
+    assert df.loc[q1, "mascara"] == f"partidas/{PARTIDA}/rotulos/pessoas/{q1}__A01__v1.png"
     man = json.loads((conjunto / "manifesto.json").read_text(encoding="utf-8"))
-    assert man["descartados"]["jogadores"] == {"borrao": 1}
+    assert man["descartados"]["pessoas"] == {"borrao": 1}
     assert not erros, erros
 
 
@@ -576,11 +580,11 @@ def test_pintar_revisar_e_unificar(site, video, navegador, capturas, tmp_path):
 
 
 def _lote_de_ouro(destino: Path) -> tuple[Path, dict]:
-    """Um lote de ouro pequeno: 2 itens dos pontos e 1 dos jogadores (com uma "outra pessoa")."""
+    """Um lote de ouro pequeno: 2 itens dos pontos e 1 das pessoas (cada pessoa com o seu número)."""
     lote = destino / "ouro-teste.zip"
     verdades = {}
     with zipfile.ZipFile(lote, "w") as z:
-        for gid, (C, alvo, hfov) in zip(["g1901", "g2901", "g1902"], PLANOS, strict=True):
+        for gid, (C, alvo, hfov) in zip(["g1901", "g3901", "g1902"], PLANOS, strict=True):
             cam = Camera.look_at(C, alvo, hfov, 640, 360)
             img, v = renderizar(cam, int(gid[1:]))
             z.writestr(
@@ -597,22 +601,19 @@ def _lote_de_ouro(destino: Path) -> tuple[Path, dict]:
                     origem="simulador",
                 )
             else:
-                n, rot = cv2.connectedComponents(v["jogadores"])
+                n, rot = cv2.connectedComponents(v["pessoas"])
                 rot = rot.astype(np.uint8)
-                rot[rot == n - 1] = 255  # o último "jogador" vira uma outra pessoa
                 z.writestr(f"gabarito/itens/{gid}.png", gravar_png(rot, [(i, i, i) for i in range(256)]))
-                g = GabaritoJogadores(
+                g = GabaritoPessoas(
                     id=gid,
                     lote="T2-teste",
                     imagem=f"{gid}.jpg",
                     mascara=f"{gid}.png",
                     largura=640,
                     altura=360,
-                    jogadores=n - 2,
-                    outras_pessoas=1,
+                    pessoas=n - 1,
                     origem="simulador",
                 )
-                v = {**v, "jogadores": ((rot >= 1) & (rot <= n - 2)).astype(np.uint8)}
             z.writestr(f"gabarito/itens/{gid}.json", g.model_dump_json())
             verdades[gid] = v
     return lote, verdades
@@ -636,7 +637,7 @@ def test_teste_do_gabarito(site, navegador, capturas, tmp_path):
     linhas = pagina.eval_on_selector_all(
         "#lotes tbody tr", "trs => trs.map(tr => [...tr.children].map(td => td.textContent))"
     )
-    assert linhas == [["T1-teste", "pontos", "2", "g1901 a g1902"], ["T2-teste", "jogadores", "1", "g2901 a g2901"]]
+    assert linhas == [["T1-teste", "pontos", "2", "g1901 a g1902"], ["T2-teste", "pintura", "1", "g3901 a g3901"]]
     pagina.wait_for_function("document.querySelector('[data-tarefa=pontos] .st').textContent.startsWith('Em teste')")
     pagina.screenshot(path=str(capturas / "e2e_8_gabarito.png"), full_page=True)
     pagina.goto(site + "#/")
@@ -673,15 +674,16 @@ def test_teste_do_gabarito(site, navegador, capturas, tmp_path):
     pagina.wait_for_selector("#vazio:has-text('acabou antes da liberação')")
     assert sorted(_listar(pagina, "gabarito/rotulos/pontos")) == ["g1901__A01__v1.json", "g1902__A01__v1.json"]
 
-    # jogadores: pinta a resposta com o laço
-    pagina.goto(site + "#/jogadores")
-    pagina.wait_for_function("window.itemJogadores && itemJogadores.treino && window.pintor")
-    for contorno in _contornos(verdades["g2901"]["jogadores"]):
+    # pessoas: pinta a resposta com o laço
+    pagina.goto(site + "#/pessoas")
+    pagina.wait_for_function("window.itemPessoas && itemPessoas.treino && window.pintor")
+    for contorno in _contornos(verdades["g3901"]["pessoas"]):
         _laco(pagina, contorno)
     pagina.keyboard.press("s")
     pagina.wait_for_selector("#resultado:not([hidden])")
     assert pagina.inner_text("#resultado-titulo") == "Certo", pagina.inner_text("#resultado-texto")
-    pagina.screenshot(path=str(capturas / "e2e_10_resultado_jogadores.png"))
+    assert pagina.inner_text("#resultado-texto").startswith("Pessoas pintadas: ")
+    pagina.screenshot(path=str(capturas / "e2e_10_resultado_pessoas.png"))
     pagina.click("#ver-resposta")
     assert pagina.inner_text("#ver-resposta") == "Ver a minha pintura"
     pagina.click("#ver-resposta")
@@ -697,9 +699,9 @@ def test_teste_do_gabarito(site, navegador, capturas, tmp_path):
     assert pagina.inner_text("#resultado-titulo") == "Certo"
     assert pagina.is_visible("#voltar-gabarito") and pagina.is_hidden("#proximo")
     pagina.click("#voltar-gabarito")
-    pagina.wait_for_selector("[data-res=jogadores]")
-    pagina.click("[data-res=jogadores]")
-    pagina.wait_for_function("document.querySelector('#resultados tbody').textContent.includes('g2901')")
+    pagina.wait_for_selector("[data-res=pessoas]")
+    pagina.click("[data-res=pessoas]")
+    pagina.wait_for_function("document.querySelector('#resultados tbody').textContent.includes('g3901')")
     assert not erros, erros
 
 
@@ -848,6 +850,9 @@ def test_mesmo_codigo_em_dois_computadores(site, navegador, capturas):
     assert bruno.is_visible("#aviso-codigo")
     bruno.click("#sou-eu")
     assert bruno.is_hidden("#aviso-codigo")
+    # o registro deste computador termina de gravar antes de recarregar (recarregar no meio da gravação
+    # deixaria o temporário .crswap do navegador na pasta)
+    bruno.wait_for_function("async () => (await anotacao.pasta.dispositivosDoCodigo('AB')).length === 2")
     bruno.reload()
     bruno.wait_for_selector("#aviso-codigo[data-codigo='AB']", state="attached")
     assert bruno.is_hidden("#aviso-codigo")
@@ -1038,15 +1043,18 @@ def test_politica_de_seguranca_nao_bloqueia_nada(site, video, navegador):
     assert pagina.inner_text("#erro-importar") == ""
     for rota, seletor in [
         ("#/pontos", "#painel:not([hidden]) .mapa, #vazio:not([hidden])"),
-        ("#/jogadores", "#painel:not([hidden]), #vazio:not([hidden])"),
+        ("#/pessoas", "#painel:not([hidden]), #vazio:not([hidden])"),
         ("#/revisao-pontos", "#vazio:not([hidden])"),
-        ("#/revisao-jogadores", "#vazio:not([hidden])"),
+        ("#/revisao-pessoas", "#vazio:not([hidden])"),
         ("#/gabarito", "#lotes tbody td"),
         ("#/coordenacao", "#equipe"),
         ("#/", "#placar tbody td"),
     ]:
         pagina.goto(site + rota)
         pagina.wait_for_selector(seletor)
+    pagina.goto(site + "#/jogadores?treino")  # o endereço da 0.8 leva à página nova
+    pagina.wait_for_function("location.hash === '#/pessoas?treino'")
+    pagina.wait_for_selector("#painel:not([hidden]), #vazio:not([hidden])")
     assert not avisos, avisos
     contexto.close()
 

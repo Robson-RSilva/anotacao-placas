@@ -5,14 +5,14 @@ revisor). Se mais de um foi aprovado (quadro em dupla), vale o aprovado primeiro
 descartadas ficam fora (o manifesto conta por motivo). O conjunto de cada quadro é o da partida em
 `divisao.json` — nunca se misturam quadros da mesma partida entre treino e teste.
 
-Uma imagem sem nenhum ponto, ou sem jogador, entra: é o exemplo de que ali não há o que achar.
+Uma imagem sem nenhum ponto, ou sem pessoa, entra: é o exemplo de que ali não há o que achar.
 
 Saída em `conjuntos/<data-hora>/`:
     pontos.parquet          um quadro por linha: imagem, tamanho, quantos pontos, quem anotou e
                             revisou, partida e condições do jogo
     pontos_lista.parquet    um ponto por linha: o quadro, o nome do ponto e x, y (px da imagem)
-    jogadores.parquet       um quadro por linha: imagem, máscara (o PNG do rótulo aprovado: 1 onde há
-                            jogador), pixels pintados, quem anotou e revisou, condições do jogo
+    pessoas.parquet         um quadro por linha: imagem, máscara (o PNG do rótulo aprovado: 1 onde há
+                            pessoa), pixels pintados, quem anotou e revisou, condições do jogo
     manifesto.json          contagens por conjunto, descartes por motivo, versões, hash do conteúdo
     problemas.json          arquivos inválidos e quadros pendentes
 """
@@ -39,7 +39,7 @@ QUADRO = ["conjunto", "partida", "quadro", "imagem", "largura", "altura", "pts_m
 
 COLUNAS_PONTOS = [*QUADRO, "n_pontos", *AUTORIA, *COMUNS]
 COLUNAS_LISTA = ["conjunto", "partida", "quadro", "ponto", "x", "y"]
-COLUNAS_JOGADORES = [*QUADRO, "mascara", "pixels", *AUTORIA, *COMUNS]
+COLUNAS_PESSOAS = [*QUADRO, "mascara", "pixels", *AUTORIA, *COMUNS]
 
 
 def aprovado(ip: IndicePartida, quadro: str, ler) -> tuple | None:
@@ -89,9 +89,9 @@ def unificar(pasta: Pasta, destino: Path | None = None, agora: datetime | None =
     agora = agora or datetime.now(UTC)
     indice = Indice(pasta)
     divisao = pasta.ler_divisao()
-    linhas_pontos, linhas_lista, linhas_jog = [], [], []
+    linhas_pontos, linhas_lista, linhas_pes = [], [], []
     pendentes, problemas = [], []
-    descartes = {"pontos": Counter(), "jogadores": Counter()}
+    descartes = {"pontos": Counter(), "pessoas": Counter()}
 
     for pid in pasta.listar_partidas():
         try:
@@ -111,7 +111,7 @@ def unificar(pasta: Pasta, destino: Path | None = None, agora: datetime | None =
             "iluminacao": cad.iluminacao,
             "chuva": cad.chuva,
         }
-        for tarefa in ("pontos", "jogadores"):
+        for tarefa in ("pontos", "pessoas"):
             ip = indice.partida(pid, tarefa)
             problemas += [{"arquivo": rel(p), "erro": e} for p, e in ip.invalidos]
             problemas += [{"arquivo": rel(p), "erro": "a máscara ainda não chegou"} for p in ip.esperando]
@@ -163,21 +163,21 @@ def unificar(pasta: Pasta, destino: Path | None = None, agora: datetime | None =
                 if erro:
                     pendentes.append({"partida": pid, "quadro": item.quadro, "tarefa": tarefa, "motivo": erro})
                     continue
-                linhas_jog.append({**base, "mascara": rel(caminho), "pixels": int(m.sum()), **autoria, **comum})
+                linhas_pes.append({**base, "mascara": rel(caminho), "pixels": int(m.sum()), **autoria, **comum})
 
     df_pontos = pd.DataFrame(linhas_pontos, columns=COLUNAS_PONTOS)
     df_lista = pd.DataFrame(linhas_lista, columns=COLUNAS_LISTA).astype({"x": "float64", "y": "float64"})
-    df_jog = pd.DataFrame(linhas_jog, columns=COLUNAS_JOGADORES)
+    df_pes = pd.DataFrame(linhas_pes, columns=COLUNAS_PESSOAS)
     destino = destino or pasta.conjuntos / agora.strftime("%Y%m%d-%H%M%S")
     destino.mkdir(parents=True, exist_ok=False)
     df_pontos.to_parquet(destino / "pontos.parquet", index=False)
     df_lista.to_parquet(destino / "pontos_lista.parquet", index=False)
-    df_jog.to_parquet(destino / "jogadores.parquet", index=False)
-    partidas = sorted(set(df_pontos["partida"]) | set(df_jog["partida"]))
+    df_pes.to_parquet(destino / "pessoas.parquet", index=False)
+    partidas = sorted(set(df_pontos["partida"]) | set(df_pes["partida"]))
     escrever_json(
         destino / "manifesto.json",
         {
-            "formato": "conjuntos/3",
+            "formato": "conjuntos/4",
             "criado_em": agora.isoformat(),
             "ferramenta": __version__,
             "pontos": {
@@ -188,11 +188,11 @@ def unificar(pasta: Pasta, destino: Path | None = None, agora: datetime | None =
                 "hash_conteudo": _hash(df_pontos, ["partida", "quadro"]),
                 "hash_pontos": _hash(df_lista, ["partida", "quadro", "ponto"]),
             },
-            "jogadores": {
-                "quadros": len(df_jog),
-                "sem_jogadores": int((df_jog["pixels"] == 0).sum()) if len(df_jog) else 0,
-                "por_conjunto": _contagens(df_jog),
-                "hash_conteudo": _hash(df_jog, ["partida", "quadro"]),
+            "pessoas": {
+                "quadros": len(df_pes),
+                "sem_pessoas": int((df_pes["pixels"] == 0).sum()) if len(df_pes) else 0,
+                "por_conjunto": _contagens(df_pes),
+                "hash_conteudo": _hash(df_pes, ["partida", "quadro"]),
             },
             "descartados": {t: dict(sorted(c.items())) for t, c in descartes.items()},
             "partidas_por_conjunto": {

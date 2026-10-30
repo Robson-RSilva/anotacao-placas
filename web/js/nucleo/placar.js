@@ -3,6 +3,11 @@
 // Ponto só conta depois de aprovado, para velocidade sem qualidade não subir no placar. Nada é
 // gravado: cada navegador calcula o seu na hora (um arquivo de cache escrito por várias pessoas
 // daria conflito no Drive).
+//
+// Os tempos são o tempo ativo gravado em cada arquivo (a página só conta enquanto há uso). O tempo
+// por imagem é o dos rótulos da própria pessoa: sem os descartes (levam segundos e não dizem quanto
+// custa anotar) e sem as correções que ela fez revisando — essas são trabalho de revisão e contam no
+// tempo por revisão, junto com as aprovações e as devoluções.
 
 import { Molde } from "./campo.js";
 import { REF_W } from "./convencoes.js";
@@ -60,8 +65,8 @@ export function concordanciaPontos(r1, r2) {
   return melhor ? melhor.m : null;
 }
 
-/** Concordância de duas máscaras dos jogadores: a sobreposição (IoU), sem a borda de 1 px de cada uma. */
-export function concordanciaJogadores(a, b, w, h) {
+/** Concordância de duas máscaras das pessoas: a sobreposição (IoU), sem a borda de 1 px de cada uma. */
+export function concordanciaPessoas(a, b, w, h) {
   const borda = (m, x, y) => {
     const v = m[y * w + x] ? 1 : 0;
     for (let dy = -1; dy <= 1; dy++) {
@@ -95,14 +100,14 @@ const CONCORDANCIA = {
     if (a1.dados.situacao !== "ok" || a2.dados.situacao !== "ok") return null;
     return concordanciaPontos(a1.dados, a2.dados);
   },
-  jogadores: async (a1, a2, indice) => {
+  pessoas: async (a1, a2, indice) => {
     const [r1, r2] = [a1.dados, a2.dados];
     if (r1.mascara === null || r2.mascara === null || r1.largura !== r2.largura || r1.altura !== r2.altura) return null;
-    const dir = indice.pasta.rotulos(a1.partida, "jogadores");
+    const dir = indice.pasta.rotulos(a1.partida, "pessoas");
     const [m1, m2] = [await indice.mascara(`${dir}/${r1.mascara}`), await indice.mascara(`${dir}/${r2.mascara}`)];
     const hit = _concordancias.get(m1); // refeita só quando uma das máscaras muda
     if (hit && hit.outra === m2) return hit.valor;
-    const valor = concordanciaJogadores(m1.dados, m2.dados, r1.largura, r1.altura);
+    const valor = concordanciaPessoas(m1.dados, m2.dados, r1.largura, r1.altura);
     _concordancias.set(m1, { outra: m2, valor });
     return valor;
   },
@@ -135,10 +140,11 @@ async function placarDaTarefa(indice, agora, tarefa, nomes) {
     const { partida: pid, fila, ip } = p;
     for (const a of ip.rotulos) {
       const r = a.dados;
+      if (r.corrige !== null) continue; // correção feita revisando: o tempo dela está na revisão
       const s = c(a.pessoa);
       s.rotulos += 1;
       if (r.situacao === "descartada") s.descartadas += 1;
-      lista(temposRot, a.pessoa).push(r.segundos_ativos);
+      else lista(temposRot, a.pessoa).push(r.segundos_ativos);
       marcarDia(a.pessoa, r.criado_em);
       const rev = ip.ultimaRevisao(a.nome);
       if (!rev) continue;
@@ -216,9 +222,9 @@ async function placarDaTarefa(indice, agora, tarefa, nomes) {
       aprovados_semana: s.aprovados_semana,
       devolvidos: s.devolvidos,
       taxa_aprovacao: s.revisados ? arredondar(s.aprovados / s.revisados, 3) : null,
-      tempo_mediano_s: medianaCurta(temposRot.get(cod)),
+      tempo_mediano_s: medianaCurta(temposRot.get(cod), 0),
       revisoes_feitas: s.revisoes_feitas,
-      tempo_mediano_revisao_s: medianaCurta(temposRev.get(cod)),
+      tempo_mediano_revisao_s: medianaCurta(temposRev.get(cod), 0),
       concordancia: medianaCurta(concord.get(cod), tarefa === "pontos" ? 2 : 3),
       gabarito_n: res.length,
       gabarito_acertos: res.filter((r) => r.acerto).length,
@@ -230,14 +236,17 @@ async function placarDaTarefa(indice, agora, tarefa, nomes) {
   linhas.sort((x, y) => y.aprovados_semana - x.aprovados_semana || y.aprovados - x.aprovados || (x.pessoa < y.pessoa ? -1 : 1));
   const total = {};
   for (const k of ["sorteados", "anotados", "aprovados", "descartados", "pendentes_revisao"]) total[k] = partidas.reduce((soma, x) => soma + x[k], 0);
-  return { pessoas: linhas, partidas, total, problemas, gabarito_importado: itensGab.length > 0 };
+  return { equipe: linhas, partidas, total, problemas, gabarito_importado: itensGab.length > 0 };
 }
 
-/** Placar da equipe e progresso das partidas, um para cada tarefa: {pontos, jogadores, problemas}. */
+/**
+ * Placar da equipe e progresso das partidas, um para cada tarefa: {pontos, pessoas, problemas}; em
+ * cada tarefa, `equipe` tem uma linha por código.
+ */
 export async function calcularPlacar(indice, agora = new Date()) {
   const equipe = await indice.equipe();
   const nomes = new Map(equipe.membros.map((m) => [m.codigo, m.nome]));
   const pontos = await placarDaTarefa(indice, agora, "pontos", nomes);
-  const jogadores = await placarDaTarefa(indice, agora, "jogadores", nomes);
-  return { calculado_em: agora.toISOString(), pontos, jogadores, problemas: pontos.problemas };
+  const pessoas = await placarDaTarefa(indice, agora, "pessoas", nomes);
+  return { calculado_em: agora.toISOString(), pontos, pessoas, problemas: pontos.problemas };
 }

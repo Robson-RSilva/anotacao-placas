@@ -1,6 +1,9 @@
 # ADR-0010 — Marcar e pintar direto na imagem: pontos com o mapa do campo, todos os jogadores e descarte
 
-**Situação:** aceita (30/10/2026). Substitui o molde do campo da ADR-0006 e as ADRs 0008 e 0009.
+**Situação:** aceita (30/10/2026). Substitui o molde do campo da ADR-0006 e as ADRs 0008 e 0009. A
+pintura de só os jogadores foi trocada pela de todas as pessoas em campo na
+[ADR-0011](0011-pintar-todas-as-pessoas-em-campo.md); os pontos, o descarte, o gabarito e a revisão
+seguem como aqui.
 
 ## Contexto
 

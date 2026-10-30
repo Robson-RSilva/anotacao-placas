@@ -16,11 +16,14 @@ import unicodedata
 
 REF_W, REF_H = 960, 540
 
-#: As tarefas: marcar os pontos do campo e pintar os jogadores, cada uma direto na imagem.
-TAREFAS = ("pontos", "jogadores")
+#: As tarefas: marcar os pontos do campo e pintar as pessoas (todas as que estão no gramado e em volta
+#: dele, do lado de dentro das placas), cada uma direto na imagem.
+TAREFAS = ("pontos", "pessoas")
 
 #: Versão do Manual de anotação que esta versão da ferramenta segue, por tarefa.
-MANUAL = {"pontos": "pontos-0.1", "jogadores": "jogadores-0.1", "revisao": "revisao-0.2"}
+MANUAL = {"pontos": "pontos-0.1", "pessoas": "pessoas-0.1", "revisao": "revisao-0.3"}
+#: As pastas das tarefas das versões anteriores ficam onde estão e não entram em nada: a câmera e a
+#: oclusão (até a 0.7) e os jogadores (0.8, que pintava só os jogadores).
 
 RE_ESTADIO = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 RE_VERSAO_PACOTE = re.compile(r"^\d+\.\d+$")
@@ -30,7 +33,7 @@ RE_GABARITO = re.compile(r"^g\d{4}$")
 RE_PESSOA = re.compile(r"^[A-Z][A-Z0-9]{1,9}$")
 #: Pacote do estádio dos manifestos das versões até a 0.7 (hoje ignorado).
 RE_PACOTE_REF = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*/pacote-\d+\.\d+$")
-#: A máscara dos jogadores, ao lado do rótulo: o mesmo nome, com .png.
+#: A máscara das pessoas, ao lado do rótulo: o mesmo nome, com .png.
 RE_MASCARA = re.compile(r"^(t\d{10}|g\d{4})__([A-Z][A-Z0-9]{1,9})__v(\d+)\.png$")
 #: Navegador de um computador (um identificador aleatório, guardado no próprio navegador).
 RE_DISPOSITIVO = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")

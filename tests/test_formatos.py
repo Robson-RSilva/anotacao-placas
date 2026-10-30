@@ -8,14 +8,14 @@ from pydantic import ValidationError
 from anotacao.formatos import (
     DispositivoPessoa,
     Divisao,
-    GabaritoJogadores,
+    GabaritoPessoas,
     GabaritoPontos,
     Manifesto,
     PrevisaoPontos,
     Projeto,
-    RevisaoJogadores,
+    RevisaoPessoas,
     RevisaoPontos,
-    RotuloJogadores,
+    RotuloPessoas,
     RotuloPontos,
 )
 
@@ -28,7 +28,7 @@ def _base(**kw):
         quadro="t0000012340",
         anotador="A01",
         versao=1,
-        ferramenta="0.8.0",
+        ferramenta="0.9.0",
         criado_em=datetime.now(UTC),
         segundos_ativos=31.0,
         largura=1280,
@@ -45,10 +45,10 @@ def pontos(**kw):
     return RotuloPontos(**_base(manual="pontos-0.1", **kw))
 
 
-def jogadores(**kw):
+def pessoas(**kw):
     kw.setdefault("mascara", "t0000012340__A01__v1.png")
     kw.setdefault("pixels", 1500)
-    return RotuloJogadores(**_base(manual="jogadores-0.1", **kw))
+    return RotuloPessoas(**_base(manual="pessoas-0.1", **kw))
 
 
 def test_rotulos_validos():
@@ -59,10 +59,10 @@ def test_rotulos_validos():
     assert pontos(pontos=[]).pontos == []  # nenhum ponto à vista: vale (a imagem entra sem pontos)
     d = pontos(pontos=[], situacao="descartada", motivo_descarte="transicao")
     assert d.motivo_descarte == "transicao"
-    j = jogadores()
-    assert j.formato == "rotulo.jogadores/1" and j.pixels == 1500
-    assert jogadores(pixels=0).pixels == 0  # nenhum jogador: a máscara toda 0
-    assert jogadores(mascara=None, pixels=0, situacao="descartada", motivo_descarte="borrao").mascara is None
+    j = pessoas()
+    assert j.formato == "rotulo.pessoas/1" and j.pixels == 1500
+    assert pessoas(pixels=0).pixels == 0  # ninguém na imagem: a máscara toda 0
+    assert pessoas(mascara=None, pixels=0, situacao="descartada", motivo_descarte="borrao").mascara is None
 
 
 @pytest.mark.parametrize(
@@ -97,9 +97,9 @@ def test_rotulo_de_pontos_incoerente(mudanca, trecho):
         (dict(pixels=1280 * 720 + 1), "mais pixels"),
     ],
 )
-def test_rotulo_dos_jogadores_incoerente(mudanca, trecho):
+def test_rotulo_das_pessoas_incoerente(mudanca, trecho):
     with pytest.raises(ValidationError, match=trecho):
-        jogadores(**mudanca)
+        pessoas(**mudanca)
 
 
 def test_revisao_regras():
@@ -109,14 +109,14 @@ def test_revisao_regras():
         rotulo="t0000012340__A01__v1.json",
         revisor="A02",
         versao=1,
-        ferramenta="0.8.0",
-        manual="revisao-0.2",
+        ferramenta="0.9.0",
+        manual="revisao-0.3",
         criado_em=datetime.now(UTC),
         segundos_ativos=5,
     )
     for modelo, motivo, alheio in (
-        (RevisaoPontos, "nome_trocado", "faltou_jogador"),
-        (RevisaoJogadores, "faltou_jogador", "nome_trocado"),
+        (RevisaoPontos, "nome_trocado", "faltou_pessoa"),
+        (RevisaoPessoas, "faltou_pessoa", "nome_trocado"),
     ):
         assert modelo(decisao="aprovar", **base).formato.startswith("revisao.")
         modelo(decisao="devolver", motivo=motivo, **base)
@@ -150,13 +150,15 @@ def test_itens_do_gabarito():
         GabaritoPontos(**{**g.model_dump(), "pontos": [g.pontos[0].model_dump()] * 2})
     with pytest.raises(ValidationError, match="fora da imagem"):
         GabaritoPontos(**{**g.model_dump(), "pontos": [{"ponto": "centro", "x": 2000, "y": 1, "visivel": True}]})
-    j = GabaritoJogadores(
-        id="g2001", imagem="g2001.jpg", mascara="g2001.png", largura=1280, altura=720, jogadores=12, origem="simulador"
+    j = GabaritoPessoas(
+        id="g3001", imagem="g3001.jpg", mascara="g3001.png", largura=1280, altura=720, pessoas=16, origem="simulador"
     )
-    assert j.lote == ""
-    assert j.outras_pessoas == 0
-    with pytest.raises(ValidationError, match="não cabem"):
-        GabaritoJogadores(**{**j.model_dump(), "jogadores": 250, "outras_pessoas": 6})
+    assert j.lote == "" and j.formato == "gabarito.pessoas/1"
+    assert GabaritoPessoas(**{**j.model_dump(), "pessoas": 0}).pessoas == 0  # ninguém na imagem: vale
+    with pytest.raises(ValidationError):
+        GabaritoPessoas(**{**j.model_dump(), "pessoas": 256})  # os números vão até 255
+    with pytest.raises(ValidationError):
+        GabaritoPessoas(**{**j.model_dump(), "jogadores": 12})  # o campo da 0.8
     with pytest.raises(ValidationError):
         GabaritoPontos(**{**g.model_dump(), "id": "g12"})
 

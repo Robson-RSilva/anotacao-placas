@@ -13,7 +13,7 @@ const base = (extra = {}) => ({
   quadro: "t0001234567",
   anotador: "A03",
   versao: 1,
-  ferramenta: "0.8.0",
+  ferramenta: "0.9.0",
   criado_em: "2026-11-03T14:05:11.123Z",
   segundos_ativos: 41,
   largura: 1280,
@@ -33,9 +33,9 @@ const pontos = (extra = {}) => ({
   ...base(extra),
 });
 
-const jogadores = (extra = {}) => ({
-  formato: "rotulo.jogadores/1",
-  manual: "jogadores-0.1",
+const pessoas = (extra = {}) => ({
+  formato: "rotulo.pessoas/1",
+  manual: "pessoas-0.1",
   mascara: "t0001234567__A03__v1.png",
   pixels: 5000,
   ...base(extra),
@@ -54,9 +54,9 @@ test("rótulos válidos e padrões preenchidos como no pydantic", () => {
   assert.deepEqual(conferir("rotulo_pontos", pontos({ pontos: [] })), []); // nenhum ponto à vista: vale
   assert.deepEqual(conferir("rotulo_pontos", pontos({ pontos: [], situacao: "descartada", motivo_descarte: "borrao" })), []);
   assert.deepEqual(conferir("rotulo_pontos", pontos({ partida: "gabarito", quadro: "g1001" })), []);
-  assert.deepEqual(conferir("rotulo_jogadores", jogadores()), []);
-  assert.deepEqual(conferir("rotulo_jogadores", jogadores({ pixels: 0 })), []);
-  assert.deepEqual(conferir("rotulo_jogadores", jogadores({ mascara: null, pixels: 0, situacao: "descartada", motivo_descarte: "transicao" })), []);
+  assert.deepEqual(conferir("rotulo_pessoas", pessoas()), []);
+  assert.deepEqual(conferir("rotulo_pessoas", pessoas({ pixels: 0 })), []);
+  assert.deepEqual(conferir("rotulo_pessoas", pessoas({ mascara: null, pixels: 0, situacao: "descartada", motivo_descarte: "transicao" })), []);
 });
 
 test("regras entre campos do rótulo de pontos", () => {
@@ -78,7 +78,7 @@ test("regras entre campos do rótulo de pontos", () => {
   }
 });
 
-test("regras entre campos do rótulo dos jogadores", () => {
+test("regras entre campos do rótulo das pessoas", () => {
   const casos = [
     [{ mascara: null, pixels: 0 }, "a máscara vem sempre"],
     [{ situacao: "descartada", motivo_descarte: "borrao" }, "a máscara vem sempre"],
@@ -87,7 +87,7 @@ test("regras entre campos do rótulo dos jogadores", () => {
     [{ pixels: 1280 * 720 + 1 }, "mais pixels"],
   ];
   for (const [extra, trecho] of casos) {
-    const erros = conferir("rotulo_jogadores", jogadores(extra));
+    const erros = conferir("rotulo_pessoas", pessoas(extra));
     assert.ok(erros.some((e) => e.includes(trecho)), `${JSON.stringify(extra)} -> ${erros}`);
   }
 });
@@ -113,7 +113,7 @@ test("estrutura: tipos, limites, padrões e campos desconhecidos", () => {
 });
 
 test("revisão: motivo da tarefa só ao devolver, nova versão só ao corrigir", () => {
-  for (const tarefa of ["pontos", "jogadores"]) {
+  for (const tarefa of ["pontos", "pessoas"]) {
     const rev = {
       formato: `revisao.${tarefa}/1`,
       partida: "2026-11-02_arena-x_time-a-time-b",
@@ -125,14 +125,14 @@ test("revisão: motivo da tarefa só ao devolver, nova versão só ao corrigir",
       motivo: null,
       comentario: "",
       nova_versao: null,
-      ferramenta: "0.8.0",
-      manual: "revisao-0.2",
+      ferramenta: "0.9.0",
+      manual: "revisao-0.3",
       criado_em: "2026-11-03T15:20:00Z",
       segundos_ativos: 9,
     };
     const tipo = `revisao_${tarefa}`;
     const motivo = Object.keys(MOTIVOS[tarefa])[0];
-    const alheio = Object.keys(MOTIVOS[tarefa === "pontos" ? "jogadores" : "pontos"])[0];
+    const alheio = Object.keys(MOTIVOS[tarefa === "pontos" ? "pessoas" : "pontos"])[0];
     assert.deepEqual(conferir(tipo, { ...rev }), []);
     assert.ok(conferir(tipo, { ...rev, decisao: "devolver" }).length);
     assert.deepEqual(conferir(tipo, { ...rev, decisao: "devolver", motivo }), []);
@@ -144,7 +144,7 @@ test("revisão: motivo da tarefa só ao devolver, nova versão só ao corrigir",
   }
 });
 
-test("itens do gabarito: o formato diz a tarefa; os da 0.7 ficam de fora", () => {
+test("itens do gabarito: o formato diz a tarefa; os das versões anteriores ficam de fora", () => {
   const g = {
     formato: "gabarito.pontos/1",
     id: "g1001",
@@ -159,11 +159,13 @@ test("itens do gabarito: o formato diz a tarefa; os da 0.7 ficam de fora", () =>
   assert.ok(conferir("gabarito_pontos", { ...g, pontos: [{ ponto: "centro", x: 1, y: 1 }] }).length); // falta "visivel"
   assert.ok(conferir("gabarito_pontos", { ...g, pontos: [g.pontos[0], g.pontos[0]] }).some((e) => e.includes("duas vezes")));
   assert.deepEqual(tipoDoItem(g), { tarefa: "pontos", tipo: "gabarito_pontos" });
-  assert.deepEqual(tipoDoItem({ formato: "gabarito.jogadores/1" }), { tarefa: "jogadores", tipo: "gabarito_jogadores" });
+  assert.deepEqual(tipoDoItem({ formato: "gabarito.pessoas/1" }), { tarefa: "pessoas", tipo: "gabarito_pessoas" });
   assert.equal(tipoDoItem({ formato: "gabarito.camera/1" }), null);
-  const j = { formato: "gabarito.jogadores/1", id: "g2001", imagem: "g2001.jpg", mascara: "g2001.png", largura: 1280, altura: 720, jogadores: 11, origem: "simulador" };
-  assert.deepEqual(conferir("gabarito_jogadores", { ...j }), []);
-  assert.ok(conferir("gabarito_jogadores", { ...j, jogadores: 256 }).length);
+  assert.equal(tipoDoItem({ formato: "gabarito.jogadores/1" }), null); // da 0.8: só os jogadores
+  const j = { formato: "gabarito.pessoas/1", id: "g3001", imagem: "g3001.jpg", mascara: "g3001.png", largura: 1280, altura: 720, pessoas: 14, origem: "simulador" };
+  assert.deepEqual(conferir("gabarito_pessoas", { ...j }), []);
+  assert.ok(conferir("gabarito_pessoas", { ...j, pessoas: 256 }).length);
+  assert.ok(conferir("gabarito_pessoas", { ...j, outras_pessoas: 1 }).some((e) => e.includes("campo desconhecido")));
 });
 
 test("manifesto: o das partidas importadas até a 0.7 (com o pacote do estádio) ainda vale", () => {
@@ -181,7 +183,7 @@ test("manifesto: o das partidas importadas até a 0.7 (com o pacote do estádio)
       chuva: false,
     },
     video: { nome_original: "a.mp4", sha256: "0".repeat(64), bytes: 1, duracao_s: 1, fps: 25, largura: 640, altura: 360, n_quadros: 25 },
-    pre_processamento: { ferramenta: "0.8.0", criado_em: "2026-11-02T16:00:00Z", segundos: 1, parametros: {} },
+    pre_processamento: { ferramenta: "0.9.0", criado_em: "2026-11-02T16:00:00Z", segundos: 1, parametros: {} },
   };
   assert.deepEqual(conferir("manifesto", structuredClone(man)), []);
   assert.deepEqual(conferir("manifesto", { ...structuredClone(man), pacote: "generico/pacote-1.0" }), []);

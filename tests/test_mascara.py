@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 
 from anotacao.mascara import eh_png, gravar_png, ler_png
-from anotacao.previsores import PALETA_JOGADORES
+from anotacao.previsores import PALETA_PESSOAS
 
 OITO_CORES = [
     (0, 0, 0),
@@ -37,10 +37,10 @@ def test_png_ida_e_volta_e_o_do_opencv():
         ler_png(b"nada")
 
 
-def test_mascara_dos_jogadores():
+def test_mascara_das_pessoas():
     m = np.zeros((9, 16), np.uint8)
     m[2:6, 3:7] = 1
-    assert np.array_equal(ler_png(gravar_png(m, PALETA_JOGADORES)), m)
+    assert np.array_equal(ler_png(gravar_png(m, PALETA_PESSOAS)), m)
 
 
 def test_pngs_fixos_do_fixture_dizem_os_pixels_deles():

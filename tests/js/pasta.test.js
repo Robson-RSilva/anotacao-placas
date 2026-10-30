@@ -10,7 +10,7 @@ import {
   PastaMemoria,
   criarPartida,
   esquemas,
-  gravarJogadores,
+  gravarPessoas,
   gravarPontos,
   gravarRevisao,
   pastaExemplo,
@@ -23,11 +23,12 @@ test("caminhos validados e com o layout do Python", () => {
   assert.equal(p.quadro(PARTIDA, "t0000001000"), `partidas/${PARTIDA}/quadros/t0000001000.jpg`);
   assert.equal(p.quadro("gabarito", "g1001"), "gabarito/itens/g1001.jpg");
   assert.equal(p.rotulos("gabarito", "pontos"), "gabarito/rotulos/pontos");
-  assert.equal(p.revisoes(PARTIDA, "jogadores"), `partidas/${PARTIDA}/revisoes/jogadores`);
+  assert.equal(p.revisoes(PARTIDA, "pessoas"), `partidas/${PARTIDA}/revisoes/pessoas`);
+  assert.throws(() => p.rotulos(PARTIDA, "jogadores"), /tarefa/); // a tarefa da 0.8 (só os jogadores)
   assert.equal(p.previsaoPontos(PARTIDA, "t0000001000"), `partidas/${PARTIDA}/previsoes/pontos/t0000001000.json`);
-  assert.equal(p.previsaoJogadores(PARTIDA, "t0000001000"), `partidas/${PARTIDA}/previsoes/jogadores/t0000001000.png`);
-  assert.equal(p.mascaraGabarito("g2001"), "gabarito/itens/g2001.png");
-  assert.equal(p.itemGabarito("g2001"), "gabarito/itens/g2001.json");
+  assert.equal(p.previsaoPessoas(PARTIDA, "t0000001000"), `partidas/${PARTIDA}/previsoes/pessoas/t0000001000.png`);
+  assert.equal(p.mascaraGabarito("g3001"), "gabarito/itens/g3001.png");
+  assert.equal(p.itemGabarito("g3001"), "gabarito/itens/g3001.json");
   assert.throws(() => p.partida("../fora"));
   assert.throws(() => p.quadro(PARTIDA, "g0001"));
   assert.throws(() => p.rotulos(PARTIDA, "camera")); // as tarefas das versões até a 0.7
@@ -72,22 +73,22 @@ test("criar, listar partidas, próxima versão", async () => {
   assert.equal(ip.ultimos().get("t0000001000|A01").versao, 2);
   assert.deepEqual(ip.versoes("t0000001000", "A01").map((a) => a.versao), [1, 2]);
   // a máscara de uma gravação interrompida (sem o rótulo) conta: o nome nunca se repete
-  const dirJ = pasta.rotulos(PARTIDA, "jogadores");
+  const dirJ = pasta.rotulos(PARTIDA, "pessoas");
   await pasta.escrever(`${dirJ}/t0000001000__A01__v4.png`, Uint8Array.of(137, 80, 78, 71));
   assert.equal(await pasta.proximaVersao(dirJ, "t0000001000", "A01"), 5);
 });
 
-test("jogadores: o rótulo cuja máscara ainda não chegou espera, e não entra em nada", async () => {
+test("pessoas: o rótulo cuja máscara ainda não chegou espera, e não entra em nada", async () => {
   const { pasta, indice } = await pastaExemplo();
   await criarPartida(pasta, [{}]);
   const m = new Uint8Array(640 * 360);
   m.fill(1, 1000, 1200);
-  const nome = await gravarJogadores(pasta, { quadro: "t0000001000", pessoa: "A01", mascara: m });
-  let ip = await indice.partida(PARTIDA, "jogadores");
+  const nome = await gravarPessoas(pasta, { quadro: "t0000001000", pessoa: "A01", mascara: m });
+  let ip = await indice.partida(PARTIDA, "pessoas");
   assert.deepEqual(ip.rotulos.map((a) => a.nome), [nome]);
   assert.equal(ip.rotulos[0].dados.pixels, 200);
-  await pasta.apagar(`${pasta.rotulos(PARTIDA, "jogadores")}/${nome.replace(".json", ".png")}`);
-  ip = await indice.partida(PARTIDA, "jogadores");
+  await pasta.apagar(`${pasta.rotulos(PARTIDA, "pessoas")}/${nome.replace(".json", ".png")}`);
+  ip = await indice.partida(PARTIDA, "pessoas");
   assert.equal(ip.rotulos.length, 0);
   assert.equal(ip.esperando.length, 1);
 });

@@ -18,23 +18,18 @@ export const ESQUEMAS = Object.freeze({
   revisao_pontos: "revisao.pontos.json",
   gabarito_pontos: "gabarito.pontos.json",
   previsao_pontos: "previsao.pontos.json",
-  rotulo_jogadores: "rotulo.jogadores.json",
-  revisao_jogadores: "revisao.jogadores.json",
-  gabarito_jogadores: "gabarito.jogadores.json",
+  rotulo_pessoas: "rotulo.pessoas.json",
+  revisao_pessoas: "revisao.pessoas.json",
+  gabarito_pessoas: "gabarito.pessoas.json",
 });
 
 /** Tipos de arquivo de cada tarefa: o rótulo, a revisão e o item do gabarito (e o formato dele). */
 export const TIPOS_DA_TAREFA = Object.freeze({
   pontos: Object.freeze({ rotulo: "rotulo_pontos", revisao: "revisao_pontos", gabarito: "gabarito_pontos", formatoGabarito: "gabarito.pontos/1" }),
-  jogadores: Object.freeze({
-    rotulo: "rotulo_jogadores",
-    revisao: "revisao_jogadores",
-    gabarito: "gabarito_jogadores",
-    formatoGabarito: "gabarito.jogadores/1",
-  }),
+  pessoas: Object.freeze({ rotulo: "rotulo_pessoas", revisao: "revisao_pessoas", gabarito: "gabarito_pessoas", formatoGabarito: "gabarito.pessoas/1" }),
 });
 
-/** O tipo de um item do gabarito pelo formato dentro dele (null: de uma versão até a 0.7). */
+/** O tipo de um item do gabarito pelo formato dentro dele (null: de uma versão anterior). */
 export function tipoDoItem(obj) {
   for (const [tarefa, t] of Object.entries(TIPOS_DA_TAREFA)) if (obj?.formato === t.formatoGabarito) return { tarefa, tipo: t.gabarito };
   return null;
@@ -50,10 +45,10 @@ export const MOTIVOS = Object.freeze({
     descarte_errado: "Descarte errado (dava para anotar, ou devia descartar)",
     outro: "Outro (com comentário)",
   }),
-  jogadores: Object.freeze({
-    faltou_jogador: "Faltou pintar jogador",
+  pessoas: Object.freeze({
+    faltou_pessoa: "Faltou pintar alguém (jogador, árbitro, gandula, fotógrafo…)",
     contorno_impreciso: "Contorno impreciso (mais de 1 px)",
-    pintou_quem_nao_e_jogador: "Pintou quem não é jogador (árbitro, gandula, torcida…)",
+    pintou_o_que_nao_e_pessoa: "Pintou o que não é pessoa no campo (torcida, sombra, placa…)",
     descarte_errado: "Descarte errado (dava para anotar, ou devia descartar)",
     outro: "Outro (com comentário)",
   }),
@@ -150,7 +145,7 @@ const REGRAS = {
     if (!unicos(o.pontos.map((p) => p.ponto))) e.push("ponto previsto duas vezes");
     return e;
   },
-  rotulo_jogadores(o) {
+  rotulo_pessoas(o) {
     const e = [];
     partidaEQuadro(o, e);
     situacao(o, e);
@@ -160,7 +155,7 @@ const REGRAS = {
     if (o.pixels > o.largura * o.altura) e.push("mais pixels pintados que a imagem tem");
     return e;
   },
-  revisao_jogadores: revisao,
+  revisao_pessoas: revisao,
 };
 
 /**

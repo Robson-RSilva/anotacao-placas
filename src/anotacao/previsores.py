@@ -5,8 +5,8 @@ sorteados (menos os "sem previsão", que medem o viés de ancoragem):
 
 * pontos (`--tarefa pontos`): `previsoes/pontos/<quadro>.json` (formato previsao.pontos/1). O
   previsor recebe a imagem e devolve os pontos que achou, {nome: (x, y)} em px da imagem;
-* jogadores (`--tarefa jogadores`): `previsoes/jogadores/<quadro>.png`. O previsor recebe a imagem e
-  devolve a máscara (h, w), diferente de zero onde há jogador, ou None.
+* pessoas (`--tarefa pessoas`): `previsoes/pessoas/<quadro>.png`. O previsor recebe a imagem e
+  devolve a máscara (h, w), diferente de zero onde há pessoa, ou None.
 
 Um previsor é qualquer objeto chamável com `nome` e `versao`:
 
@@ -31,8 +31,8 @@ from .formatos import NOMES_PONTOS, PrevisaoPontos
 from .mascara import gravar_png
 from .pasta import Pasta, escrever_bytes, escrever_json
 
-#: As cores da máscara dos jogadores: 0 fundo, 1 jogador (a mesma paleta das páginas).
-PALETA_JOGADORES = [(0, 0, 0), (255, 64, 129)]
+#: As cores da máscara das pessoas: 0 fundo, 1 pessoa (a mesma paleta das páginas).
+PALETA_PESSOAS = [(0, 0, 0), (255, 64, 129)]
 
 
 def carregar_previsor(especificacao: str | None):
@@ -75,7 +75,7 @@ def prever(
     Rodar de novo só faz as que faltam (quadros que ainda não chegaram pela sincronização ficam para
     a próxima vez), a não ser com `refazer`.
     """
-    if tarefa not in ("pontos", "jogadores"):
+    if tarefa not in ("pontos", "pessoas"):
         raise ValueError(f"tarefa desconhecida: {tarefa}")
     n = 0
     for pid in partidas or pasta.listar_partidas():
@@ -83,7 +83,7 @@ def prever(
         w, h = man.video.largura, man.video.altura
         itens = [it for it in pasta.ler_fila(pid).itens if not it.sem_previsao]
         for k, item in enumerate(itens):
-            destino = (pasta.previsao_pontos if tarefa == "pontos" else pasta.previsao_jogadores)(pid, item.quadro)
+            destino = (pasta.previsao_pontos if tarefa == "pontos" else pasta.previsao_pessoas)(pid, item.quadro)
             if destino.exists() and not refazer:
                 continue
             img = cv2.imread(str(pasta.quadro(pid, item.quadro)))
@@ -105,7 +105,7 @@ def prever(
                 m = np.asarray(saida)
                 if m.shape != (h, w):
                     raise ValueError(f"{previsor.nome}: a máscara precisa ter o tamanho do quadro ({m.shape})")
-                escrever_bytes(destino, gravar_png((m != 0).astype(np.uint8), PALETA_JOGADORES), sobrescrever=True)
+                escrever_bytes(destino, gravar_png((m != 0).astype(np.uint8), PALETA_PESSOAS), sobrescrever=True)
             n += 1
             if progresso:
                 progresso(pid, k + 1, len(itens))

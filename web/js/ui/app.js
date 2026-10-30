@@ -1,5 +1,5 @@
 // Aplicativo de uma página só: escolhe a pasta de trabalho e troca de vista pelo endereço
-// (#/, #/pontos, #/jogadores, #/revisao-pontos, #/revisao-jogadores, #/gabarito, #/importar,
+// (#/, #/pontos, #/pessoas, #/revisao-pontos, #/revisao-pessoas, #/gabarito, #/importar,
 // #/coordenacao). Uma página só porque a permissão da pasta vale para a aba aberta: trocar de vista
 // não pede de novo.
 
@@ -14,20 +14,23 @@ import * as coordenacao from "./vista-coordenacao.js";
 import * as gabarito from "./vista-gabarito.js";
 import * as importar from "./vista-importar.js";
 import * as inicio from "./vista-inicio.js";
-import * as jogadores from "./vista-jogadores.js";
+import * as pessoas from "./vista-pessoas.js";
 import * as pontos from "./vista-pontos.js";
-import { revisaoJogadores, revisaoPontos } from "./vista-revisao.js";
+import { revisaoPessoas, revisaoPontos } from "./vista-revisao.js";
 
 const ROTAS = {
   "": ["central", central],
   pontos: ["pontos", pontos],
-  jogadores: ["jogadores", jogadores],
+  pessoas: ["pessoas", pessoas],
   "revisao-pontos": ["revisao-pontos", revisaoPontos],
-  "revisao-jogadores": ["revisao-jogadores", revisaoJogadores],
+  "revisao-pessoas": ["revisao-pessoas", revisaoPessoas],
   gabarito: ["gabarito", gabarito],
   importar: ["importar", importar],
   coordenacao: ["coordenacao", coordenacao],
 };
+
+/** Endereços da 0.8, quando a pintura era só dos jogadores. */
+const ANTIGAS = { jogadores: "pessoas", "revisao-jogadores": "revisao-pessoas" };
 
 /** O que as vistas compartilham: a pasta, o índice, quem está anotando e a importação em curso. */
 const ctx = {
@@ -141,6 +144,10 @@ async function mostrar(nome, modulo) {
 function rotear() {
   rodando = rodando.then(async () => {
     const nome = location.hash.replace(/^#\/?/, "").split(/[?/]/)[0];
+    if (ANTIGAS[nome]) {
+      location.replace(location.hash.replace(nome, ANTIGAS[nome])); // o hashchange roteia de novo
+      return;
+    }
     try {
       if (!ctx.pasta) await mostrar("inicio", inicio);
       else {

@@ -1,9 +1,10 @@
-// Vista "Jogadores": pega a próxima imagem da fila e pinta todos os jogadores dela. No teste do
-// gabarito, mostra o resultado na hora (o que acertou, o que faltou, o que pintou a mais) e a resposta.
+// Vista "Pessoas em campo": pega a próxima imagem da fila e pinta todas as pessoas no gramado e em
+// volta dele (jogadores, árbitros, gandulas, fotógrafos, comissão…). No teste do gabarito, mostra o
+// resultado na hora (o que acertou, o que faltou, o que pintou a mais) e a resposta.
 
 import { PARTIDA_GABARITO } from "../nucleo/convencoes.js";
 import { proximo, situacao } from "../nucleo/filas.js";
-import { compararJogadores, motivoJogadores, verdadeJogadores } from "../nucleo/gabarito.js";
+import { REGRA, compararPessoas, motivoPessoas, verdadePessoas } from "../nucleo/gabarito.js";
 import { salvarRotulo } from "../nucleo/rotulos.js";
 import { Pintor, mapaDoResultado } from "./pintor.js";
 import { abrirImagem, caixas, escrevendo, parametros, textoDevolvido, textoLiberacao, textoPartiu } from "./tarefa.js";
@@ -184,42 +185,42 @@ export async function montar(raiz, ctx) {
     $("erro").textContent = "";
     item = null;
     resultado = null;
-    window.itemJogadores = null;
+    window.itemPessoas = null;
     if (pintor) pintor.somenteLeitura = true;
     $("resultado").hidden = true;
     const pessoa = ctx.pessoa();
     if (!pessoa) return mostrarVazio("Digite o seu código na página central.");
     if (ver) return verResultado(pessoa);
-    const prox = await proximo(indice, "jogadores", pessoa, { treino: pedirTreino });
+    const prox = await proximo(indice, "pessoas", pessoa, { treino: pedirTreino });
     if (!vivo) return;
     if (!prox) {
-      const sit = await situacao(indice, "jogadores", pessoa);
-      if (pedirTreino) return mostrarVazio("Você já fez todos os itens do gabarito dos jogadores.", ["#/gabarito", "Ver os resultados"]);
-      if (!sit.liberado) return mostrarVazio("O gabarito dos jogadores acabou antes da liberação: fale com quem coordena.", ["#/gabarito", "Ver os resultados"]);
+      const sit = await situacao(indice, "pessoas", pessoa);
+      if (pedirTreino) return mostrarVazio("Você já fez todos os itens do gabarito da pintura.", ["#/gabarito", "Ver os resultados"]);
+      if (!sit.liberado) return mostrarVazio("O gabarito da pintura acabou antes da liberação: fale com quem coordena.", ["#/gabarito", "Ver os resultados"]);
       return mostrarVazio("Nada para pintar agora. Uma imagem aparece aqui quando uma partida é importada (ou quando uma pintura sua volta da revisão).");
     }
     const mascara = await mascaraInicial(prox);
     if (!vivo || !(await abrirNaTela(prox, mascara))) return;
     $("treino").hidden = !prox.treino;
     $("devolvido").hidden = !prox.devolvido;
-    if (prox.devolvido) $("devolvido").textContent = textoDevolvido("jogadores", prox.devolvido);
-    $("partiu").textContent = mascara || prox.partiu_de.fonte !== "modelo" ? textoPartiu("jogadores", prox.partiu_de) : "";
+    if (prox.devolvido) $("devolvido").textContent = textoDevolvido("pessoas", prox.devolvido);
+    $("partiu").textContent = mascara || prox.partiu_de.fonte !== "modelo" ? textoPartiu("pessoas", prox.partiu_de) : "";
     $("partiu").hidden = !$("partiu").textContent;
     modoResultado(false);
     tempo.zerar();
     item = { ...prox, pessoa }; // só agora: salvar grava para esta imagem, em nome de quem a abriu
-    window.itemJogadores = { partida: prox.partida, quadro: prox.quadro, treino: prox.treino };
+    window.itemPessoas = { partida: prox.partida, quadro: prox.quadro, treino: prox.treino };
   }
 
   const abrirProximo = () => carregar().catch((e) => mostrarVazio(mensagemDeErro(e)));
 
   async function verResultado(pessoa) {
-    const g = (await indice.itensGabarito("jogadores")).find((x) => x.id === ver);
-    const ip = await indice.partida(PARTIDA_GABARITO, "jogadores");
+    const g = (await indice.itensGabarito("pessoas")).find((x) => x.id === ver);
+    const ip = await indice.partida(PARTIDA_GABARITO, "pessoas");
     const a = ip.ultimos().get(`${ver}|${pessoa}`);
     if (!g || !a) return mostrarVazio("Você ainda não fez este item do gabarito.", ["#/gabarito", "Voltar ao gabarito"]);
     let mascara = null;
-    if (a.dados.mascara) mascara = (await indice.mascara(`${pasta.rotulos(PARTIDA_GABARITO, "jogadores")}/${a.dados.mascara}`)).dados;
+    if (a.dados.mascara) mascara = (await indice.mascara(`${pasta.rotulos(PARTIDA_GABARITO, "pessoas")}/${a.dados.mascara}`)).dados;
     const visto = { partida: PARTIDA_GABARITO, quadro: g.id, largura: g.largura, altura: g.altura };
     if (!(await abrirNaTela(visto, mascara))) return;
     $("treino").hidden = true;
@@ -229,26 +230,31 @@ export async function montar(raiz, ctx) {
   }
 
   async function mostrarResultado(pessoa, rotulo, mascara, g, { soVer = false } = {}) {
-    const verdade = await verdadeJogadores(indice, g);
-    const resposta = verdade.dados.map((v) => (v >= 1 && v <= g.jogadores ? 1 : 0));
+    const verdade = await verdadePessoas(indice, g);
+    const resposta = verdade.dados.map((v) => (v >= 1 && v <= g.pessoas ? 1 : 0));
     const titulo = $("resultado-titulo");
     let mapaRes = null;
     if (rotulo.situacao === "descartada" || !mascara) {
       titulo.textContent = "Errado: a imagem foi descartada";
       $("resultado-texto").textContent = "Esta imagem tinha resposta: descartar conta como erro.";
     } else {
-      const r = compararJogadores(mascara, verdade.dados, g.largura, g.altura, g.jogadores);
-      const n = r.jogadores.filter((j) => !j.pequeno).length;
+      const r = compararPessoas(mascara, verdade.dados, g.largura, g.altura, g.pessoas);
+      const n = r.pessoas.filter((j) => !j.pequeno).length;
       titulo.textContent = r.acerto ? "Certo" : "Errado";
-      const partes = [`Você pintou ${n - r.faltaram.length} dos ${n} jogadores, com ${Math.round(100 * r.iou)}% de sobreposição (a meta é 80%).`];
-      if (!r.acerto) partes.push(`${motivoJogadores(r).charAt(0).toUpperCase()}${motivoJogadores(r).slice(1)}.`);
+      const meta = `${Math.round(100 * REGRA.pessoas.iou)}%`;
+      const partes = [
+        n
+          ? `Pessoas pintadas: ${n - r.faltaram.length} de ${n}, com ${Math.round(100 * r.iou)}% de sobreposição (a meta é ${meta}).`
+          : `Não havia ninguém para pintar nesta imagem${r.iou < 1 ? ", e algo foi pintado" : ""}.`,
+      ];
+      if (!r.acerto && n) partes.push(`${motivoPessoas(r).charAt(0).toUpperCase()}${motivoPessoas(r).slice(1)}.`);
       $("resultado-texto").textContent = partes.join(" ");
-      mapaRes = mapaDoResultado(mascara, verdade.dados, r.borda, g.jogadores);
+      mapaRes = mapaDoResultado(mascara, verdade.dados, r.borda, g.pessoas);
     }
     titulo.className = titulo.textContent.startsWith("Certo") ? "certo" : "errado";
     if (!soVer) {
-      const sit = await situacao(indice, "jogadores", pessoa);
-      $("resultado-texto").append(` ${textoLiberacao("jogadores", sit)}`);
+      const sit = await situacao(indice, "pessoas", pessoa);
+      $("resultado-texto").append(` ${textoLiberacao("pessoas", sit)}`);
     }
     resultado = { minha: mascara, resposta, mapa: mapaRes, vendo: "resultado" };
     $("proximo").hidden = soVer;
@@ -291,7 +297,7 @@ export async function montar(raiz, ctx) {
     salvando = true;
     const feito = item;
     try {
-      const { rotulo, mascara } = await salvarRotulo(indice, "jogadores", feito.pessoa, {
+      const { rotulo, mascara } = await salvarRotulo(indice, "pessoas", feito.pessoa, {
         partida: feito.partida,
         quadro: feito.quadro,
         largura: feito.largura,
@@ -303,7 +309,7 @@ export async function montar(raiz, ctx) {
       item = null;
       ctx.registrarCodigo(feito.pessoa);
       if (feito.treino) {
-        const g = (await indice.itensGabarito("jogadores")).find((x) => x.id === feito.quadro);
+        const g = (await indice.itensGabarito("pessoas")).find((x) => x.id === feito.quadro);
         await mostrarResultado(feito.pessoa, rotulo, mascara, g);
       } else {
         await abrirProximo();
@@ -324,7 +330,7 @@ export async function montar(raiz, ctx) {
       return;
     }
     if (!pintor.pixels()) {
-      const ok = await cx.confirmar("Salvar sem nenhum jogador?", "Salve sem pintar só quando não há jogador na imagem. Se a imagem não dá para anotar, descarte.");
+      const ok = await cx.confirmar("Salvar sem ninguém pintado?", "Salve sem pintar só quando não há nenhuma pessoa no gramado nem em volta dele. Se a imagem não dá para anotar, descarte.");
       if (!ok) return;
     }
     await gravar({ mascara: pintor.mascara(), situacao: "ok", motivo_descarte: null, comentario: "" });

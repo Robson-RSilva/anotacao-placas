@@ -46,7 +46,7 @@
     }
   },
   "additionalProperties": false,
-  "description": "A máscara dos jogadores do quadro (PNG ao lado, com o mesmo nome do rótulo: 1 onde há jogador, 0\nno resto). Sem nenhum jogador, a máscara é toda 0. Imagem descartada não leva máscara.",
+  "description": "A máscara das pessoas do quadro (PNG ao lado, com o mesmo nome do rótulo: 1 onde há pessoa, 0 no\nresto). Pinta-se toda pessoa no gramado e em volta dele, do lado de dentro das placas — jogadores,\ngoleiros, árbitros, gandulas, fotógrafos, comissão técnica, seguranças —, e não a torcida nem as\nsombras. Sem nenhuma pessoa, a máscara é toda 0. Imagem descartada não leva máscara.",
   "properties": {
     "altura": {
       "description": "altura da imagem (px)",
@@ -87,8 +87,8 @@
       "type": "string"
     },
     "formato": {
-      "const": "rotulo.jogadores/1",
-      "default": "rotulo.jogadores/1",
+      "const": "rotulo.pessoas/1",
+      "default": "rotulo.pessoas/1",
       "title": "Formato",
       "type": "string"
     },
@@ -143,7 +143,7 @@
     },
     "pixels": {
       "default": 0,
-      "description": "pixels pintados (jogador) na máscara",
+      "description": "pixels pintados (pessoa) na máscara",
       "minimum": 0,
       "title": "Pixels",
       "type": "integer"
@@ -186,6 +186,6 @@
     "partiu_de",
     "situacao"
   ],
-  "title": "RotuloJogadores",
+  "title": "RotuloPessoas",
   "type": "object"
 }

@@ -20,9 +20,9 @@ from anotacao.formatos import (
     Manifesto,
     Membro,
     PreProcessamento,
-    RevisaoJogadores,
+    RevisaoPessoas,
     RevisaoPontos,
-    RotuloJogadores,
+    RotuloPessoas,
     RotuloPontos,
     Tomada,
     Tomadas,
@@ -30,7 +30,7 @@ from anotacao.formatos import (
 )
 from anotacao.mascara import gravar_png
 from anotacao.pasta import Pasta, escrever_bytes, escrever_json, mascara_de, nome_arquivo
-from anotacao.previsores import PALETA_JOGADORES
+from anotacao.previsores import PALETA_PESSOAS
 
 from sintetico import PLANOS, Camera, renderizar
 
@@ -145,7 +145,7 @@ def criar_partida(pasta: Pasta, itens: list[dict], partida: str = PARTIDA, image
                 altura=H,
                 n_quadros=100,
             ),
-            pre_processamento=PreProcessamento(ferramenta="0.8.0", criado_em=AGORA, segundos=1, parametros={}),
+            pre_processamento=PreProcessamento(ferramenta="0.9.0", criado_em=AGORA, segundos=1, parametros={}),
         ),
     )
     return fila
@@ -157,7 +157,7 @@ def _comum(partida, quadro, pessoa, versao, minutos, manual):
         "quadro": quadro,
         "anotador": pessoa,
         "versao": versao,
-        "ferramenta": "0.8.0",
+        "ferramenta": "0.9.0",
         "manual": manual,
         "criado_em": AGORA + timedelta(minutes=minutos),
         "segundos_ativos": 20,
@@ -183,30 +183,30 @@ def gravar_pontos(
     return nome
 
 
-def gravar_jogadores(
+def gravar_pessoas(
     pasta: Pasta, quadro: str, pessoa: str, mascara: np.ndarray | None, versao=1, minutos=0, partida=PARTIDA, **kw
 ) -> str:
-    """Um rótulo dos jogadores como a página grava: a máscara (0/1) e o rótulo; None é a imagem descartada."""
+    """Um rótulo das pessoas como a página grava: a máscara (0/1) e o rótulo; None é a imagem descartada."""
     nome = nome_arquivo(quadro, pessoa, versao)
     if mascara is not None:
-        escrever_bytes(pasta.rotulos(partida, "jogadores") / mascara_de(nome), gravar_png(mascara, PALETA_JOGADORES))
-    r = RotuloJogadores(
-        **_comum(partida, quadro, pessoa, versao, minutos, "jogadores-0.1"),
+        escrever_bytes(pasta.rotulos(partida, "pessoas") / mascara_de(nome), gravar_png(mascara, PALETA_PESSOAS))
+    r = RotuloPessoas(
+        **_comum(partida, quadro, pessoa, versao, minutos, "pessoas-0.1"),
         mascara=None if mascara is None else mascara_de(nome),
         pixels=0 if mascara is None else int(np.count_nonzero(mascara)),
         situacao="ok" if mascara is not None else "descartada",
         motivo_descarte=None if mascara is not None else "borrao",
         **kw,
     )
-    escrever_json(pasta.rotulos(partida, "jogadores") / nome, r)
+    escrever_json(pasta.rotulos(partida, "pessoas") / nome, r)
     return nome
 
 
 def gravar_revisao(
     pasta: Pasta, tarefa: str, quadro: str, rotulo: str, revisor: str, decisao="aprovar", minutos=0, versao=1, **kw
 ) -> None:
-    modelo = RevisaoPontos if tarefa == "pontos" else RevisaoJogadores
-    motivo = ("ponto_fora_do_lugar" if tarefa == "pontos" else "faltou_jogador") if decisao == "devolver" else None
+    modelo = RevisaoPontos if tarefa == "pontos" else RevisaoPessoas
+    motivo = ("ponto_fora_do_lugar" if tarefa == "pontos" else "faltou_pessoa") if decisao == "devolver" else None
     escrever_json(
         pasta.revisoes(PARTIDA, tarefa) / nome_arquivo(quadro, revisor, versao),
         modelo(
@@ -217,8 +217,8 @@ def gravar_revisao(
             versao=versao,
             decisao=decisao,
             motivo=kw.pop("motivo", motivo),
-            ferramenta="0.8.0",
-            manual="revisao-0.2",
+            ferramenta="0.9.0",
+            manual="revisao-0.3",
             criado_em=AGORA + timedelta(minutes=minutos),
             segundos_ativos=4,
             **kw,

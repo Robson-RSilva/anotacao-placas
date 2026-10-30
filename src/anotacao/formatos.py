@@ -7,7 +7,9 @@ formatos estão documentados em `docs/formatos.md`.
 Duas tarefas, cada uma direto na imagem:
 
 * pontos (`rotulo.pontos/1`): os pontos do campo que aparecem no quadro, clicados um a um;
-* jogadores (`rotulo.jogadores/1`): a máscara dos jogadores do quadro inteiro (PNG ao lado).
+* pessoas (`rotulo.pessoas/1`): a máscara de todas as pessoas no gramado e em volta dele (jogadores,
+  árbitros, gandulas, fotógrafos, comissão…: quem pode ficar na frente de uma placa), no quadro
+  inteiro (PNG ao lado).
 
 Em qualquer das duas, uma imagem que não dá para anotar (transição, borrão, grafismo por cima) é
 descartada com um motivo — o descarte também passa pela revisão cruzada.
@@ -379,14 +381,16 @@ class PrevisaoPontos(Modelo):
         return self
 
 
-# ----------------------------------------------------------------------------- jogadores
-class RotuloJogadores(_Rotulo):
-    """A máscara dos jogadores do quadro (PNG ao lado, com o mesmo nome do rótulo: 1 onde há jogador, 0
-    no resto). Sem nenhum jogador, a máscara é toda 0. Imagem descartada não leva máscara."""
+# ----------------------------------------------------------------------------- pessoas
+class RotuloPessoas(_Rotulo):
+    """A máscara das pessoas do quadro (PNG ao lado, com o mesmo nome do rótulo: 1 onde há pessoa, 0 no
+    resto). Pinta-se toda pessoa no gramado e em volta dele, do lado de dentro das placas — jogadores,
+    goleiros, árbitros, gandulas, fotógrafos, comissão técnica, seguranças —, e não a torcida nem as
+    sombras. Sem nenhuma pessoa, a máscara é toda 0. Imagem descartada não leva máscara."""
 
-    formato: Literal["rotulo.jogadores/1"] = "rotulo.jogadores/1"
+    formato: Literal["rotulo.pessoas/1"] = "rotulo.pessoas/1"
     mascara: str | None = Field(None, description="o PNG da máscara, ao lado (o mesmo nome, com .png)")
-    pixels: int = Field(0, ge=0, description="pixels pintados (jogador) na máscara")
+    pixels: int = Field(0, ge=0, description="pixels pintados (pessoa) na máscara")
 
     @model_validator(mode="after")
     def _coerencia(self):
@@ -403,18 +407,18 @@ class RotuloJogadores(_Rotulo):
         return self
 
 
-MotivoJogadores = Literal[
-    "faltou_jogador",
+MotivoPessoas = Literal[
+    "faltou_pessoa",
     "contorno_impreciso",
-    "pintou_quem_nao_e_jogador",
+    "pintou_o_que_nao_e_pessoa",
     "descarte_errado",
     "outro",
 ]
 
 
-class RevisaoJogadores(_Revisao):
-    formato: Literal["revisao.jogadores/1"] = "revisao.jogadores/1"
-    motivo: MotivoJogadores | None = None
+class RevisaoPessoas(_Revisao):
+    formato: Literal["revisao.pessoas/1"] = "revisao.pessoas/1"
+    motivo: MotivoPessoas | None = None
 
     @model_validator(mode="after")
     def _coerencia(self):
@@ -422,30 +426,20 @@ class RevisaoJogadores(_Revisao):
         return self
 
 
-class GabaritoJogadores(Modelo):
-    """Item do gabarito dos jogadores: a imagem e a máscara verdadeira (PNG ao lado), com um número por
-    pessoa — os jogadores de 1 a N, as outras pessoas (árbitro, gandula, fotógrafo…: pintá-las é erro)
-    de 255 para baixo — e 0 no resto."""
+class GabaritoPessoas(Modelo):
+    """Item do gabarito das pessoas: a imagem e a máscara verdadeira (PNG ao lado), com um número por
+    pessoa (de 1 a N) e 0 no resto."""
 
-    formato: Literal["gabarito.jogadores/1"] = "gabarito.jogadores/1"
+    formato: Literal["gabarito.pessoas/1"] = "gabarito.pessoas/1"
     id: IdGabarito
     lote: str = Field("", description="o lote de ouro de onde o item veio")
     imagem: str
     mascara: str = Field(description="a máscara verdadeira, ao lado")
     largura: int = Field(gt=0)
     altura: int = Field(gt=0)
-    jogadores: int = Field(ge=0, le=255, description="quantos jogadores: os números 1 a N da máscara")
-    outras_pessoas: int = Field(
-        0, ge=0, le=255, description="quantas outras pessoas: os números 255, 254… (de 255 para baixo)"
-    )
+    pessoas: int = Field(ge=0, le=255, description="quantas pessoas: os números 1 a N da máscara")
     origem: Literal["simulador", "arbitrado"]
     observacao: str = ""
-
-    @model_validator(mode="after")
-    def _numeros(self):
-        if self.jogadores + self.outras_pessoas > 255:
-            raise ValueError("jogadores e outras pessoas não cabem nos números de 1 a 255")
-        return self
 
 
 # ----------------------------------------------------------------------------- esquemas
@@ -461,15 +455,15 @@ ESQUEMAS: dict[str, type[Modelo]] = {
     "revisao.pontos.json": RevisaoPontos,
     "gabarito.pontos.json": GabaritoPontos,
     "previsao.pontos.json": PrevisaoPontos,
-    "rotulo.jogadores.json": RotuloJogadores,
-    "revisao.jogadores.json": RevisaoJogadores,
-    "gabarito.jogadores.json": GabaritoJogadores,
+    "rotulo.pessoas.json": RotuloPessoas,
+    "revisao.pessoas.json": RevisaoPessoas,
+    "gabarito.pessoas.json": GabaritoPessoas,
 }
 
 #: Modelos de cada tarefa: o rótulo, a revisão e o item do gabarito.
 TAREFA = {
     "pontos": (RotuloPontos, RevisaoPontos, GabaritoPontos),
-    "jogadores": (RotuloJogadores, RevisaoJogadores, GabaritoJogadores),
+    "pessoas": (RotuloPessoas, RevisaoPessoas, GabaritoPessoas),
 }
 
 

@@ -9,12 +9,12 @@ import numpy as np
 import pytest
 
 from anotacao.cli import main
-from anotacao.formatos import ESQUEMAS, DispositivoPessoa, GabaritoJogadores, GabaritoPontos, PrevisaoPontos
+from anotacao.formatos import ESQUEMAS, DispositivoPessoa, GabaritoPessoas, GabaritoPontos, PrevisaoPontos
 from anotacao.gabarito import listar_itens
 from anotacao.mascara import gravar_png, ler_png
 from anotacao.pasta import Pasta, escrever_json, ler_json, mascara_de
 
-from conftest import AGORA, PARTIDA, camera_exemplo, criar_partida, gravar_jogadores, gravar_pontos, gravar_revisao
+from conftest import AGORA, PARTIDA, camera_exemplo, criar_partida, gravar_pessoas, gravar_pontos, gravar_revisao
 from sintetico import renderizar
 
 
@@ -47,22 +47,22 @@ def test_validar_aponta_problemas(pasta, capsys):
     assert "t0000099999__A01__v1.json: o quadro não está na fila" in saida
 
 
-def test_validar_mascara_dos_jogadores(pasta, capsys):
+def test_validar_mascara_das_pessoas(pasta, capsys):
     """A máscara existe, tem o tamanho da imagem, só 0 e 1, e os pixels que o rótulo diz."""
     fila = criar_partida(pasta, [{}], imagens=False)
     q = fila.itens[0].quadro
     m = np.zeros((360, 640), np.uint8)
     m[100:150, 200:220] = 1
-    nome = gravar_jogadores(pasta, q, "A01", m)
+    nome = gravar_pessoas(pasta, q, "A01", m)
     assert main(["validar", "--pasta", str(pasta.raiz)]) == 1  # (só os quadros sem imagem)
-    assert "jogadores" not in capsys.readouterr().out
-    caminho = pasta.rotulos(PARTIDA, "jogadores") / nome
+    assert "rotulos/pessoas" not in capsys.readouterr().out
+    caminho = pasta.rotulos(PARTIDA, "pessoas") / nome
     r = json.loads(caminho.read_text(encoding="utf-8"))
     r["pixels"] += 50  # o rótulo diz uma coisa e a máscara outra
     caminho.write_text(json.dumps(r), encoding="utf-8")
     main(["validar", "--pasta", str(pasta.raiz)])
     assert "o rótulo diz 1050 pixels pintados, a máscara tem 1000" in capsys.readouterr().out
-    (pasta.rotulos(PARTIDA, "jogadores") / mascara_de(nome)).unlink()  # o rótulo chegou antes da máscara
+    (pasta.rotulos(PARTIDA, "pessoas") / mascara_de(nome)).unlink()  # o rótulo chegou antes da máscara
     main(["validar", "--pasta", str(pasta.raiz)])
     assert "a máscara ainda não chegou" in capsys.readouterr().out
 
@@ -111,9 +111,10 @@ def test_gabarito_dos_pontos(pasta, tmp_path, capsys):
     assert main(["gabarito", str(origem), "--pasta", str(pasta.raiz)]) == 0  # o que já existe fica
     assert capsys.readouterr().out.splitlines() == ["1 itens novos no gabarito", "0 itens novos no gabarito"]
     assert (pasta.gabarito / "itens" / "g1001.jpg").exists()
-    assert [x.id for x in listar_itens(pasta, "pontos")] == ["g1001"] and listar_itens(pasta, "jogadores") == []
-    # um item da 0.7 (câmera) na pasta não atrapalha: fica fora
+    assert [x.id for x in listar_itens(pasta, "pontos")] == ["g1001"] and listar_itens(pasta, "pessoas") == []
+    # itens das versões anteriores na pasta (a câmera da 0.7, os jogadores da 0.8) não atrapalham: ficam fora
     (pasta.gabarito / "itens" / "g0001.json").write_text(json.dumps({"formato": "gabarito.camera/1", "id": "g0001"}))
+    (pasta.gabarito / "itens" / "g2001.json").write_text(json.dumps({"formato": "gabarito.jogadores/1", "id": "g2001"}))
     assert [x.id for x in listar_itens(pasta)] == ["g1001"]
     assert main(["validar", "--pasta", str(pasta.raiz)]) == 0
     # imagem que não é JPEG é recusada
@@ -124,40 +125,39 @@ def test_gabarito_dos_pontos(pasta, tmp_path, capsys):
         main(["gabarito", str(origem), "--pasta", str(pasta.raiz)])
 
 
-def test_gabarito_dos_jogadores(pasta, tmp_path, capsys):
-    """O item dos jogadores vem com a máscara verdadeira (um número por jogador): as três partes vão para a pasta."""
+def test_gabarito_das_pessoas(pasta, tmp_path, capsys):
+    """O item das pessoas vem com a máscara verdadeira (um número por pessoa): as três partes vão para a pasta."""
     origem = tmp_path / "gab"
     origem.mkdir()
     img, verdade = renderizar(camera_exemplo(), 1)
-    cv2.imwrite(str(origem / "g2001.jpg"), img)
-    m = verdade["jogadores"].copy()
-    m[0:4, 0:4] = 255  # uma "outra pessoa"
-    (origem / "g2001.png").write_bytes(gravar_png(m, [(0, 0, 0)] * 256))
-    g = GabaritoJogadores(
-        id="g2001",
-        imagem="g2001.jpg",
-        mascara="g2001.png",
+    cv2.imwrite(str(origem / "g3001.jpg"), img)
+    m = verdade["pessoas"].copy()
+    m[0:4, 0:4] = 2  # uma segunda pessoa (um gandula, por exemplo)
+    (origem / "g3001.png").write_bytes(gravar_png(m, [(0, 0, 0)] * 256))
+    g = GabaritoPessoas(
+        id="g3001",
+        imagem="g3001.jpg",
+        mascara="g3001.png",
         largura=640,
         altura=360,
-        jogadores=1,
-        outras_pessoas=1,
+        pessoas=2,
         origem="simulador",
     )
-    (origem / "g2001.json").write_text(g.model_dump_json(), encoding="utf-8")
+    (origem / "g3001.json").write_text(g.model_dump_json(), encoding="utf-8")
     assert main(["gabarito", str(origem), "--pasta", str(pasta.raiz)]) == 0
     assert capsys.readouterr().out.strip() == "1 itens novos no gabarito"
-    assert sorted(p.name for p in (pasta.gabarito / "itens").iterdir()) == ["g2001.jpg", "g2001.json", "g2001.png"]
-    assert [type(x).__name__ for x in listar_itens(pasta)] == ["GabaritoJogadores"]
+    assert sorted(p.name for p in (pasta.gabarito / "itens").iterdir()) == ["g3001.jpg", "g3001.json", "g3001.png"]
+    assert [type(x).__name__ for x in listar_itens(pasta)] == ["GabaritoPessoas"]
     assert main(["validar", "--pasta", str(pasta.raiz)]) == 0
     capsys.readouterr()
-    # números além dos jogadores do item: recusado
+    # números além das pessoas do item: recusado
     m[10, 10] = 9
-    (origem / "g2002.png").write_bytes(gravar_png(m, [(0, 0, 0)] * 256))
-    (origem / "g2002.json").write_text(g.model_copy(update={"id": "g2002", "mascara": "g2002.png"}).model_dump_json())
-    with pytest.raises(ValueError, match=r"além dos 1 jogadores e das 1 outras pessoas"):
+    (origem / "g3002.png").write_bytes(gravar_png(m, [(0, 0, 0)] * 256))
+    (origem / "g3002.json").write_text(g.model_copy(update={"id": "g3002", "mascara": "g3002.png"}).model_dump_json())
+    with pytest.raises(ValueError, match=r"além das 2 pessoas"):
         main(["gabarito", str(origem), "--pasta", str(pasta.raiz)])
-    (origem / "g2002.png").unlink()
-    with pytest.raises(FileNotFoundError, match=r"g2002\.png"):
+    (origem / "g3002.png").unlink()
+    with pytest.raises(FileNotFoundError, match=r"g3002\.png"):
         main(["gabarito", str(origem), "--pasta", str(pasta.raiz)])
 
 
@@ -175,14 +175,14 @@ def test_prever_pontos(pasta, capsys):
     assert "2 previsões" in capsys.readouterr().out
 
 
-def test_prever_jogadores(pasta, capsys):
+def test_prever_pessoas(pasta, capsys):
     fila = criar_partida(pasta, [{}, {"sem_previsao": True}, {}])
-    args = ["prever", "--tarefa", "jogadores", "--pasta", str(pasta.raiz), "--previsor", "previsor_teste:MascaraFixa"]
+    args = ["prever", "--tarefa", "pessoas", "--pasta", str(pasta.raiz), "--previsor", "previsor_teste:MascaraFixa"]
     assert main(args) == 0
     assert "2 previsões gravadas (mascara-fixa@1)" in capsys.readouterr().out
-    m = ler_png(pasta.previsao_jogadores(PARTIDA, fila.itens[0].quadro))
+    m = ler_png(pasta.previsao_pessoas(PARTIDA, fila.itens[0].quadro))
     assert m.shape == (360, 640) and set(np.unique(m)) == {0, 1}
-    assert not pasta.previsao_jogadores(PARTIDA, fila.itens[1].quadro).exists()
+    assert not pasta.previsao_pessoas(PARTIDA, fila.itens[1].quadro).exists()
 
 
 def test_esquemas(tmp_path):

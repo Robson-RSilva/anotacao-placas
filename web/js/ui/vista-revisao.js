@@ -1,4 +1,4 @@
-// Vistas "Revisão às cegas" (pontos e jogadores): o próximo rótulo de outra pessoa, sem dizer de quem
+// Vistas "Revisão às cegas" (pontos e pessoas): o próximo rótulo de outra pessoa, sem dizer de quem
 // é. Quem revisa aprova, corrige (a correção vira uma versão nova, com a autoria de quem revisou) ou
 // devolve com um motivo (o rótulo volta para quem anotou).
 
@@ -13,7 +13,7 @@ import { abrirImagem, caixas, escrevendo, textoSituacao } from "./tarefa.js";
 import { TempoAtivo } from "./tempo.js";
 import { el, formatarTempo, local, mensagemDeErro, numero } from "./util.js";
 import { vigiar } from "./vigia.js";
-import { ligarFerramentas } from "./vista-jogadores.js";
+import { ligarFerramentas } from "./vista-pessoas.js";
 
 const PARTIU = { nenhuma: "do zero", modelo: "de um modelo", rotulo_anterior: "da versão anterior (devolvida)", rotulo_revisado: "de uma revisão" };
 
@@ -22,7 +22,7 @@ async function montarRevisao(raiz, ctx, tarefa) {
   const { pasta, indice } = ctx;
   const pontos = tarefa === "pontos";
   const cx = caixas(raiz);
-  let tela = null; // o Marcador (pontos) ou o Pintor (jogadores)
+  let tela = null; // o Marcador (pontos) ou o Pintor (pessoas)
   let atual = null; // {arquivo, rotulo, pessoa}
   let urlImagem = null;
   let enviando = false;
@@ -150,7 +150,7 @@ async function montarRevisao(raiz, ctx, tarefa) {
       });
     } else {
       tela = new Pintor($("tela"), { imagem: img, mascara, somenteLeitura: true, aoMudar: ferramentas.mostrar });
-      $("r-pixels").textContent = rotulo.mascara ? (rotulo.pixels ? `${numero(rotulo.pixels, 0)} pixels` : "nada (sem jogador)") : "—";
+      $("r-pixels").textContent = rotulo.mascara ? (rotulo.pixels ? `${numero(rotulo.pixels, 0)} pixels` : "nada (ninguém na imagem)") : "—";
     }
     window.revisando = tela; // ajuda a depurar e a testar
     $("r-situacao").textContent = textoSituacao(rotulo);
@@ -209,7 +209,7 @@ async function montarRevisao(raiz, ctx, tarefa) {
       $("erro").textContent = "Feche o laço (no primeiro ponto, com dois cliques ou Enter) ou cancele com Esc.";
       return;
     }
-    if (!tela.pixels() && !(await cx.confirmar("Salvar a correção sem nenhum jogador?", "Só quando não há jogador na imagem."))) return;
+    if (!tela.pixels() && !(await cx.confirmar("Salvar a correção sem ninguém pintado?", "Só quando não há nenhuma pessoa no gramado nem em volta dele."))) return;
     await enviar({ decisao: "corrigir", correcao: { mascara: tela.mascara(), situacao: "ok", motivo_descarte: null, comentario, segundos_ativos: tempo.segundos() } });
   }
 
@@ -321,4 +321,4 @@ async function montarRevisao(raiz, ctx, tarefa) {
 }
 
 export const revisaoPontos = { CLASSE: "pagina-editor", montar: (raiz, ctx) => montarRevisao(raiz, ctx, "pontos") };
-export const revisaoJogadores = { CLASSE: "pagina-editor", montar: (raiz, ctx) => montarRevisao(raiz, ctx, "jogadores") };
+export const revisaoPessoas = { CLASSE: "pagina-editor", montar: (raiz, ctx) => montarRevisao(raiz, ctx, "pessoas") };

@@ -13,14 +13,14 @@ const TOPO = new Set(["equipe.json", "divisao.json", "projeto.json", "partidas",
 function daTarefa(pasta, tarefa, nome, prefixo) {
   if (!TAREFAS.includes(tarefa) || !nome.startsWith(prefixo)) return null;
   if (RE_ARQUIVO.test(nome)) return pasta === "rotulos" ? TIPOS_DA_TAREFA[tarefa].rotulo : pasta === "revisoes" ? TIPOS_DA_TAREFA[tarefa].revisao : null;
-  if (pasta === "rotulos" && tarefa === "jogadores" && RE_MASCARA.test(nome)) return "png";
+  if (pasta === "rotulos" && tarefa === "pessoas" && RE_MASCARA.test(nome)) return "png";
   return null;
 }
 
 /**
  * Tipo de arquivo (formatos.js) pelo caminho; "jpg" e "png" para imagens e máscaras; null quando não é
- * da pasta de trabalho (ou é das tarefas das versões até a 0.7). Um item do gabarito é "gabarito"
- * pelo caminho; o formato dentro dele diz a tarefa.
+ * da pasta de trabalho (ou é das tarefas das versões anteriores: câmera, oclusão e jogadores). Um item
+ * do gabarito é "gabarito" pelo caminho; o formato dentro dele diz a tarefa.
  */
 export function tipoDoCaminho(caminho) {
   const p = caminho.split("/");
@@ -42,7 +42,7 @@ export function tipoDoCaminho(caminho) {
     if (p.length === 4 && p[2] === "quadros") return /^t\d{10}\.jpg$/.test(p[3]) ? "jpg" : null;
     if (p.length === 5 && p[2] === "previsoes") {
       if (p[3] === "pontos") return /^t\d{10}\.json$/.test(p[4]) && RE_QUADRO.test(p[4].slice(0, -5)) ? "previsao_pontos" : null;
-      if (p[3] === "jogadores") return /^t\d{10}\.png$/.test(p[4]) ? "png" : null;
+      if (p[3] === "pessoas") return /^t\d{10}\.png$/.test(p[4]) ? "png" : null;
       return null;
     }
     if (p.length === 5 && (p[2] === "rotulos" || p[2] === "revisoes")) return daTarefa(p[2], p[3], p[4], "t");
@@ -129,7 +129,7 @@ export async function importarZip(pasta, blob, aoProgresso = () => {}) {
         const obj = JSON.parse(decodificador.decode(e.dados));
         if (tipo === "gabarito") {
           const doItem = tipoDoItem(obj);
-          if (!doItem) throw new Error("item do gabarito de uma versão anterior (câmera ou oclusão): esta versão não usa");
+          if (!doItem) throw new Error("item do gabarito de uma versão anterior (câmera, oclusão ou jogadores): esta versão não usa");
           validar(doItem.tipo, obj);
         } else {
           validar(tipo, obj);

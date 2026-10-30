@@ -16,7 +16,7 @@ import {
   FIXTURES,
   PARTIDA,
   PastaMemoria,
-  criarGabaritoJogadores,
+  criarGabaritoPessoas,
   criarGabaritoPontos,
   criarPartida,
   esquemas,
@@ -63,26 +63,27 @@ test("salvar os pontos: versão, arredondamento, descarte e validação", async 
   await assert.rejects(salvarRotulo(indice, "pontos", "A01", dados(item, { pontos: [{ ponto: "centro", x: 700, y: 1 }] })), /fora da imagem/);
 });
 
-test("salvar os jogadores: a máscara (0 e 1) ao lado, com os pixels pintados contados", async () => {
+test("salvar as pessoas: a máscara (0 e 1) ao lado, com os pixels pintados contados", async () => {
   const { pasta, indice } = await pastaExemplo();
   await criarPartida(pasta, [{}]);
-  const item = await proximo(indice, "jogadores", "A01");
+  const item = await proximo(indice, "pessoas", "A01");
   const m = new Uint8Array(640 * 360);
-  m.fill(7, 2000, 2100); // qualquer valor diferente de zero é jogador
-  const { nome, rotulo } = await salvarRotulo(indice, "jogadores", "A01", dados(item, { mascara: m }));
+  m.fill(7, 2000, 2100); // qualquer valor diferente de zero é pessoa
+  const { nome, rotulo } = await salvarRotulo(indice, "pessoas", "A01", dados(item, { mascara: m }));
+  assert.deepEqual([rotulo.formato, rotulo.manual], ["rotulo.pessoas/1", "pessoas-0.1"]);
   assert.equal(rotulo.pixels, 100);
   assert.equal(rotulo.mascara, nome.replace(".json", ".png"));
-  const png = await pasta.arquivo(`${pasta.rotulos(PARTIDA, "jogadores")}/${rotulo.mascara}`);
+  const png = await pasta.arquivo(`${pasta.rotulos(PARTIDA, "pessoas")}/${rotulo.mascara}`);
   const lido = await decodificarPng(new Uint8Array(await png.arrayBuffer()));
   assert.deepEqual([lido.largura, lido.altura], [640, 360]);
   assert.equal(lido.dados[2050], 1);
   assert.equal(lido.dados.reduce((s, v) => s + v, 0), 100);
-  // sem jogador: a máscara toda 0; descartada: sem máscara
-  const vazio = await salvarRotulo(indice, "jogadores", "A01", dados(item, { mascara: new Uint8Array(640 * 360) }));
+  // ninguém na imagem: a máscara toda 0; descartada: sem máscara
+  const vazio = await salvarRotulo(indice, "pessoas", "A01", dados(item, { mascara: new Uint8Array(640 * 360) }));
   assert.deepEqual([vazio.rotulo.pixels, vazio.rotulo.versao], [0, 2]);
-  const desc = await salvarRotulo(indice, "jogadores", "A01", dados(item, { mascara: m, situacao: "descartada", motivo_descarte: "borrao" }));
+  const desc = await salvarRotulo(indice, "pessoas", "A01", dados(item, { mascara: m, situacao: "descartada", motivo_descarte: "borrao" }));
   assert.deepEqual([desc.rotulo.mascara, desc.rotulo.pixels, desc.mascara], [null, 0, null]);
-  await assert.rejects(salvarRotulo(indice, "jogadores", "A01", dados(item, { mascara: new Uint8Array(10) })), /tamanho/);
+  await assert.rejects(salvarRotulo(indice, "pessoas", "A01", dados(item, { mascara: new Uint8Array(10) })), /tamanho/);
 });
 
 test("revisão: aprovar, devolver com motivo e corrigir (versão nova com a autoria de quem revisa)", async () => {
@@ -94,7 +95,7 @@ test("revisão: aprovar, devolver com motivo e corrigir (versão nova com a auto
   }
   const [p1, p2, p3] = await pendentesRevisao(indice, "pontos", "A02");
   const r1 = await salvarRevisao(indice, "pontos", "A02", p1.arquivo, { decisao: "aprovar", segundos_ativos: 4 });
-  assert.deepEqual([r1.revisao.formato, r1.revisao.decisao, r1.revisao.motivo, r1.revisao.manual], ["revisao.pontos/1", "aprovar", null, "revisao-0.2"]);
+  assert.deepEqual([r1.revisao.formato, r1.revisao.decisao, r1.revisao.motivo, r1.revisao.manual], ["revisao.pontos/1", "aprovar", null, "revisao-0.3"]);
   await assert.rejects(salvarRevisao(indice, "pontos", "A02", p2.arquivo, { decisao: "devolver" }), ErroFormato);
   const r2 = await salvarRevisao(indice, "pontos", "A02", p2.arquivo, { decisao: "devolver", motivo: "faltou_ponto", comentario: "o meio-campo aparece" });
   assert.equal(r2.revisao.motivo, "faltou_ponto");
@@ -108,25 +109,25 @@ test("revisão: aprovar, devolver com motivo e corrigir (versão nova com a auto
   await assert.rejects(salvarRevisao(indice, "pontos", "RS", p1.arquivo, { decisao: "aprovar" }), ForaDaFila); // já revisado
 });
 
-test("revisão dos jogadores: a correção grava a máscara nova de quem revisa", async () => {
+test("revisão das pessoas: a correção grava a máscara nova de quem revisa", async () => {
   const { pasta, indice } = await pastaExemplo();
   await criarPartida(pasta, [{}]);
-  const item = await proximo(indice, "jogadores", "A01");
-  await salvarRotulo(indice, "jogadores", "A01", dados(item, { mascara: new Uint8Array(640 * 360) }));
-  const [p] = await pendentesRevisao(indice, "jogadores", "A02");
+  const item = await proximo(indice, "pessoas", "A01");
+  await salvarRotulo(indice, "pessoas", "A01", dados(item, { mascara: new Uint8Array(640 * 360) }));
+  const [p] = await pendentesRevisao(indice, "pessoas", "A02");
   const m = new Uint8Array(640 * 360);
   m.fill(1, 0, 50);
-  const correcao = { mascara: m, situacao: "ok", motivo_descarte: null, comentario: "faltou o goleiro", segundos_ativos: 30 };
-  const r = await salvarRevisao(indice, "jogadores", "A02", p.arquivo, { decisao: "corrigir", correcao });
-  const corrigido = await pasta.lerJson(`${pasta.rotulos(PARTIDA, "jogadores")}/${r.correcao}`);
-  assert.deepEqual([corrigido.pixels, corrigido.corrige, corrigido.comentario], [50, p.arquivo.nome, "faltou o goleiro"]);
-  assert.equal(r.revisao.formato, "revisao.jogadores/1");
+  const correcao = { mascara: m, situacao: "ok", motivo_descarte: null, comentario: "faltou o gandula", segundos_ativos: 30 };
+  const r = await salvarRevisao(indice, "pessoas", "A02", p.arquivo, { decisao: "corrigir", correcao });
+  const corrigido = await pasta.lerJson(`${pasta.rotulos(PARTIDA, "pessoas")}/${r.correcao}`);
+  assert.deepEqual([corrigido.pixels, corrigido.corrige, corrigido.comentario], [50, p.arquivo.nome, "faltou o gandula"]);
+  assert.equal(r.revisao.formato, "revisao.pessoas/1");
 });
 
 test("treino com gabarito: o resultado na hora, nas duas tarefas", async () => {
   const { pasta, indice } = await pastaExemplo();
   const pontos = await criarGabaritoPontos(pasta, 3);
-  const jog = await criarGabaritoJogadores(pasta, 2);
+  const pes = await criarGabaritoPessoas(pasta, 2);
   const item = await proximo(indice, "pontos", "A01");
   const g = pontos[item.quadro];
   const { nome } = await salvarRotulo(indice, "pontos", "A01", dados(item, { pontos: g.pontos.filter((p) => p.visivel).map(({ ponto, x, y }) => ({ ponto, x: x + 0.5, y })) }));
@@ -134,14 +135,14 @@ test("treino com gabarito: o resultado na hora, nas duas tarefas", async () => {
   const r = await compararComGabarito(indice, "pontos", ip.rotulos.find((a) => a.nome === nome), g);
   assert.equal(r.acerto, true);
   assert.ok(Math.abs(r.erro_mediano_px - 0.75) < 1e-9);
-  const itemJ = await proximo(indice, "jogadores", "A01");
+  const itemJ = await proximo(indice, "pessoas", "A01");
   const v = mascaraVerdadeira();
-  const so1 = v.map((x) => (x === 1 ? 1 : 0));
-  const salvo = await salvarRotulo(indice, "jogadores", "A01", dados(itemJ, { mascara: so1 }));
-  const ipJ = await indice.partida("gabarito", "jogadores");
-  const rJ = await compararComGabarito(indice, "jogadores", ipJ.rotulos.find((a) => a.nome === salvo.nome), jog[itemJ.quadro]);
+  const soJogadores = v.map((x) => (x === 1 || x === 2 ? 1 : 0)); // esqueceu o árbitro
+  const salvo = await salvarRotulo(indice, "pessoas", "A01", dados(itemJ, { mascara: soJogadores }));
+  const ipJ = await indice.partida("gabarito", "pessoas");
+  const rJ = await compararComGabarito(indice, "pessoas", ipJ.rotulos.find((a) => a.nome === salvo.nome), pes[itemJ.quadro]);
   assert.equal(rJ.acerto, false);
-  assert.deepEqual(rJ.faltaram, [2]);
+  assert.deepEqual(rJ.faltaram, [3]);
 });
 
 test(".zip: ida e volta, CRC e leitura de um .zip comprimido do sistema", async () => {
@@ -167,16 +168,17 @@ test("exportar e importar a pasta: só arquivos da pasta de trabalho, validados,
   await criarPartida(pasta, [{}, {}]);
   const item = await proximo(indice, "pontos", "A01");
   await salvarRotulo(indice, "pontos", "A01", dados(item, { pontos: [{ ponto: "centro", x: 1, y: 1 }] }));
-  const itemJ = await proximo(indice, "jogadores", "A01");
-  await salvarRotulo(indice, "jogadores", "A01", dados(itemJ, { mascara: new Uint8Array(640 * 360) }));
+  const itemJ = await proximo(indice, "pessoas", "A01");
+  await salvarRotulo(indice, "pessoas", "A01", dados(itemJ, { mascara: new Uint8Array(640 * 360) }));
   await pasta.escrever(`${pasta.quadros(PARTIDA)}/${quadro(0)}.jpg`, new Uint8Array([0xff, 0xd8, 0xff, 0xd9]));
   await pasta.escrever("conjuntos/x/pontos.parquet", "não vai");
   await pasta.escrever(`partidas/${PARTIDA}/rotulos/camera/${quadro(0)}__A01__v1.json`, "{}"); // da 0.7: não vai
+  await pasta.escrever(`partidas/${PARTIDA}/rotulos/jogadores/${quadro(0)}__A01__v1.json`, "{}"); // da 0.8: não vai
   const { blob, n } = await exportarZip(pasta);
   assert.equal(n, 9); // equipe, divisão, manifesto, tomadas, fila, os dois rótulos, a máscara e o quadro
   const caminhos = [];
   for await (const e of lerZip(blob)) caminhos.push(e.caminho);
-  assert.ok(!caminhos.some((c) => c.startsWith("conjuntos/") || c.includes("/camera/")));
+  assert.ok(!caminhos.some((c) => c.startsWith("conjuntos/") || c.includes("/camera/") || c.includes("/jogadores/")));
   // noutra pasta vazia
   const outra = new Pasta(new PastaMemoria("outra"));
   const r = await importarZip(outra, blob);
@@ -203,38 +205,40 @@ test("exportar e importar a pasta: só arquivos da pasta de trabalho, validados,
   assert.equal((await terceira.lerEquipe()).membros[0].nome, "Ana Conceição");
 });
 
-test("importar um lote de ouro: os itens das duas tarefas; os da 0.7 são recusados", async () => {
+test("importar um lote de ouro: os itens das duas tarefas; os das versões anteriores são recusados", async () => {
   await esquemas();
   const destino = new Pasta(new PastaMemoria("destino"));
   await destino.criar();
   const origem = new Pasta(new PastaMemoria("origem"));
   await origem.criar();
   await criarGabaritoPontos(origem, 2);
-  await criarGabaritoJogadores(origem, 1);
+  await criarGabaritoPessoas(origem, 1);
   await origem.escrever("gabarito/itens/g1001.jpg", new Uint8Array([0xff, 0xd8, 0xff, 0xd9]));
   await origem.escreverJson("gabarito/itens/g0001.json", { formato: "gabarito.camera/1", id: "g0001" });
+  await origem.escreverJson("gabarito/itens/g2001.json", { formato: "gabarito.jogadores/1", id: "g2001" });
   const { blob } = await exportarZip(origem, (c) => c.startsWith("gabarito/"));
   const r = await importarZip(destino, blob);
-  assert.equal(r.gravados, 5); // 2 itens dos pontos, 1 dos jogadores com a máscara, e uma imagem
-  assert.deepEqual(r.recusados.map((x) => x.caminho), ["gabarito/itens/g0001.json"]);
-  assert.match(r.recusados[0].motivo, /versão anterior/);
+  assert.equal(r.gravados, 5); // 2 itens dos pontos, 1 das pessoas com a máscara, e uma imagem
+  assert.deepEqual(r.recusados.map((x) => x.caminho), ["gabarito/itens/g0001.json", "gabarito/itens/g2001.json"]);
+  assert.ok(r.recusados.every((x) => /versão anterior/.test(x.motivo)));
 });
 
 test("tipo de arquivo pelo caminho", () => {
   assert.equal(tipoDoCaminho("equipe.json"), "equipe");
   assert.equal(tipoDoCaminho("estadios/arena-x/pacote-1.0/pacote.json"), null); // da 0.7
   assert.equal(tipoDoCaminho(`partidas/${PARTIDA}/rotulos/pontos/t0000001000__A01__v1.json`), "rotulo_pontos");
-  assert.equal(tipoDoCaminho(`partidas/${PARTIDA}/revisoes/jogadores/t0000001000__A01__v1.json`), "revisao_jogadores");
-  assert.equal(tipoDoCaminho(`partidas/${PARTIDA}/rotulos/jogadores/t0000001000__A01__v1.png`), "png");
+  assert.equal(tipoDoCaminho(`partidas/${PARTIDA}/revisoes/pessoas/t0000001000__A01__v1.json`), "revisao_pessoas");
+  assert.equal(tipoDoCaminho(`partidas/${PARTIDA}/rotulos/pessoas/t0000001000__A01__v1.png`), "png");
+  assert.equal(tipoDoCaminho(`partidas/${PARTIDA}/rotulos/jogadores/t0000001000__A01__v1.json`), null); // da 0.8
   assert.equal(tipoDoCaminho(`partidas/${PARTIDA}/rotulos/pontos/t0000001000__A01__v1.png`), null);
   assert.equal(tipoDoCaminho(`partidas/${PARTIDA}/rotulos/camera/t0000001000__A01__v1.json`), null);
   assert.equal(tipoDoCaminho(`partidas/${PARTIDA}/quadros/t0000001000.jpg`), "jpg");
   assert.equal(tipoDoCaminho(`partidas/${PARTIDA}/previsoes/pontos/t0000001000.json`), "previsao_pontos");
-  assert.equal(tipoDoCaminho(`partidas/${PARTIDA}/previsoes/jogadores/t0000001000.png`), "png");
+  assert.equal(tipoDoCaminho(`partidas/${PARTIDA}/previsoes/pessoas/t0000001000.png`), "png");
   assert.equal(tipoDoCaminho("gabarito/itens/g1001.json"), "gabarito");
-  assert.equal(tipoDoCaminho("gabarito/itens/g2001.png"), "png");
+  assert.equal(tipoDoCaminho("gabarito/itens/g3001.png"), "png");
   assert.equal(tipoDoCaminho("gabarito/rotulos/pontos/g1001__A01__v1.json"), "rotulo_pontos");
-  assert.equal(tipoDoCaminho("gabarito/rotulos/jogadores/g2001__A01__v1.png"), "png");
+  assert.equal(tipoDoCaminho("gabarito/rotulos/pessoas/g3001__A01__v1.png"), "png");
   assert.equal(tipoDoCaminho("partidas/x/fila.json"), null);
   assert.equal(tipoDoCaminho("conjuntos/2026/pontos.parquet"), null);
   const disp = "pessoas/AB/3f2a6c1e-8b9d-4e2f-a1b3-c4d5e6f70812.json";

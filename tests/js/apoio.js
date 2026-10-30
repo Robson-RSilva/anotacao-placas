@@ -176,7 +176,7 @@ export async function criarPartida(pasta, itens, { partida = PARTIDA, largura = 
       observacoes: "",
     },
     video: { nome_original: "jogo.mp4", sha256: "0".repeat(64), bytes: 1000, duracao_s: 4, fps: 25, largura, altura, n_quadros: 100 },
-    pre_processamento: { ferramenta: "0.8.0", criado_em: AGORA.toISOString(), segundos: 1, parametros: {}, previsor: null },
+    pre_processamento: { ferramenta: "0.9.0", criado_em: AGORA.toISOString(), segundos: 1, parametros: {}, previsor: null },
   });
   return fila;
 }
@@ -204,7 +204,7 @@ export async function criarGabaritoPontos(pasta, n = 12, { lote = "P1-treino", p
   return itens;
 }
 
-/** A máscara verdadeira de exemplo: dois jogadores (1 e 2) e uma outra pessoa (255). */
+/** A máscara verdadeira de exemplo: três pessoas (1 e 2: jogadores; 3: o árbitro). */
 export function mascaraVerdadeira(w = 64, h = 48) {
   const m = new Uint8Array(w * h);
   const ret = (x0, y0, x1, y1, v) => {
@@ -212,18 +212,18 @@ export function mascaraVerdadeira(w = 64, h = 48) {
   };
   ret(10, 10, 18, 30, 1);
   ret(30, 12, 36, 28, 2);
-  ret(48, 20, 54, 34, 255);
+  ret(48, 20, 54, 34, 3);
   return m;
 }
 
-/** Itens do gabarito dos jogadores com a máscara verdadeira: g2001, g2002… (64 x 48). */
-export async function criarGabaritoJogadores(pasta, n = 6, { lote = "J1-treino", primeiro = 2001 } = {}) {
+/** Itens do gabarito das pessoas com a máscara verdadeira: g3001, g3002… (64 x 48). */
+export async function criarGabaritoPessoas(pasta, n = 6, { lote = "PE1-treino", primeiro = 3001 } = {}) {
   const itens = {};
   for (let k = 0; k < n; k++) {
     const id = `g${primeiro + k}`;
-    itens[id] = { formato: "gabarito.jogadores/1", id, lote, imagem: `${id}.jpg`, mascara: `${id}.png`, largura: 64, altura: 48, jogadores: 2, outras_pessoas: 1, origem: "simulador", observacao: "" };
+    itens[id] = { formato: "gabarito.pessoas/1", id, lote, imagem: `${id}.jpg`, mascara: `${id}.png`, largura: 64, altura: 48, pessoas: 3, origem: "simulador", observacao: "" };
     await pasta.escrever(pasta.mascaraGabarito(id), await codificarPng(mascaraVerdadeira(), 64, 48, Array.from({ length: 256 }, (_, v) => [v, v, v])));
-    await pasta.gravar("gabarito_jogadores", pasta.itemGabarito(id), itens[id]);
+    await pasta.gravar("gabarito_pessoas", pasta.itemGabarito(id), itens[id]);
   }
   return itens;
 }
@@ -233,7 +233,7 @@ const COMUM = (partida, quadro, pessoa, versao, m, manual, largura, altura) => (
   quadro,
   anotador: pessoa,
   versao,
-  ferramenta: "0.8.0",
+  ferramenta: "0.9.0",
   manual,
   criado_em: minutos(m).toISOString(),
   segundos_ativos: 20,
@@ -259,18 +259,18 @@ export async function gravarPontos(pasta, { partida = PARTIDA, quadro, pessoa, p
   return nome;
 }
 
-/** Grava um rótulo dos jogadores (a máscara e o rótulo); `mascara` null é a imagem descartada. */
-export async function gravarJogadores(pasta, { partida = PARTIDA, quadro, pessoa, mascara = null, versao = 1, m = 0, largura = W, altura = H, ...extra }) {
+/** Grava um rótulo das pessoas (a máscara e o rótulo); `mascara` null é a imagem descartada. */
+export async function gravarPessoas(pasta, { partida = PARTIDA, quadro, pessoa, mascara = null, versao = 1, m = 0, largura = W, altura = H, ...extra }) {
   const nome = `${quadro}__${pessoa}__v${versao}.json`;
-  const dir = pasta.rotulos(partida, "jogadores");
+  const dir = pasta.rotulos(partida, "pessoas");
   let pixels = 0;
   if (mascara) {
     await pasta.escrever(`${dir}/${nome.replace(/\.json$/, ".png")}`, await codificarPng(mascara, largura, altura, [[0, 0, 0], [255, 64, 129]]));
     pixels = mascara.reduce((s, v) => s + (v ? 1 : 0), 0);
   }
   const r = {
-    formato: "rotulo.jogadores/1",
-    ...COMUM(partida, quadro, pessoa, versao, m, "jogadores-0.1", largura, altura),
+    formato: "rotulo.pessoas/1",
+    ...COMUM(partida, quadro, pessoa, versao, m, "pessoas-0.1", largura, altura),
     mascara: mascara ? nome.replace(/\.json$/, ".png") : null,
     pixels,
     situacao: mascara ? "ok" : "descartada",
@@ -279,7 +279,7 @@ export async function gravarJogadores(pasta, { partida = PARTIDA, quadro, pessoa
     corrige: null,
     ...extra,
   };
-  await pasta.gravar("rotulo_jogadores", `${dir}/${nome}`, r);
+  await pasta.gravar("rotulo_pessoas", `${dir}/${nome}`, r);
   return nome;
 }
 
@@ -293,11 +293,11 @@ export async function gravarRevisao(pasta, { tarefa = "pontos", partida = PARTID
     revisor,
     versao,
     decisao,
-    motivo: decisao === "devolver" ? (tarefa === "pontos" ? "ponto_fora_do_lugar" : "faltou_jogador") : null,
+    motivo: decisao === "devolver" ? (tarefa === "pontos" ? "ponto_fora_do_lugar" : "faltou_pessoa") : null,
     comentario: "",
     nova_versao: null,
-    ferramenta: "0.8.0",
-    manual: "revisao-0.2",
+    ferramenta: "0.9.0",
+    manual: "revisao-0.3",
     criado_em: minutos(m).toISOString(),
     segundos_ativos: 4,
     ...extra,

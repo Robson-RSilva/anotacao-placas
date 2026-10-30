@@ -17,15 +17,16 @@ O mesmo layout existe nas páginas (`web/js/nucleo/pasta.js`).
         manifesto.json, tomadas.json, fila.json
         quadros/<quadro>.jpg
         previsoes/pontos/<quadro>.json              pontos de um modelo (opcional)
-        previsoes/jogadores/<quadro>.png            pré-pintura de um modelo (opcional)
-        rotulos/<tarefa>/<quadro>__<anotador>__v<n>.json    nos jogadores, com o .png da máscara ao lado
+        previsoes/pessoas/<quadro>.png              pré-pintura de um modelo (opcional)
+        rotulos/<tarefa>/<quadro>__<anotador>__v<n>.json    nas pessoas, com o .png da máscara ao lado
         revisoes/<tarefa>/<quadro>__<revisor>__v<n>.json
-      gabarito/itens/<g1001>.json|.jpg (|.png nos jogadores), gabarito/rotulos/<tarefa>/...
+      gabarito/itens/<g1001>.json|.jpg (|.png nas pessoas), gabarito/rotulos/<tarefa>/...
       pessoas/<codigo>/<dispositivo>.json           em que computadores cada código é usado
       conjuntos/<data-hora>/                        saída do unificar
 
-As tarefas são `pontos` e `jogadores`. As pastas das versões até a 0.7 (`rotulos/camera`,
-`rotulos/oclusao`, `estadios/`) ficam onde estão e não entram em nada.
+As tarefas são `pontos` e `pessoas`. As pastas das versões anteriores (`rotulos/camera`,
+`rotulos/oclusao` e `estadios/`, até a 0.7; `rotulos/jogadores`, da 0.8) ficam onde estão e não
+entram em nada.
 """
 
 from __future__ import annotations
@@ -77,7 +78,7 @@ def escrever_json(caminho: Path, obj: BaseModel | dict | list, *, sobrescrever: 
 
 
 def escrever_bytes(caminho: Path, dados: bytes, *, sobrescrever: bool = False) -> Path:
-    """Como `escrever_json`, para bytes (as máscaras PNG dos jogadores)."""
+    """Como `escrever_json`, para bytes (as máscaras PNG das pessoas)."""
     caminho = Path(caminho)
     caminho.parent.mkdir(parents=True, exist_ok=True)
     if not sobrescrever and caminho.exists():
@@ -120,13 +121,13 @@ def ler_nome(nome: str) -> tuple[str, str, int] | None:
 
 
 def ler_nome_mascara(nome: str) -> tuple[str, str, int] | None:
-    """A máscara dos jogadores (`<quadro>__<pessoa>__v<n>.png`), ou None."""
+    """A máscara das pessoas (`<quadro>__<anotador>__v<n>.png`), ou None."""
     m = RE_MASCARA.match(nome)
     return (m[1], m[2], int(m[3])) if m else None
 
 
 def mascara_de(nome_rotulo: str) -> str:
-    """O nome da máscara que acompanha um rótulo dos jogadores."""
+    """O nome da máscara que acompanha um rótulo das pessoas."""
     return nome_rotulo.removesuffix(".json") + ".png"
 
 
@@ -198,15 +199,15 @@ class Pasta:
         """Os pontos de um modelo para o quadro, quando há."""
         return self.partida(partida) / "previsoes" / "pontos" / f"{_checar(RE_QUADRO, quadro, 'quadro')}.json"
 
-    def previsao_jogadores(self, partida: str, quadro: str) -> Path:
-        """A pré-pintura de um modelo (PNG: 1 onde há jogador), quando há."""
-        return self.partida(partida) / "previsoes" / "jogadores" / f"{_checar(RE_QUADRO, quadro, 'quadro')}.png"
+    def previsao_pessoas(self, partida: str, quadro: str) -> Path:
+        """A pré-pintura de um modelo (PNG: 1 onde há pessoa), quando há."""
+        return self.partida(partida) / "previsoes" / "pessoas" / f"{_checar(RE_QUADRO, quadro, 'quadro')}.png"
 
     def item_gabarito(self, item: str) -> Path:
         return self.gabarito / "itens" / f"{_checar(RE_GABARITO, item, 'item do gabarito')}.json"
 
     def mascara_gabarito(self, item: str) -> Path:
-        """A máscara verdadeira de um item do gabarito dos jogadores."""
+        """A máscara verdadeira de um item do gabarito das pessoas."""
         return self.gabarito / "itens" / f"{_checar(RE_GABARITO, item, 'item do gabarito')}.png"
 
     def rotulos(self, partida: str, tarefa: str) -> Path:

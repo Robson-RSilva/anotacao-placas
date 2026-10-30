@@ -92,7 +92,7 @@ export async function montar(raiz, ctx) {
   // ------------------------------------------------------------------ gabarito
   async function contarGabarito() {
     const partes = [];
-    for (const [tarefa, nome] of [["pontos", "Pontos"], ["jogadores", "Jogadores"]]) {
+    for (const [tarefa, nome] of [["pontos", "Pontos"], ["pessoas", "Pintura das pessoas"]]) {
       const itens = await indice.itensGabarito(tarefa);
       const r = REGRA[tarefa];
       partes.push(itens.length
@@ -113,15 +113,15 @@ export async function montar(raiz, ctx) {
       try {
         const bruto = await lerJsonDoArquivo(a);
         const doItem = tipoDoItem(bruto);
-        if (!doItem) throw new Error("item de uma versão anterior (câmera ou oclusão): esta versão não usa");
+        if (!doItem) throw new Error("item de uma versão anterior (câmera, oclusão ou jogadores): esta versão não usa");
         const g = validar(doItem.tipo, bruto);
         if (!RE_GABARITO.test(g.id) || `${g.id}.json` !== a.name) throw new Error("o nome do arquivo precisa ser o id do item");
         const img = porNome.get(g.imagem);
         if (!img) throw new Error(`falta a imagem ${g.imagem}`);
         const cabeca = new Uint8Array(await img.slice(0, 3).arrayBuffer());
         if (!(cabeca[0] === 0xff && cabeca[1] === 0xd8 && cabeca[2] === 0xff)) throw new Error(`${g.imagem} precisa ser JPEG`);
-        const mascara = doItem.tarefa === "jogadores" ? porNome.get(g.mascara) : null;
-        if (doItem.tarefa === "jogadores") {
+        const mascara = doItem.tarefa === "pessoas" ? porNome.get(g.mascara) : null;
+        if (doItem.tarefa === "pessoas") {
           if (!mascara) throw new Error(`falta a máscara ${g.mascara}`);
           if (!ehPng(new Uint8Array(await mascara.slice(0, 8).arrayBuffer()))) throw new Error(`${g.mascara} precisa ser PNG`);
         }

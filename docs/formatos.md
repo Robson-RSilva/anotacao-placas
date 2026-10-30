@@ -56,10 +56,10 @@ desenha o mesmo campo, e o gabarito e a concordância aceitam as duas leituras.
 Rótulo: `partidas/<partida>/rotulos/<tarefa>/<quadro>__<anotador>__v<n>.json` (no gabarito,
 `gabarito/rotulos/<tarefa>/<gNNNN>__<anotador>__v<n>.json`). Revisão:
 `partidas/<partida>/revisoes/<tarefa>/<quadro>__<revisor>__v<n>.json`. A tarefa é `pontos` ou
-`jogadores`. O conteúdo precisa bater com o nome (partida, quadro, pessoa e versão); um arquivo que
+`pessoas`. O conteúdo precisa bater com o nome (partida, quadro, pessoa e versão); um arquivo que
 não bate conta como inválido.
 
-- `situacao`: `ok` (anotada; sem pontos, ou sem jogador, também é `ok`) ou `descartada`, com
+- `situacao`: `ok` (anotada; sem pontos, ou sem ninguém para pintar, também é `ok`) ou `descartada`, com
   `motivo_descarte`: `transicao` (fusão, corte no meio), `borrao` (borrada ou fora de foco demais),
   `grafismo` (grafismo da emissora cobre a imagem) ou `outro` (exige `comentario`).
 - `partiu_de.fonte`: `nenhuma`, `modelo` (a previsão da pasta), `rotulo_anterior` (a versão devolvida
@@ -67,7 +67,10 @@ não bate conta como inválido.
   na revisão, com `corrige` apontando o rótulo corrigido).
 - `largura` e `altura`: o tamanho da imagem anotada, em px.
 - `ferramenta` e `manual`: as versões da ferramenta e do Manual de anotação da tarefa
-  (`pontos-0.1`, `jogadores-0.1`; as revisões, `revisao-0.2`).
+  (`pontos-0.1`, `pessoas-0.1`; as revisões, `revisao-0.3`).
+- `segundos_ativos`: o tempo ativo na imagem (ou na revisão), em segundos — a página só conta enquanto
+  está visível e houve uso nos últimos 20 s. Uma correção feita na revisão leva, no rótulo novo e na
+  revisão, o tempo da revisão.
 - Revisão — `decisao`: `aprovar`, `corrigir` (exige `nova_versao`, o arquivo da correção) ou
   `devolver` (exige `motivo`, da lista da tarefa; `outro` exige comentário).
 
@@ -80,7 +83,7 @@ não bate conta como inválido.
   "quadro": "t0001234567",
   "anotador": "A03",
   "versao": 1,
-  "ferramenta": "0.8.0",
+  "ferramenta": "0.9.0",
   "manual": "pontos-0.1",
   "criado_em": "2026-11-03T14:05:11Z",
   "segundos_ativos": 41.0,
@@ -102,24 +105,24 @@ não bate conta como inválido.
 - `pontos`: os pontos que aparecem, cada um uma vez, em px da imagem (dentro dela: de 0 à largura e
   de 0 à altura). Lista vazia com `situacao: "ok"`: nenhum ponto à vista (um close, a torcida). Imagem
   descartada não leva pontos.
-- Ponto coberto (um jogador na frente) só se marca quando dá para saber exatamente onde ele está.
+- Ponto coberto (alguém na frente) só se marca quando dá para saber exatamente onde ele está.
 
 `revisao.pontos/1` — os motivos de devolver: `ponto_fora_do_lugar` (mais de 2 px), `nome_trocado`,
 `faltou_ponto`, `ponto_que_nao_se_ve`, `descarte_errado` ou `outro`.
 
-## `rotulo.jogadores/1` — a máscara dos jogadores
+## `rotulo.pessoas/1` — a máscara das pessoas em campo
 
 O rótulo, com a máscara `<quadro>__<anotador>__v<n>.png` ao lado (o mesmo nome, com .png):
 
 ```json
 {
-  "formato": "rotulo.jogadores/1",
+  "formato": "rotulo.pessoas/1",
   "partida": "2026-11-02_arena-x_time-a-time-b",
   "quadro": "t0001234567",
   "anotador": "A03",
   "versao": 1,
-  "ferramenta": "0.8.0",
-  "manual": "jogadores-0.1",
+  "ferramenta": "0.9.0",
+  "manual": "pessoas-0.1",
   "criado_em": "2026-11-03T14:12:40Z",
   "segundos_ativos": 95.0,
   "largura": 1280,
@@ -134,16 +137,19 @@ O rótulo, com a máscara `<quadro>__<anotador>__v<n>.png` ao lado (o mesmo nome
 }
 ```
 
-- **A máscara** é um PNG de 8 bits com paleta, do tamanho da imagem: 1 onde há jogador (goleiros
-  também), 0 no resto — árbitros, gandulas, fotógrafos, comissão técnica, torcida e sombras ficam
-  em 0. Sem nenhum jogador, a máscara é toda 0 (`pixels: 0`). `pixels` é quantos pixels valem 1, e
-  o `validar` confere com a máscara.
+- **A máscara** é um PNG de 8 bits com paleta, do tamanho da imagem: 1 onde há pessoa, 0 no resto.
+  Pessoa é todo mundo no gramado e em volta dele, até as placas — jogadores e goleiros, árbitros e
+  assistentes, gandulas, fotógrafos e cinegrafistas, comissão técnica e reservas, seguranças,
+  maqueiros: qualquer um que possa ficar na frente de uma placa. A torcida e as sombras ficam em 0.
+  Sem ninguém na imagem, a máscara é toda 0 (`pixels: 0`). `pixels` é quantos pixels valem 1, e o
+  `validar` confere com a máscara.
 - Imagem descartada não leva máscara (`mascara: null`, `pixels: 0`). O rótulo é gravado depois da
   máscara; um rótulo cuja máscara ainda não chegou pelo Drive fica esperando nas páginas, e o
   `validar` e o `unificar` o apontam.
 
-`revisao.jogadores/1` — os motivos de devolver: `faltou_jogador`, `contorno_impreciso` (mais de
-1 px), `pintou_quem_nao_e_jogador`, `descarte_errado` ou `outro`.
+`revisao.pessoas/1` — os motivos de devolver: `faltou_pessoa` (o árbitro e quem trabalha em volta do
+campo também), `contorno_impreciso` (mais de 1 px), `pintou_o_que_nao_e_pessoa` (a torcida, uma
+sombra, uma placa), `descarte_errado` ou `outro`.
 
 ## Por partida
 
@@ -154,7 +160,7 @@ O rótulo, com a máscara `<quadro>__<anotador>__v<n>.png` ao lado (o mesmo nome
 | `fila.json` | `fila.partida/1` | quadros sorteados e as marcas de dupla às cegas e de "sem previsão". A fila é aberta (`equipe` e `atribuido_a` vazios) e vale para as duas tarefas: em cada uma, um quadro precisa de um rótulo, ou de duas pessoas diferentes na dupla. |
 | `quadros/<quadro>.jpg` | JPEG | os quadros sorteados, na resolução original do vídeo. |
 | `previsoes/pontos/<quadro>.json` | `previsao.pontos/1` | os pontos de um modelo (`fonte`, `versao` e a lista de pontos, como no rótulo), gravados por `anotacao prever --tarefa pontos` (nunca nos quadros "sem previsão"). A página começa com eles. |
-| `previsoes/jogadores/<quadro>.png` | PNG de 8 bits | a pré-pintura de um modelo (diferente de 0: jogador), gravada por `anotacao prever --tarefa jogadores`. A página começa com ela. |
+| `previsoes/pessoas/<quadro>.png` | PNG de 8 bits | a pré-pintura de um modelo (diferente de 0: pessoa), gravada por `anotacao prever --tarefa pessoas`. A página começa com ela. |
 | `importando.json` | — | só durante a importação: quem está importando a partida (some no fim; não vai para o .zip). Uma marca sem renovação há 10 minutos é de uma importação que parou. |
 
 ## Da pasta
@@ -166,7 +172,7 @@ O rótulo, com a máscara `<quadro>__<anotador>__v<n>.png` ao lado (o mesmo nome
 | `projeto.json` | `projeto/1` | opcional: nome do projeto e link (https) do Manual de anotação, mostrados nas páginas. |
 | `divisao.json` | `divisao/1` | partidas de validação, teste congelado e teste externo; o resto é treino. |
 | `gabarito/itens/<id>.json` + `.jpg` | `gabarito.pontos/1` | um item dos pontos (abaixo). |
-| `gabarito/itens/<id>.json` + `.jpg` + `.png` | `gabarito.jogadores/1` | um item dos jogadores (abaixo). O formato dentro do arquivo diz a tarefa do item. |
+| `gabarito/itens/<id>.json` + `.jpg` + `.png` | `gabarito.pessoas/1` | um item das pessoas (abaixo). O formato dentro do arquivo diz a tarefa do item. |
 
 ## O gabarito
 
@@ -205,41 +211,42 @@ visíveis é de até 2 px (ref. 960). Um ponto opcional marcado não conta no er
 estar errado. Vale a leitura do mesmo lado do campo ou do outro (a rotação de 180°), a que acha mais
 pontos. Libera com 8 certos dos últimos 10.
 
-### `gabarito.jogadores/1`
+### `gabarito.pessoas/1`
 
 ```json
 {
-  "formato": "gabarito.jogadores/1",
-  "id": "g2001",
-  "lote": "J1-treino",
-  "imagem": "g2001.jpg",
-  "mascara": "g2001.png",
+  "formato": "gabarito.pessoas/1",
+  "id": "g3001",
+  "lote": "PE1-treino",
+  "imagem": "g3001.jpg",
+  "mascara": "g3001.png",
   "largura": 1280,
   "altura": 720,
-  "jogadores": 5,
-  "outras_pessoas": 1,
+  "pessoas": 6,
   "origem": "simulador",
-  "observacao": "simulador do laboratório, domínio A, semente 84031"
+  "observacao": "simulador do laboratório, domínio A, semente 86014"
 }
 ```
 
-A máscara verdadeira (`mascara`, o PNG ao lado) tem um número por pessoa: os jogadores de 1 a
-`jogadores` (N), as outras pessoas (árbitro, gandula, fotógrafo…) de 255 para baixo (255, 254… —
-`outras_pessoas` delas) e 0 no resto. A importação confere que não há outro número.
+A máscara verdadeira (`mascara`, o PNG ao lado) tem um número por pessoa, de 1 a `pessoas` (N), e 0
+no resto; jogadores, árbitro, gandulas e fotógrafos, todos se pintam. A importação confere que não há
+outro número.
 
-A pintura dá **certo** quando, sem contar a borda de 1 px dos jogadores (os pixels com um vizinho do
-outro lado do contorno), cada jogador está pintado em pelo menos metade da área, nenhuma outra pessoa
-está pintada em 25% ou mais e a sobreposição com a resposta (IoU) é de pelo menos 80%. Jogador com
-menos de 30 px de área (ref. 960) não precisa ser pintado. Libera com 4 certos dos últimos 5.
+A pintura dá **certo** quando, sem contar a borda de 1 px das pessoas (os pixels com um vizinho do
+outro lado do contorno), cada pessoa está pintada em pelo menos metade da área e a sobreposição com a
+resposta (IoU) é de pelo menos 80% — o que se pinta a mais (a torcida, uma sombra, um contorno largo)
+derruba a sobreposição. Pessoa com menos de 30 px de área (ref. 960) não precisa ser pintada. Uma
+imagem sem ninguém (só a torcida, por exemplo) dá certo sem nada pintado. Libera com 4 certos dos
+últimos 5.
 
 Descartar um item do gabarito conta como erro: todo item tem resposta (uma imagem sem pontos ou sem
-jogador se salva vazia).
+ninguém se salva vazia).
 
 ## Saída do unificar
 
 Em `conjuntos/<data-hora>/`, só os rótulos aprovados na revisão (ou a correção de quem revisou); num
 quadro em dupla, o aprovado primeiro. Imagens descartadas ficam de fora; imagem sem pontos ou sem
-jogador entra.
+ninguém entra.
 
 - `pontos.parquet` — um quadro por linha: conjunto (`treino`, `validacao`, `teste_congelado`,
   `teste_externo`), partida, quadro, caminho da imagem, largura, altura, PTS, tomada, `n_pontos`,
@@ -247,16 +254,18 @@ jogador entra.
   (estádio, emissora, competição, data e hora, iluminação, chuva).
 - `pontos_lista.parquet` — um ponto por linha: conjunto, partida, quadro, `ponto`, `x`, `y` (px da
   imagem).
-- `jogadores.parquet` — um quadro por linha: os mesmos dados do quadro, o caminho da máscara e
+- `pessoas.parquet` — um quadro por linha: os mesmos dados do quadro, o caminho da máscara e
   `pixels` (quantos valem 1).
-- `manifesto.json` (`conjuntos/3`) — por tarefa, os quadros, as contagens por conjunto, quantos sem
-  pontos ou sem jogador e o hash do conteúdo; os descartes por tarefa e motivo; as partidas de cada
-  conjunto e a divisão usada.
+- `manifesto.json` (`conjuntos/4`) — por tarefa, os quadros, as contagens por conjunto, quantos sem
+  pontos (`sem_pontos`) ou sem ninguém (`sem_pessoas`) e o hash do conteúdo; os descartes por tarefa
+  e motivo; as partidas de cada conjunto e a divisão usada.
 - `problemas.json` — os arquivos inválidos e os quadros ainda sem rótulo aprovado em cada tarefa.
 
-## Das versões até a 0.7
+## Das versões anteriores
 
-`rotulo.camera/1`, `revisao.camera/1`, `gabarito.camera/1`, `rotulo.oclusao/1`,
+Até a 0.7: `rotulo.camera/1`, `revisao.camera/1`, `gabarito.camera/1`, `rotulo.oclusao/1`,
 `revisao.oclusao/1`, `gabarito.oclusao/1`, `previsao.camera/1` e `pacote.estadio/1` (com a pasta
-`estadios/`) ficam onde estão, mas nenhuma página nem o `unificar` os lê, e os .zip não os levam
-(ADR-0010).
+`estadios/`) (ADR-0010). Da 0.8: `rotulo.jogadores/1`, `revisao.jogadores/1` e `gabarito.jogadores/1`
+(com as pastas `rotulos/jogadores`, `revisoes/jogadores` e `previsoes/jogadores`), que pintavam só os
+jogadores (ADR-0011). Ficam onde estão, mas nenhuma página nem o `unificar` os lê, e os .zip não os
+levam.

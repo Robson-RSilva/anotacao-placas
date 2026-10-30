@@ -5,11 +5,11 @@ import { test } from "node:test";
 import { Molde } from "../../web/js/nucleo/campo.js";
 import {
   REGRA,
-  bordaDosJogadores,
-  compararJogadores,
+  bordaDasPessoas,
+  compararPessoas,
   compararPontos,
   liberacao,
-  motivoJogadores,
+  motivoPessoas,
   motivoPontos,
   nTreino,
   resumo,
@@ -68,44 +68,55 @@ test("pontos: a marcação vista do outro lado do campo (girada 180°) também v
   assert.deepEqual(r2.faltaram.sort(), ["centro", campo.espelharPonto("meio_cab")].sort());
 });
 
-test("jogadores: a borda de 1 px não conta", () => {
+test("pessoas: a borda de 1 px não conta", () => {
   const v = mascaraVerdadeira();
-  const borda = bordaDosJogadores(v, 64, 48, 2);
-  assert.equal(borda[10 * 64 + 10], 1); // canto do jogador 1
-  assert.equal(borda[9 * 64 + 10], 1); // fora, colado nele
+  const borda = bordaDasPessoas(v, 64, 48, 3);
+  assert.equal(borda[10 * 64 + 10], 1); // canto da pessoa 1
+  assert.equal(borda[9 * 64 + 10], 1); // fora, colado nela
   assert.equal(borda[20 * 64 + 14], 0); // dentro
-  assert.equal(borda[25 * 64 + 50], 0); // a outra pessoa não tem borda tolerada
+  assert.equal(borda[20 * 64 + 48], 1); // o árbitro (3) também é pessoa: tem borda
   // a pintura certa, e a mesma 1 px maior: as duas dão certo, com 100%
-  const certa = v.map((x) => (x === 1 || x === 2 ? 1 : 0));
+  const certa = v.map((x) => (x ? 1 : 0));
   const maior = new Uint8Array(64 * 48);
   for (let y = 9; y < 31; y++) for (let x = 9; x < 19; x++) maior[y * 64 + x] = 1;
   for (let y = 11; y < 29; y++) for (let x = 29; x < 37; x++) maior[y * 64 + x] = 1;
+  for (let y = 19; y < 35; y++) for (let x = 47; x < 55; x++) maior[y * 64 + x] = 1;
   for (const p of [certa, maior]) {
-    const r = compararJogadores(p, v, 64, 48, 2);
+    const r = compararPessoas(p, v, 64, 48, 3);
     assert.equal(r.acerto, true);
     assert.equal(r.iou, 1);
     assert.deepEqual(r.faltaram, []);
+    assert.equal(r.a_mais, 0);
   }
+  assert.match(resumo("pessoas", compararPessoas(certa, v, 64, 48, 3)), /^3 de 3 pessoas · 100%$/);
 });
 
-test("jogadores: esquecer um jogador, pintar o árbitro ou borrar demais dá errado", () => {
+test("pessoas: esquecer alguém (o árbitro também) ou pintar demais dá errado", () => {
   const v = mascaraVerdadeira();
-  const so1 = v.map((x) => (x === 1 ? 1 : 0));
-  const r = compararJogadores(so1, v, 64, 48, 2);
+  const semArbitro = v.map((x) => (x === 1 || x === 2 ? 1 : 0)); // pintou só os jogadores
+  const r = compararPessoas(semArbitro, v, 64, 48, 3);
   assert.equal(r.acerto, false);
-  assert.deepEqual(r.faltaram, [2]);
-  assert.match(motivoJogadores(r), /faltou pintar 1 jogador/);
-  const comArbitro = v.map((x) => (x ? 1 : 0));
-  const r2 = compararJogadores(comArbitro, v, 64, 48, 2);
-  assert.deepEqual(r2.outras, [255]);
-  assert.match(motivoJogadores(r2), /pintou 1 pessoa/);
-  assert.match(resumo("jogadores", r2), /2 de 2 jogadores · \d+% · 1 a mais/);
-  const borrada = v.map((x) => (x === 1 || x === 2 ? 1 : 0));
-  for (let y = 0; y < 48; y++) for (let x = 0; x < 8; x++) borrada[y * 64 + x] = 1; // uma faixa pintada à toa
-  const r3 = compararJogadores(borrada, v, 64, 48, 2);
+  assert.deepEqual(r.faltaram, [3]);
+  assert.match(motivoPessoas(r), /^faltou pintar 1 pessoa/);
+  assert.match(resumo("pessoas", r), /^2 de 3 pessoas/);
+  const borrada = v.map((x) => (x ? 1 : 0));
+  for (let y = 0; y < 48; y++) for (let x = 0; x < 8; x++) borrada[y * 64 + x] = 1; // uma faixa pintada à toa (a torcida)
+  const r2 = compararPessoas(borrada, v, 64, 48, 3);
+  assert.equal(r2.acerto, false);
+  assert.ok(r2.iou < REGRA.pessoas.iou && r2.a_mais > 0.5 && r2.sem_pintar === 0);
+  assert.deepEqual(r2.faltaram, []);
+  assert.match(motivoPessoas(r2), /sobreposição de \d+% \(a meta é 80%\): pintou \d+% além das pessoas/);
+  // pintar só metade de cada um: cobre a metade (passa no por pessoa), mas a sobreposição não chega lá
+  const metade = v.map((x, i) => (x && Math.floor(i / 64) < 20 ? 1 : 0));
+  const r3 = compararPessoas(metade, v, 64, 48, 3);
   assert.equal(r3.acerto, false);
-  assert.ok(r3.iou < REGRA.jogadores.iou && r3.fora_px > 0);
-  assert.deepEqual(r3.faltaram, []);
+  assert.match(motivoPessoas(r3), /das pessoas sem pintar/);
+  // imagem sem ninguém: nada pintado dá certo; algo pintado, errado
+  const vazio = new Uint8Array(64 * 48);
+  assert.equal(compararPessoas(vazio, vazio, 64, 48, 0).acerto, true);
+  const r4 = compararPessoas(borrada, vazio, 64, 48, 0);
+  assert.equal(r4.acerto, false);
+  assert.match(motivoPessoas(r4), /não havia ninguém para pintar/);
 });
 
 test("liberação: acertar K dos últimos N; e quando liberou", () => {
@@ -121,5 +132,5 @@ test("liberação: acertar K dos últimos N; e quando liberou", () => {
   assert.equal(liberacao(ruim, true, regra).liberado, false);
   assert.equal(nTreino(ruim, regra), 10);
   assert.equal(nTreino(Array(9).fill(r(true)), regra), -1);
-  assert.equal(liberacao(Array(5).fill(r(true)), true, REGRA.jogadores).liberado, true);
+  assert.equal(liberacao(Array(5).fill(r(true)), true, REGRA.pessoas).liberado, true);
 });

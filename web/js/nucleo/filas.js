@@ -1,4 +1,4 @@
-// Filas: o que cada pessoa faz a seguir, em cada tarefa (pontos e jogadores). Tudo sai dos arquivos e
+// Filas: o que cada pessoa faz a seguir, em cada tarefa (pontos e pessoas). Tudo sai dos arquivos e
 // dá o mesmo em qualquer máquina. Não há equipe cadastrada: quem anota se identifica por um código
 // (as iniciais, por exemplo).
 //
@@ -115,7 +115,7 @@ async function itemDoGabarito(indice, tarefa, pessoa, g, treino) {
 
 /**
  * De onde a imagem começa: a versão devolvida, a previsão de um modelo ou nada. Devolve {inicio,
- * partiu_de}; `inicio` é a lista de pontos (pontos) ou o caminho de uma máscara (jogadores), ou null.
+ * partiu_de}; `inicio` é a lista de pontos (pontos) ou o caminho de uma máscara (pessoas), ou null.
  */
 async function comecarDe(indice, tarefa, partida, item, anterior) {
   const pasta = indice.pasta;
@@ -133,8 +133,8 @@ async function comecarDe(indice, tarefa, partida, item, anterior) {
         prev = null; // previsão inválida não impede de anotar
       }
       if (prev && prev.pontos.length) return { inicio: prev.pontos, partiu_de: { fonte: "modelo", versao: `${prev.fonte}@${prev.versao}`, referencia: null } };
-    } else if (await pasta.existe(pasta.previsaoJogadores(partida, item.quadro))) {
-      return { inicio: pasta.previsaoJogadores(partida, item.quadro), partiu_de: { fonte: "modelo", versao: null, referencia: null } };
+    } else if (await pasta.existe(pasta.previsaoPessoas(partida, item.quadro))) {
+      return { inicio: pasta.previsaoPessoas(partida, item.quadro), partiu_de: { fonte: "modelo", versao: null, referencia: null } };
     }
   }
   return { inicio: null, partiu_de: { fonte: "nenhuma", versao: null, referencia: null } };

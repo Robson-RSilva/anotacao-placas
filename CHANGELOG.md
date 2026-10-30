@@ -5,6 +5,53 @@ Formato de [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); versões
 
 ## [Não lançado]
 
+## [0.9.0] - 2026-10-30
+
+A pintura passa a ser de todas as pessoas em campo — quem pode ficar na frente de uma placa —, e o
+placar mede o tempo direito (ADR-0011).
+
+### Mudado
+
+- A tarefa "Jogadores" vira **"Pessoas em campo"** (`#/pessoas`, `#/revisao-pessoas`): pinta-se toda
+  pessoa no gramado e em volta dele, até as placas — jogadores e goleiros, árbitros e assistentes,
+  gandulas, fotógrafos e cinegrafistas, comissão técnica e reservas, seguranças, maqueiros. A torcida
+  e as sombras não se pintam. Os endereços da 0.8 (`#/jogadores`, `#/revisao-jogadores`) levam às
+  páginas novas.
+- Formatos novos: `rotulo.pessoas/1`, `revisao.pessoas/1` (motivos `faltou_pessoa`,
+  `contorno_impreciso`, `pintou_o_que_nao_e_pessoa`, `descarte_errado` e `outro`) e
+  `gabarito.pessoas/1` (a máscara verdadeira com as pessoas de 1 a N, sem "outras pessoas"); as
+  pastas `rotulos/pessoas`, `revisoes/pessoas` e `previsoes/pessoas`; o Manual `pessoas-0.1` e o da
+  revisão `revisao-0.3`.
+- O gabarito da pintura: cada pessoa pintada em pelo menos metade da área (as menores que 30 px, ref.
+  960, não contam) e a sobreposição (IoU) de 80%; sai a regra de "outra pessoa pintada". O motivo do
+  erro diz se pintou a mais (a torcida, uma sombra, um contorno largo) ou se ficou parte das pessoas
+  sem pintar. Uma imagem sem ninguém dá certo sem nada pintado.
+- O placar: o **tempo por imagem** passa a ser a mediana do tempo ativo só dos rótulos da própria
+  pessoa — sem os descartes, que levam segundos, e sem as correções que ela fez revisando, que
+  entravam como se fossem anotação e são trabalho de revisão. Entra o **tempo por revisão** (a
+  mediana das revisões feitas). Os dois aparecem com a unidade ("42 s", "1 min 5 s"), no lugar de
+  "0:42", que se lia como horas e minutos; o cabeçalho explica a conta. As correções feitas revisando
+  também deixam de contar como rótulos de quem revisou.
+- `anotacao unificar`: `pessoas.parquet` no lugar de `jogadores.parquet`, manifesto `conjuntos/4`
+  (com `sem_pessoas`). `anotacao prever --tarefa pontos|pessoas`.
+- Lotes de ouro novos da pintura, em ids novos: PE1-treino (g3001–g3012) e PE2-variado
+  (g3101–g3116). Cada um tem itens com o árbitro e quem trabalha em volta do campo, um item só com um
+  gandula ou fotógrafo (que se pinta) e um só com a torcida (nada se pinta). O índice
+  `indice-pessoas.csv` diz quem é quem em cada máscara, e `scripts/conferir_regras.py` ganha o perfil
+  de quem pinta só os jogadores (a regra da 0.8), que reprova.
+
+### Removido
+
+- A tarefa "Jogadores" da 0.8, os formatos `rotulo.jogadores/1`, `revisao.jogadores/1` e
+  `gabarito.jogadores/1` e os lotes J1-treino e J2-variado. Os arquivos da 0.8 ficam na pasta, mas não
+  entram em nada (placar, filas, `unificar`, .zip): foram pintados sem quem não joga.
+
+### Corrigido
+
+- O teste de ponta a ponta de dois computadores esperava a gravação do registro do computador
+  terminar antes de recarregar a página (recarregar no meio deixava o temporário `.crswap` do
+  navegador na pasta).
+
 ## [0.8.0] - 2026-10-30
 
 Marcar e pintar direto na imagem: sai o molde do campo que se esticava e arrastava (a câmera do

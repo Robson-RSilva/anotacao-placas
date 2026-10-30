@@ -10,24 +10,25 @@ anota (os itens escondidos na fila), nas duas tarefas:
   `visivel: false` (marcar é opcional) quando algo está na frente dele (gente, placa, grafismo da
   emissora e, nos pontos do gramado, a trave), quando fica rente à borda ou quando as linhas se
   cruzam quase paralelas na imagem (o cruzamento não tem um lugar preciso).
-* Jogadores (`gabarito.jogadores/1` + a máscara verdadeira `gNNNN.png`): os pixels de cada pessoa
-  que o simulador desenhou e que ficaram à vista — sem o que placa, trave ou grafismo cobre e sem a
-  sombra. Os jogadores e os goleiros vão de 1 a N; as outras pessoas (árbitro, gandulas, fotógrafos:
-  pintá-las é erro), de 255 para baixo. O renderizador do laboratório junta todo mundo numa máscara
-  só; aqui ele guarda também quem é quem, e a união das pessoas confere, pixel a pixel, com a máscara
-  dele.
+* Pessoas (`gabarito.pessoas/1` + a máscara verdadeira `gNNNN.png`): os pixels de cada pessoa que o
+  simulador desenhou e que ficaram à vista — jogadores, goleiros, o árbitro, gandulas e fotógrafos,
+  todo mundo no gramado e em volta dele —, sem o que placa, trave ou grafismo cobre e sem a sombra.
+  Cada pessoa tem um número, de 1 a N, da esquerda para a direita. A torcida (a arquibancada do
+  simulador) não é pessoa. O renderizador do laboratório junta todo mundo numa máscara só; aqui ele
+  guarda também quem é quem, e a união das pessoas confere, pixel a pixel, com a máscara dele.
 
-Cada lote é um .zip com `gabarito/itens/gNNNN.json` + `gNNNN.jpg` (+ `gNNNN.png` nos jogadores), que
+Cada lote é um .zip com `gabarito/itens/gNNNN.json` + `gNNNN.jpg` (+ `gNNNN.png` nas pessoas), que
 entra pela página do gabarito ("Importar lote de ouro (.zip)"). Os lotes com "treino" no nome são os
 do teste de quem começa (com o resultado na hora); os outros, os itens escondidos na fila.
 
     python scripts/lotes_de_ouro.py --laboratorio ../placas-exposicao --saida lotes
 
-As faixas de id dos lotes não se sobrepõem (pontos em g1xxx, jogadores em g2xxx): dá para importar
-um, alguns ou todos na mesma pasta. As sementes são fixas, então o mesmo comando gera sempre os
-mesmos lotes. Além dos .zip, `indice-pontos.csv` e `indice-jogadores.csv` descrevem cada item para
-quem coordena (câmera, campo de visão, pontos à vista, jogadores...), e `mosaico-<lote>.jpg` mostra
-uma amostra de cada lote com a resposta por cima. Esses não vão para a pasta de quem anota.
+As faixas de id dos lotes não se sobrepõem (pontos em g1xxx, pessoas em g3xxx; os g2xxx eram os
+jogadores da 0.8): dá para importar um, alguns ou todos na mesma pasta. As sementes são fixas, então
+o mesmo comando gera sempre os mesmos lotes. Além dos .zip, `indice-pontos.csv` e
+`indice-pessoas.csv` descrevem cada item para quem coordena (câmera, campo de visão, pontos à vista,
+pessoas, jogadores e outras pessoas...), e `mosaico-<lote>.jpg` mostra uma amostra de cada lote com a
+resposta por cima. Esses não vão para a pasta de quem anota.
 """
 
 from __future__ import annotations
@@ -58,8 +59,8 @@ BORDA_REF = 3.0  # ponto a menos disto da borda, dentro da imagem: marcar é opc
 FORA_REF = 6.0  # ponto fora da imagem, mas a menos disto da borda: o quadro não entra (seria ambíguo)
 COBERTO_REF = 2.0  # algo na frente do ponto até esta distância: coberto
 ANGULO_MIN = 15.0  # graus entre as linhas do cruzamento, na imagem: abaixo disto, marcar é opcional
-PEQUENO_REF = 30.0  # área (px) abaixo da qual a página não exige o jogador (REGRA.jogadores.pequeno_px)
-JOGADOR = ("jogador", "goleiro")  # os tipos de pessoa do simulador que se pintam
+PEQUENO_REF = 30.0  # área (px) abaixo da qual a página não exige a pessoa (REGRA.pessoas.pequeno_px)
+JOGADOR = ("jogador", "goleiro")  # os tipos de pessoa do simulador que jogam (os outros: árbitro e staff)
 
 
 @dataclass(frozen=True)
@@ -82,7 +83,7 @@ class LotePontos:
 
 
 @dataclass(frozen=True)
-class LoteJogadores:
+class LotePessoas:
     nome: str
     descricao: str
     primeiro: int
@@ -91,14 +92,15 @@ class LoteJogadores:
     dominios: dict[str, float]
     cameras: dict[str, float]
     hfov: tuple[float, float]
-    jogadores: tuple[int, int]  # jogadores por item (sem contar os pequenos, que a página não exige)
-    com_outras: int  # itens com pelo menos uma outra pessoa à vista (árbitro, gandula, fotógrafo)
-    sem_jogadores: int = 0  # itens só com outras pessoas: a resposta é salvar sem pintar nada
+    pessoas: tuple[int, int]  # pessoas por item (sem contar as pequenas, que a página não exige)
+    com_outras: int  # itens com pelo menos uma pessoa grande que não joga (árbitro, gandula, fotógrafo)
+    so_outras: int = 0  # itens sem jogador, só com quem trabalha em volta do campo (que também se pinta)
+    so_torcida: int = 0  # itens só com a torcida na arquibancada: a resposta é salvar sem pintar nada
     max_pessoas: int = 30  # pessoas à vista por item, contando as pequenas
-    inteiros: int = 0  # jogadores (não pequenos) que a imagem mostra inteiros, sem tocar a borda
+    inteiros: int = 0  # pessoas (não pequenas) que a imagem mostra inteiras, sem tocar a borda
     nitido: bool = False
     k1_max: float | None = None
-    tarefa: str = "jogadores"
+    tarefa: str = "pessoas"
 
 
 CENTRAIS = {"principal": 0.6, "16m": 0.2, "tatica": 0.2}
@@ -148,35 +150,40 @@ LOTES = (
         0.30,
         sem_pontos=1,
     ),
-    LoteJogadores(
-        "J1-treino",
-        "treino e liberação: dia, planos fechados com poucos jogadores grandes, imagem nítida",
-        2001,
+    LotePessoas(
+        "PE1-treino",
+        "treino e liberação: dia, planos fechados com poucas pessoas grandes (jogadores, árbitro, gandulas e "
+        "fotógrafos), um só com um gandula ou fotógrafo, um só com a torcida, imagem nítida",
+        3001,
         12,
-        84_000,
+        86_000,
         {"A": 1.0},
         {"principal": 0.5, "16m": 0.3, "reversa": 0.2},
         (8.0, 22.0),
-        (2, 6),
-        4,
+        (2, 7),
+        8,  # quase todo item com quem não joga: pintar só os jogadores (a regra da 0.8) não libera
+        so_outras=1,
+        so_torcida=1,
         max_pessoas=10,
         inteiros=2,
         nitido=True,
         k1_max=0.02,
     ),
-    LoteJogadores(
-        "J2-variado",
-        "controle: dia e noite, todas as câmeras menos a tática, mais jogadores e outras pessoas, um sem jogador",
-        2101,
+    LotePessoas(
+        "PE2-variado",
+        "controle: dia e noite, todas as câmeras menos a tática, mais gente no gramado e em volta dele, um só "
+        "com quem trabalha em volta do campo, um só com a torcida",
+        3101,
         16,
-        85_000,
+        87_000,
         {"A": 0.5, "B": 0.5},
         SEM_A_TATICA,
         (10.0, 34.0),
-        (1, 12),
+        (1, 14),
         8,
-        sem_jogadores=1,
-        max_pessoas=18,
+        so_outras=1,
+        so_torcida=1,
+        max_pessoas=20,
     ),
 )
 
@@ -297,7 +304,7 @@ def espalhamento(pontos: list[dict], w: int) -> float:
     return float(np.linalg.norm(p[:, None] - p[None], axis=2).max()) / w
 
 
-# ----------------------------------------------------------------------------- jogadores
+# ----------------------------------------------------------------------------- pessoas
 def moda_por_bloco(tela: np.ndarray, k: int) -> np.ndarray:
     """Reduz um mapa de pessoas (0 ninguém; j + 1 a pessoa j) de k em k pixels, como o renderizador
     reduz a máscara dele (pessoa onde mais da metade do bloco é gente): em cada bloco, a pessoa que
@@ -312,11 +319,11 @@ def moda_por_bloco(tela: np.ndarray, k: int) -> np.ndarray:
     return np.where(gente, moda, 0).astype(tela.dtype)
 
 
-def numerar_pessoas(instancias: np.ndarray, tipos: list[str], w: int) -> tuple[np.ndarray, list[dict], list[dict]]:
+def numerar_pessoas(instancias: np.ndarray, tipos: list[str], w: int) -> tuple[np.ndarray, list[dict]]:
     """A máscara verdadeira a partir do mapa de pessoas à vista (0 ninguém; j + 1 a pessoa j, do tipo
-    `tipos[j]`): os jogadores e goleiros de 1 a N, da esquerda para a direita; as outras pessoas de 255
-    para baixo. Devolve (máscara uint8, jogadores, outras), com a área de cada um (px) e se é pequeno
-    (a página não exige) e se toca a borda da imagem."""
+    `tipos[j]`): cada pessoa com um número, de 1 a N, da esquerda para a direita — jogadores, goleiros,
+    árbitro e quem trabalha em volta do campo, todos se pintam. Devolve (máscara uint8, pessoas), com o
+    tipo, a área (px) de cada uma, se é pequena (a página não exige) e se toca a borda da imagem."""
     escala2 = (REF_W / w) ** 2
     h = instancias.shape[0]
     ids, area = np.unique(instancias[instancias > 0], return_counts=True)
@@ -334,29 +341,23 @@ def numerar_pessoas(instancias: np.ndarray, tipos: list[str], w: int) -> tuple[n
                 "borda": borda,
             }
         )
-    jogadores = sorted((p for p in pessoas if p["tipo"] in JOGADOR), key=lambda p: p["x"])
-    outras = sorted((p for p in pessoas if p["tipo"] not in JOGADOR), key=lambda p: p["x"])
-    if len(jogadores) + len(outras) > 255:
+    pessoas.sort(key=lambda p: p["x"])
+    if len(pessoas) > 255:
         raise ValueError("pessoas demais para os números de 1 a 255")
     m = np.zeros(instancias.shape, np.uint8)
-    for k, p in enumerate(jogadores):
+    for k, p in enumerate(pessoas):
         p["numero"] = k + 1
         m[instancias == p["j"] + 1] = k + 1
-    for k, p in enumerate(outras):
-        p["numero"] = 255 - k
-        m[instancias == p["j"] + 1] = 255 - k
-    return m, jogadores, outras
+    return m, pessoas
 
 
-def paleta_da_verdade(n: int, m: int) -> list[tuple[int, int, int]]:
-    """Cores para quem abre a máscara num visualizador: cada jogador numa cor, as outras pessoas em
-    cinza, o resto preto (a página lê os números, não as cores)."""
+def paleta_da_verdade(n: int) -> list[tuple[int, int, int]]:
+    """Cores para quem abre a máscara num visualizador: cada pessoa numa cor, o resto preto (a página lê
+    os números, não as cores)."""
     cores = [(255, 64, 129), (64, 196, 255), (255, 214, 0), (118, 255, 3), (213, 0, 249), (255, 145, 0)]
     pal = [(0, 0, 0)] * 256
     for k in range(1, n + 1):
         pal[k] = cores[(k - 1) % len(cores)]
-    for k in range(256 - m, 256):
-        pal[k] = (170, 170, 170)
     return pal
 
 
@@ -440,7 +441,8 @@ def _cena(lab: Laboratorio, rng, dominio, w, h, campo, tipo, hfov, nitido, k1_ma
 
 
 def intercalar(cheios: list, vazios: list) -> list:
-    """Os itens sem resposta (sem pontos, sem jogador) espalhados pelo lote, não todos no fim."""
+    """Os itens especiais (sem pontos; só a torcida; só quem trabalha em volta do campo) espalhados pelo
+    lote, não todos no fim."""
     final = len(cheios) + len(vazios)
     lugar = {round((k + 1) * final / (len(vazios) + 1)): v for k, v in enumerate(vazios)}
     resto = iter(cheios)
@@ -577,31 +579,62 @@ def _mirar_em_outra_pessoa(lab: Laboratorio, rng, cena):
     return cena
 
 
-def gerar_jogadores(lote: LoteJogadores, lab: Laboratorio, w: int, h: int, n: int | None = None) -> list[dict]:
-    from anotacao.formatos import GabaritoJogadores
+def _mirar_na_torcida(lab: Laboratorio, rng, cena, campo):
+    """A câmera apontada para a arquibancada do outro lado do campo, bem fechada e acima das placas: só a
+    torcida na imagem, ninguém do gramado."""
+    cam = cena.cam
+    lado = 1.0 if cam.C[1] < 0 else -1.0
+    z = float(rng.uniform(4.0, 9.0))  # altura na arquibancada (m)
+    recuo = 9.0 + z / np.tan(np.radians(cena.style.stand_angle))  # a arquibancada começa 9 m depois da lateral
+    alvo = [float(rng.uniform(-campo.L / 3, campo.L / 3)), lado * (campo.W / 2 + recuo), z]
+    novo = lab.Camera.look_at(cam.C, alvo, float(rng.uniform(5.0, 9.0)), cam.w, cam.h, roll=0.0)
+    novo.meta["kind"] = cam.meta.get("kind", "")
+    cena.cam = novo
+    return cena
+
+
+def _tipo_do_item(rng, feitos: dict, especiais: dict, n_comuns: int, total: int) -> str:
+    """Que item tentar agora: um comum, ou um especial que ainda falta (espalhados pelas sementes)."""
+    faltam = [k for k, v in especiais.items() if len(feitos[k]) < v]
+    if len(feitos["comum"]) >= n_comuns:
+        return faltam[0]
+    for k in faltam:
+        if rng.random() < (especiais[k] - len(feitos[k])) / total:
+            return k
+    return "comum"
+
+
+def gerar_pessoas(lote: LotePessoas, lab: Laboratorio, w: int, h: int, n: int | None = None) -> list[dict]:
+    from anotacao.formatos import GabaritoPessoas
     from anotacao.mascara import gravar_png
 
     total = lote.n if n is None else min(n, lote.n)
-    n_vazios = min(lote.sem_jogadores, total) if n is None else min(lote.sem_jogadores, total // 10)
-    quota_outras = min(lote.com_outras, total) if n is None else min(lote.com_outras, total // 3)
-    cheios, vazios = [], []
+    especiais = {"so_outras": lote.so_outras, "so_torcida": lote.so_torcida}
+    if n is not None:  # experimentando com menos itens: os especiais só quando cabem
+        especiais = {k: min(v, total // 10) for k, v in especiais.items()}
+    n_comuns = total - sum(especiais.values())
+    quota_outras = min(lote.com_outras, n_comuns) if n is None else min(lote.com_outras, n_comuns // 3)
+    feitos: dict[str, list] = {"comum": [], "so_outras": [], "so_torcida": []}
     tentativa = 0
-    while len(cheios) < total - n_vazios or len(vazios) < n_vazios:
+    while len(feitos["comum"]) < n_comuns or any(len(feitos[k]) < v for k, v in especiais.items()):
         semente = lote.semente + tentativa
         tentativa += 1
         if tentativa > 150 * total:
-            raise RuntimeError(f"{lote.nome}: poucos quadros passam no filtro ({len(cheios) + len(vazios)} de {total})")
+            feitos_n = sum(len(v) for v in feitos.values())
+            raise RuntimeError(f"{lote.nome}: poucos quadros passam no filtro ({feitos_n} de {total})")
         rng = np.random.default_rng(semente)
-        vazio = len(cheios) >= total - n_vazios or (len(vazios) < n_vazios and rng.random() < n_vazios / total)
+        tipo_item = _tipo_do_item(rng, feitos, especiais, n_comuns, total)
         dominio = sortear(rng, lote.dominios)
         tipo = sortear(rng, lote.cameras)
         campo_lab = lab.FieldModel(L=PADRAO[0], W=PADRAO[1])
         cena = _cena(lab, rng, dominio, w, h, campo_lab, tipo, lote.hfov, lote.nitido, lote.k1_max)
         if cena is None:
             continue
-        if vazio and _mirar_em_outra_pessoa(lab, rng, cena) is None:
+        if tipo_item == "so_outras" and _mirar_em_outra_pessoa(lab, rng, cena) is None:
             continue
-        # filtro barato: quantos jogadores têm os pés perto da imagem
+        if tipo_item == "so_torcida":
+            _mirar_na_torcida(lab, rng, cena, campo_lab)
+        # filtro barato: quantas pessoas (e quantos jogadores) têm os pés perto da imagem
         pes, _ = cena.cam.project(np.array([[p.x, p.y, 0.0] for p in cena.people]))
         perto = (
             np.isfinite(pes).all(1)
@@ -610,49 +643,56 @@ def gerar_jogadores(lote: LoteJogadores, lab: Laboratorio, w: int, h: int, n: in
             & (pes[:, 1] > 0)
             & (pes[:, 1] < 1.3 * h)
         )
-        n_perto = sum(bool(perto[k]) and p.kind in JOGADOR for k, p in enumerate(cena.people))
-        if vazio and n_perto:
+        n_perto = int(perto.sum())
+        jog_perto = sum(bool(perto[k]) and p.kind in JOGADOR for k, p in enumerate(cena.people))
+        if tipo_item == "so_outras" and jog_perto:
             continue
-        if not vazio and not (lote.jogadores[0] <= n_perto <= lote.jogadores[1] + 6):
+        if tipo_item == "comum" and not (lote.pessoas[0] <= n_perto <= lote.pessoas[1] + 6):
             continue
         img, gt = lab.renderizador.render(cena)
         inst = gt["instancias"].copy()
         if not np.array_equal(inst > 0, gt["person_mask"] > 0):
             raise AssertionError(f"{lote.nome}, semente {semente}: quem é quem não bate com a máscara do renderizador")
         inst[gt["overlay_mask"] > 0] = 0  # o grafismo da emissora fica na frente de todo mundo
-        mascara, jogadores, outras = numerar_pessoas(inst, [p.kind for p in cena.people], w)
-        grandes = sum(not p["pequeno"] for p in jogadores)
-        outras_grandes = sum(not p["pequeno"] for p in outras)
-        if len(jogadores) + len(outras) > lote.max_pessoas:
+        mascara, pessoas = numerar_pessoas(inst, [p.kind for p in cena.people], w)
+        grandes = [p for p in pessoas if not p["pequeno"]]
+        jogadores = [p for p in pessoas if p["tipo"] in JOGADOR]
+        outras_grandes = sum(p["tipo"] not in JOGADOR for p in grandes)
+        if len(pessoas) > lote.max_pessoas:
             continue
-        if vazio:
+        if tipo_item == "so_torcida":
+            if pessoas:
+                continue
+        elif tipo_item == "so_outras":
             if jogadores or not outras_grandes:
                 continue
         else:
-            if not (lote.jogadores[0] <= grandes <= lote.jogadores[1]):
+            if not (lote.pessoas[0] <= len(grandes) <= lote.pessoas[1]):
                 continue
-            if sum(not p["pequeno"] and not p["borda"] for p in jogadores) < lote.inteiros:
+            if sum(not p["borda"] for p in grandes) < lote.inteiros:
                 continue
-            faltam_outras = quota_outras - sum(c["outras_grandes"] > 0 for c in cheios)
-            faltam_itens = total - n_vazios - len(cheios)
+            faltam_outras = quota_outras - sum(c["outras_grandes"] > 0 for c in feitos["comum"])
+            faltam_itens = n_comuns - len(feitos["comum"])
             if faltam_outras >= faltam_itens and not outras_grandes:
-                continue  # as vagas que sobram são das imagens com outras pessoas
-        areas = [p["area"] for p in jogadores]
+                continue  # as vagas que sobram são das imagens com quem não joga
+        areas = [p["area"] for p in pessoas]
         indice = {
+            "tipo_de_item": {"comum": "", "so_outras": "só quem não joga", "so_torcida": "só a torcida"}[tipo_item],
+            "pessoas": len(pessoas),
+            "pessoas_pequenas": len(pessoas) - len(grandes),
             "jogadores": len(jogadores),
-            "jogadores_pequenos": len(jogadores) - grandes,
-            "outras_pessoas": len(outras),
-            "pixels_de_jogador": int(sum(areas)),
-            "menor_jogador_px": min(areas) if areas else 0,
-            "maior_jogador_px": max(areas) if areas else 0,
+            "outras_pessoas": len(pessoas) - len(jogadores),
+            "pixels_de_pessoa": int(sum(areas)),
+            "menor_pessoa_px": min(areas) if areas else 0,
+            "maior_pessoa_px": max(areas) if areas else 0,
+            "quem_e_quem": " ".join(p["tipo"] for p in pessoas),  # na ordem dos números da máscara
         }
-        (vazios if vazio else cheios).append(
+        feitos[tipo_item].append(
             {
                 "cena": cena,
                 "img": img,
                 "mascara": mascara,
-                "n": len(jogadores),
-                "m": len(outras),
+                "n": len(pessoas),
                 "semente": semente,
                 "dominio": dominio,
                 "campo": campo_lab,
@@ -661,22 +701,21 @@ def gerar_jogadores(lote: LoteJogadores, lab: Laboratorio, w: int, h: int, n: in
             }
         )
         print(
-            f"{lote.nome}: {tipo}, {cena.cam.hfov:.1f}°, {len(jogadores)} jogadores ({grandes} grandes), "
-            f"{len(outras)} outras pessoas (semente {semente})",
+            f"{lote.nome}: {tipo}, {cena.cam.hfov:.1f}°, {len(pessoas)} pessoas ({len(grandes)} grandes, "
+            f"{len(jogadores)} jogadores), {tipo_item} (semente {semente})",
             flush=True,
         )
     itens = []
-    for k, c in enumerate(intercalar(cheios, vazios)):
+    for k, c in enumerate(intercalar(feitos["comum"], feitos["so_outras"] + feitos["so_torcida"])):
         gid = f"g{lote.primeiro + k:04d}"
-        item = GabaritoJogadores(
+        item = GabaritoPessoas(
             id=gid,
             lote=lote.nome,
             imagem=f"{gid}.jpg",
             mascara=f"{gid}.png",
             largura=w,
             altura=h,
-            jogadores=c["n"],
-            outras_pessoas=c["m"],
+            pessoas=c["n"],
             origem="simulador",
             observacao=f"simulador do laboratório, domínio {c['dominio']}, semente {c['semente']}",
         )
@@ -684,7 +723,7 @@ def gerar_jogadores(lote: LoteJogadores, lab: Laboratorio, w: int, h: int, n: in
             {
                 "item": item,
                 "jpg": _jpg(c["img"]),
-                "png": gravar_png(c["mascara"], paleta_da_verdade(c["n"], c["m"])),
+                "png": gravar_png(c["mascara"], paleta_da_verdade(c["n"])),
                 "imagem": c["img"],
                 "mascara": c["mascara"],
                 "indice": {**_comum(lote, gid, c["dominio"], c["cena"], c["semente"], c["campo"]), **c["indice"]},
@@ -713,16 +752,12 @@ def gravar_zip(destino: Path, itens: list[dict]) -> None:
 
 
 def com_a_resposta(it: dict) -> np.ndarray:
-    """O quadro com a resposta por cima: os pontos (verde à vista, laranja opcionais) ou a máscara
-    (os jogadores em rosa, as outras pessoas em amarelo)."""
+    """O quadro com a resposta por cima: os pontos (verde à vista, laranja opcionais) ou a máscara (as
+    pessoas em rosa)."""
     out = it["imagem"].copy()
     if "mascara" in it:
-        m = it["mascara"]
-        n = it["item"].jogadores
-        jog = (m >= 1) & (m <= n)
-        outras = m > n
-        out[jog] = (0.35 * out[jog] + 0.65 * np.array([129, 64, 255])).astype(np.uint8)
-        out[outras] = (0.35 * out[outras] + 0.65 * np.array([0, 214, 255])).astype(np.uint8)
+        pessoa = it["mascara"] > 0
+        out[pessoa] = (0.35 * out[pessoa] + 0.65 * np.array([129, 64, 255])).astype(np.uint8)
         return out
     r = max(round(4 * ref(out.shape[1])), 3)
     for p in it["item"].pontos:
@@ -750,7 +785,7 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--laboratorio", required=True, help="pasta do repositório do laboratório (placas-exposicao)")
     ap.add_argument("--saida", required=True, help="pasta onde ficam os .zip, os índices e os mosaicos")
-    ap.add_argument("--lotes", nargs="*", default=None, help="só estes lotes (ex.: P1-treino J1-treino)")
+    ap.add_argument("--lotes", nargs="*", default=None, help="só estes lotes (ex.: P1-treino PE1-treino)")
     ap.add_argument("--n", type=int, default=None, help="no máximo N itens por lote (para experimentar)")
     ap.add_argument("--largura", type=int, default=1280)
     ap.add_argument("--altura", type=int, default=720)
@@ -766,10 +801,10 @@ def main() -> None:
     escolhidos = [lt for lt in LOTES if args.lotes is None or lt.nome in args.lotes]
     if not escolhidos:
         ap.error(f"nenhum lote com esses nomes; os lotes são {', '.join(lt.nome for lt in LOTES)}")
-    linhas: dict[str, list[dict]] = {"pontos": [], "jogadores": []}
+    linhas: dict[str, list[dict]] = {"pontos": [], "pessoas": []}
     contagem = {}
     for lote in escolhidos:
-        gerar = gerar_pontos if lote.tarefa == "pontos" else gerar_jogadores
+        gerar = gerar_pontos if lote.tarefa == "pontos" else gerar_pessoas
         itens = gerar(lote, lab, args.largura, args.altura, args.n)
         gravar_zip(saida / f"ouro-{lote.nome}.zip", itens)
         gravar_mosaico(saida / f"mosaico-{lote.nome}.jpg", itens)

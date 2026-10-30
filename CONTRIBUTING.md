@@ -30,7 +30,7 @@ passa.
 ## Fluxo
 
 - `main` sempre verde e protegida; cada mudança num ramo (`feat/...`, `fix/...`, `docs/...`) e PR.
-- Commits no estilo Conventional Commits, em português: `feat: página dos jogadores`,
+- Commits no estilo Conventional Commits, em português: `feat: página das pessoas`,
   `fix: versão da revisão`, `docs: formato do rótulo`.
 - Mudança visível para quem anota entra no `CHANGELOG.md`, na seção "Não lançado".
 - Versões seguem SemVer; cada versão vira uma tag `vX.Y.Z`. A versão está em três lugares que um
@@ -57,8 +57,10 @@ passa.
   (`python scripts/gerar_arquivos_web.py`).
 - **As regras do gabarito ficam na página** (`REGRA` em `web/js/nucleo/gabarito.js`). Mudou uma regra,
   confira de novo com os anotadores simulados (`python scripts/conferir_regras.py --lotes <lotes>
-  --saida <tmp>`, ADR-0010) e atualize o README, `docs/formatos.md` e o texto da página do gabarito. Lotes novos saem de `scripts/lotes_de_ouro.py`, com faixas de id que não se
-  sobrepõem às dos lotes já entregues.
+  --saida <tmp>`, ADR-0010 e ADR-0011) e atualize o README, `docs/formatos.md` e o texto da página do
+  gabarito. Lotes novos saem de `scripts/lotes_de_ouro.py`, com faixas de id que não se sobrepõem às
+  dos lotes já entregues (nem às de lotes que não valem mais, como os g2xxx dos jogadores da 0.8: um
+  item com o id de outro que já está na pasta não é importado).
 - **Nunca dados no Git.** Vídeos, quadros, rótulos e conjuntos ficam na pasta de trabalho do Drive.
   Os únicos vídeos do repositório são os de teste, de poucos KB, em `tests/fixtures/video/`.
 - **Manual junto.** Regra de anotação nova vai primeiro para o Manual de anotação, com versão; a

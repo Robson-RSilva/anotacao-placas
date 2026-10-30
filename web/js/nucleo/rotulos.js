@@ -1,6 +1,6 @@
-// Montar, validar e gravar os rótulos das duas tarefas (pontos e jogadores) e as revisões cruzadas.
+// Montar, validar e gravar os rótulos das duas tarefas (pontos e pessoas) e as revisões cruzadas.
 //
-// Nos jogadores, a máscara (PNG) é gravada antes do rótulo: o índice só lê um rótulo depois que a
+// Nas pessoas, a máscara (PNG) é gravada antes do rótulo: o índice só lê um rótulo depois que a
 // máscara dele existe, e, no outro computador, um rótulo que chegou antes da máscara espera por ela.
 
 import { MANUAL, VERSAO, mascaraDe, nomeArquivo } from "./convencoes.js";
@@ -9,8 +9,8 @@ import { pendentesRevisao } from "./filas.js";
 import { TIPOS_DA_TAREFA, validar } from "./formatos.js";
 import { codificarPng } from "./png.js";
 
-/** As cores da máscara dos jogadores: 0 fundo, 1 jogador (só para quem abre o PNG num visualizador). */
-export const PALETA_JOGADORES = Object.freeze([[0, 0, 0], [255, 64, 129]]);
+/** As cores da máscara das pessoas: 0 fundo, 1 pessoa (só para quem abre o PNG num visualizador). */
+export const PALETA_PESSOAS = Object.freeze([[0, 0, 0], [255, 64, 129]]);
 
 /** O rótulo saiu da fila de revisão da pessoa (outra pessoa revisou, ou a fila mudou). */
 export class ForaDaFila extends Error {
@@ -32,14 +32,14 @@ export function contarPintados(mascara) {
 /**
  * Monta e valida um rótulo (sem gravar). `dados` traz partida, quadro, largura, altura, partiu_de,
  * situacao ("ok" ou "descartada"), motivo_descarte, comentario e segundos_ativos; nos pontos, `pontos`
- * ([{ponto, x, y}], px da imagem); nos jogadores, `mascara` (Uint8Array, 1 onde há jogador; null na
+ * ([{ponto, x, y}], px da imagem); nas pessoas, `mascara` (Uint8Array, 1 onde há pessoa; null na
  * imagem descartada). `corrige` é opcional. Devolve {nome, rotulo, mascara}.
  */
 export function montarRotulo(tarefa, pessoa, dados, { versao, agora = new Date() }) {
   const nome = nomeArquivo(dados.quadro, pessoa, versao);
   const descartada = dados.situacao === "descartada";
   const r = {
-    formato: tarefa === "pontos" ? "rotulo.pontos/1" : "rotulo.jogadores/1",
+    formato: tarefa === "pontos" ? "rotulo.pontos/1" : "rotulo.pessoas/1",
     partida: dados.partida,
     quadro: dados.quadro,
     anotador: pessoa,
@@ -74,14 +74,14 @@ export async function salvarRotulo(indice, tarefa, pessoa, dados, { agora = new 
   const dir = pasta.rotulos(dados.partida, tarefa);
   const versao = await pasta.proximaVersao(dir, dados.quadro, pessoa);
   const { nome, rotulo, mascara } = montarRotulo(tarefa, pessoa, dados, { versao, agora });
-  if (mascara) await pasta.escrever(`${dir}/${rotulo.mascara}`, await codificarPng(mascara, rotulo.largura, rotulo.altura, PALETA_JOGADORES));
+  if (mascara) await pasta.escrever(`${dir}/${rotulo.mascara}`, await codificarPng(mascara, rotulo.largura, rotulo.altura, PALETA_PESSOAS));
   await pasta.escreverJson(`${dir}/${nome}`, rotulo);
   return { nome, caminho: `${dir}/${nome}`, rotulo, mascara };
 }
 
 function montarRevisao(tarefa, arquivo, pessoa, versao, { decisao, motivo, comentario, segundos_ativos }, nova, agora) {
   return {
-    formato: tarefa === "pontos" ? "revisao.pontos/1" : "revisao.jogadores/1",
+    formato: tarefa === "pontos" ? "revisao.pontos/1" : "revisao.pessoas/1",
     partida: arquivo.partida,
     quadro: arquivo.quadro,
     rotulo: arquivo.nome,

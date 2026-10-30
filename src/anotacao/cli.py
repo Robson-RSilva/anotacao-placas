@@ -6,7 +6,7 @@ comandos trabalham sobre a mesma pasta:
 anotacao exemplo trabalho/                  cria uma pasta de trabalho de exemplo
 anotacao gabarito ORIGEM --pasta trabalho/  importa itens do gabarito
 anotacao prever --tarefa pontos --pasta trabalho/ --previsor pacote.modulo:objeto      pontos de um modelo
-anotacao prever --tarefa jogadores --pasta trabalho/ --previsor pacote.modulo:objeto   pré-pintura
+anotacao prever --tarefa pessoas --pasta trabalho/ --previsor pacote.modulo:objeto     pré-pintura
 anotacao validar --pasta trabalho/          confere todos os arquivos
 anotacao unificar --pasta trabalho/         gera os conjuntos de treino
 anotacao esquemas DESTINO                   exporta os JSON Schemas dos formatos
@@ -23,7 +23,7 @@ from pathlib import Path
 import numpy as np
 
 from . import __version__
-from .formatos import DispositivoPessoa, Divisao, Equipe, GabaritoJogadores, Membro, exportar_esquemas
+from .formatos import DispositivoPessoa, Divisao, Equipe, GabaritoPessoas, Membro, exportar_esquemas
 from .gabarito import conferir_mascara, ler_item
 from .gabarito import importar as importar_gabarito
 from .indice import Indice
@@ -43,7 +43,7 @@ def equipe_exemplo() -> Equipe:
 
 
 def _conferir_mascara(caminho: Path, r) -> str | None:
-    """A máscara de um rótulo dos jogadores existe, tem o tamanho da imagem, só 0 e 1, e os pixels
+    """A máscara de um rótulo das pessoas existe, tem o tamanho da imagem, só 0 e 1, e os pixels
     pintados que o rótulo diz."""
     try:
         m = ler_png(caminho)
@@ -95,7 +95,7 @@ def cmd_validar(a: argparse.Namespace) -> int:
         if faltando:
             problemas.append(f"{pid}: {len(faltando)} quadro(s) da fila sem imagem (ex.: {faltando[0]})")
         do_quadro = {it.quadro for it in fila.itens}
-        for tarefa in ("pontos", "jogadores"):
+        for tarefa in ("pontos", "pessoas"):
             ip = indice.partida(pid, tarefa)
             problemas += [f"{rel(p)}: {e}" for p, e in ip.invalidos]
             problemas += [f"{rel(p)}: a máscara ainda não chegou" for p in ip.esperando]
@@ -103,7 +103,7 @@ def cmd_validar(a: argparse.Namespace) -> int:
                 r = indice.rotulo(arq, tarefa)
                 if arq.quadro not in do_quadro:
                     problemas.append(f"{rel(arq.caminho)}: o quadro não está na fila da partida")
-                if tarefa == "jogadores" and r.mascara is not None:
+                if tarefa == "pessoas" and r.mascara is not None:
                     erro = _conferir_mascara(arq.caminho.parent / r.mascara, r)
                     if erro:
                         problemas.append(f"{rel(arq.caminho)}: {erro}")
@@ -115,28 +115,28 @@ def cmd_validar(a: argparse.Namespace) -> int:
             problemas.append(f"{rel(p)}: {str(e).splitlines()[0]}")
             continue
         if item is None:
-            continue  # item das versões até a 0.7 (câmera ou oclusão): fica fora
+            continue  # item das versões anteriores (câmera, oclusão ou jogadores): fica fora
         if item.id != p.stem:
             problemas.append(f"{rel(p)}: o nome do arquivo precisa ser o id do item ({item.id})")
             continue
         itens[item.id] = item
-        if isinstance(item, GabaritoJogadores):
+        if isinstance(item, GabaritoPessoas):
             try:
                 conferir_mascara((p.parent / item.mascara).read_bytes(), item)
             except (ValueError, OSError) as e:
                 problemas.append(f"{rel(p)}: {e}")
-    for tarefa in ("pontos", "jogadores"):
+    for tarefa in ("pontos", "pessoas"):
         gab = indice.partida("gabarito", tarefa)
         problemas += [f"{rel(p)}: {e}" for p, e in gab.invalidos]
         for arq in gab.rotulos:
             item = itens.get(arq.quadro)
-            if item is None or (tarefa == "jogadores") != isinstance(item, GabaritoJogadores):
+            if item is None or (tarefa == "pessoas") != isinstance(item, GabaritoPessoas):
                 problemas.append(f"{rel(arq.caminho)}: não há item {arq.quadro} de {tarefa} no gabarito")
                 continue
             r = indice.rotulo(arq, tarefa)
             if (r.largura, r.altura) != (item.largura, item.altura):
                 problemas.append(f"{rel(arq.caminho)}: o tamanho não é o da imagem do item")
-            if tarefa == "jogadores" and r.mascara is not None:
+            if tarefa == "pessoas" and r.mascara is not None:
                 erro = _conferir_mascara(arq.caminho.parent / r.mascara, r)
                 if erro:
                     problemas.append(f"{rel(arq.caminho)}: {erro}")
@@ -156,10 +156,10 @@ def cmd_validar(a: argparse.Namespace) -> int:
 def cmd_unificar(a: argparse.Namespace) -> int:
     destino = unificar(Pasta(a.pasta))
     man = json.loads((destino / "manifesto.json").read_text(encoding="utf-8"))
-    po, jo = man["pontos"], man["jogadores"]
+    po, pe = man["pontos"], man["pessoas"]
     print(f"{destino}:")
     print(f"  pontos: {po['quadros']} quadros, {po['pontos']} pontos {po['por_conjunto']}")
-    print(f"  jogadores: {jo['quadros']} quadros {jo['por_conjunto']}")
+    print(f"  pessoas: {pe['quadros']} quadros {pe['por_conjunto']}")
     for tarefa, motivos in man["descartados"].items():
         if motivos:
             print(f"  descartados em {tarefa}: {motivos}")
@@ -200,15 +200,15 @@ def construir_parser() -> argparse.ArgumentParser:
     p.add_argument("destino")
     p.set_defaults(func=cmd_exemplo)
 
-    p = sub.add_parser("gabarito", help="importa itens do gabarito (<id>.json + JPEG; nos jogadores, + a máscara PNG)")
+    p = sub.add_parser("gabarito", help="importa itens do gabarito (<id>.json + JPEG; nas pessoas, + a máscara PNG)")
     p.add_argument("origem")
     p.add_argument("--pasta", default=_pasta_padrao())
     p.set_defaults(func=cmd_gabarito)
 
-    p = sub.add_parser("prever", help="grava os pontos (ou a pré-pintura dos jogadores) de um modelo para cada quadro")
+    p = sub.add_parser("prever", help="grava os pontos (ou a pré-pintura das pessoas) de um modelo para cada quadro")
     p.add_argument("--pasta", default=_pasta_padrao())
     p.add_argument("--previsor", required=True, help="pacote.modulo:objeto")
-    p.add_argument("--tarefa", choices=["pontos", "jogadores"], required=True)
+    p.add_argument("--tarefa", choices=["pontos", "pessoas"], required=True)
     p.add_argument("--partida", action="append", help="só esta partida (pode repetir)")
     p.add_argument("--refazer", action="store_true", help="refaz as previsões que já existem")
     p.set_defaults(func=cmd_prever)

@@ -8,13 +8,14 @@ pessoa. Duas tarefas, cada uma feita direto na imagem:
 | --- | --- | --- |
 | Central e importação | cadastro da partida (estádio, emissora, competição, data e hora, iluminação, chuva) e os quadros sorteados, do vídeo inteiro ou só dos trechos escolhidos | separar treino e teste por jogo e equilibrar a amostra |
 | Pontos do campo | clicar em cada ponto do campo que aparece (cruzamentos de linhas, marcas, traves), dando o nome de cada um pelo mapa do campo | alvo dos pontos-chave do detector |
-| Jogadores | pintar todos os jogadores da imagem, goleiros inclusive (árbitro, gandulas e torcida não) | alvo da máscara de jogadores |
+| Pessoas em campo | pintar todas as pessoas no gramado e em volta dele — jogadores, árbitros, gandulas, fotógrafos, comissão: quem pode ficar na frente de uma placa (a torcida não) | alvo da máscara de pessoas |
 | Revisão às cegas | aprovar, corrigir ou devolver o trabalho de outra pessoa, sem saber de quem é | só entra no treino o que foi aprovado |
 | Gabarito | o teste de quem começa, com o resultado na hora, e os itens que medem cada pessoa depois | medir a qualidade de cada um |
 
 Em qualquer das duas tarefas, a imagem que não dá para anotar (transição, borrão, grafismo da
 emissora por cima) é **descartada** com um motivo — e o descarte também passa pela revisão. Imagem
-sem nenhum ponto (um close) ou sem jogador é salva vazia: é um exemplo de treino como os outros.
+sem nenhum ponto (um close) ou sem ninguém para pintar é salva vazia: é um exemplo de treino como os
+outros.
 
 Cortes, replays, grafismos, lado do estádio e artes das placas são resolvidos por regras e pelo
 cadastro do estádio, sem treino, e são conferidos na **solução assistida** — outro projeto, com
@@ -49,8 +50,8 @@ liga os dois é a pasta de trabalho.
 - **Com a pasta da equipe no Google Drive** (o jeito normal): cada pessoa instala o Google Drive para
   computador, abre o site e escolhe a **mesma pasta** da equipe. Cada um digita o **seu** código. O
   rótulo de uma pessoa é um arquivo dela, que o Drive leva para o computador da outra; a revisão
-  volta do mesmo jeito. As páginas paradas sem nada a fazer — a revisão sem rótulos, os pontos ou os
-  jogadores sem imagens, a central — conferem sozinhas a cada 15 segundos (e quando você volta para
+  volta do mesmo jeito. As páginas paradas sem nada a fazer — a revisão sem rótulos, os pontos ou a
+  pintura sem imagens, a central — conferem sozinhas a cada 15 segundos (e quando você volta para
   a aba) e mostram o que chegou, sem recarregar. Uma partida importada por uma pessoa aparece para as
   outras assim que o Drive termina de sincronizar os quadros.
 - **Sem pasta sincronizada**, pelo armazenamento do navegador e arquivos .zip: quem importou a
@@ -90,21 +91,24 @@ Não é preciso cadastrar equipe nem levantar o estádio antes: basta importar a
    até ficar como a imagem — o lado de baixo é o mais perto da câmera. Os nomes dos lados são os do
    campo ("cab", o lado das cabines), e a mesma marcação vista do outro lado do campo (girada 180°)
    também vale.
-3. **Pintar os jogadores.** A imagem inteira, sem nada por cima: pinte cada jogador, do cabelo à
-   chuteira, com o pincel ou o laço (contornar à mão ou clique a clique); a borracha (`E`) apaga.
-   Goleiros são jogadores; árbitros, gandulas, fotógrafos, comissão técnica e torcida não se pintam,
-   nem a sombra. A máscara (1 onde há jogador) vai num PNG ao lado do rótulo.
+3. **Pintar as pessoas em campo.** A imagem inteira, sem nada por cima: pinte cada pessoa no gramado
+   e em volta dele, até as placas — jogadores e goleiros, árbitros e assistentes, gandulas, fotógrafos e
+   cinegrafistas, comissão técnica e reservas, seguranças, maqueiros: qualquer um que possa ficar na
+   frente de uma placa —, do cabelo ao pé, com o pincel ou o laço (contornar à mão ou clique a
+   clique); a borracha (`E`) apaga. A torcida e as sombras não se pintam. A máscara (1 onde há pessoa)
+   vai num PNG ao lado do rótulo.
 4. **Descartar** (`D`), nas duas tarefas, a imagem que não dá para anotar: transição entre tomadas,
    borrada demais, grafismo da emissora cobrindo a imagem ou outro motivo (com comentário). O
    descarte é um rótulo como os outros e vai para a revisão.
 5. **Revisão às cegas.** Cada rótulo vai para qualquer outra pessoa (nunca para quem anotou), sem o
    nome de quem anotou: aprovar, corrigir (vira versão nova, com a autoria de quem revisou) ou devolver
    com um motivo da lista. A página de revisão traz o passo a passo ("Como revisar"): nos pontos,
-   conferir o lugar (até 2 px) e o nome de cada ponto e procurar o que faltou; nos jogadores, conferir
-   o contorno, quem faltou e quem foi pintado sem ser jogador; num descarte, se dava mesmo para
-   anotar. Nos quadros em dupla às cegas, a revisão só abre depois que as duas pessoas anotaram.
+   conferir o lugar (até 2 px) e o nome de cada ponto e procurar o que faltou; na pintura, conferir o
+   contorno, quem faltou (o árbitro e quem trabalha em volta do campo também) e se algo da torcida ou
+   uma sombra foi pintado; num descarte, se dava mesmo para anotar. Nos quadros em dupla às cegas, a
+   revisão só abre depois que as duas pessoas anotaram.
 6. **Unificar** (Python, por quem treina). `anotacao unificar` lê tudo, valida de novo e gera
-   `conjuntos/<data-hora>/pontos.parquet`, `pontos_lista.parquet` e `jogadores.parquet` com
+   `conjuntos/<data-hora>/pontos.parquet`, `pontos_lista.parquet` e `pessoas.parquet` com
    manifesto, respeitando a divisão por partida: quadros de um jogo nunca se misturam entre treino e
    teste. Imagens descartadas ficam de fora (o manifesto conta por motivo).
 
@@ -120,9 +124,10 @@ você anota como sempre e, ao salvar, vê o resultado — o que acertou, o que f
 - **Pontos:** um item dá certo sem nenhum ponto errado (nome trocado, ou a mais de 8 px do lugar
   certo), com pelo menos 80% dos pontos que aparecem marcados e o erro mediano em até 2 px (px na
   referência de 960 de largura). Pontos cobertos são opcionais. Libera com 8 certos dos últimos 10.
-- **Jogadores:** com 1 px de tolerância na borda, cada jogador pintado em pelo menos metade da área,
-  ninguém que não é jogador pintado (25% de uma outra pessoa já conta) e a sobreposição com a
-  resposta (IoU) de pelo menos 80%. Libera com 4 certos dos últimos 5.
+- **Pessoas:** com 1 px de tolerância na borda, cada pessoa pintada em pelo menos metade da área (as
+  menores que 30 px, na referência de 960, não contam) e a sobreposição com a resposta (IoU) de pelo
+  menos 80% — o que se pinta a mais (a torcida, uma sombra, um contorno largo) derruba a sobreposição.
+  Libera com 4 certos dos últimos 5.
 
 Até ser liberada, a pessoa só vê o teste na página da tarefa. Depois, uma imagem do gabarito entra
 escondida a cada 15 imagens reais, sem aviso e sem resultado, e a liberação continua contando os
@@ -136,11 +141,23 @@ Os **lotes de ouro** são gabaritos prontos, gerados com o simulador do laborat�
 | P1-treino | g1001–g1030 | teste dos pontos: dia, câmeras centrais, imagem nítida |
 | P2-variado | g1101–g1140 | controle dos pontos: todas as câmeras e campos de vários tamanhos, com closes sem pontos |
 | P3-noite | g1201–g1220 | controle dos pontos à noite |
-| J1-treino | g2001–g2012 | teste dos jogadores: planos fechados, poucos jogadores grandes |
-| J2-variado | g2101–g2116 | controle dos jogadores: dia e noite, mais gente, árbitros e gandulas, um item sem jogador |
+| PE1-treino | g3001–g3012 | teste da pintura: planos fechados com poucas pessoas grandes (jogadores, árbitro, gandulas, fotógrafos), um só com um gandula ou fotógrafo, um só com a torcida |
+| PE2-variado | g3101–g3116 | controle da pintura: dia e noite, mais gente no gramado e em volta dele, um só com quem trabalha em volta do campo, um só com a torcida |
 
 O teste usa primeiro os lotes com "treino" no nome; os itens escondidos, primeiro os outros. As
-regras foram conferidas com anotadores simulados nesses lotes ([ADR-0010](docs/adr/0010-marcar-e-pintar-direto-na-imagem.md)).
+regras foram conferidas com anotadores simulados nesses lotes ([ADR-0010](docs/adr/0010-marcar-e-pintar-direto-na-imagem.md)
+e [ADR-0011](docs/adr/0011-pintar-todas-as-pessoas-em-campo.md)). Os lotes J1 e J2 da 0.8 (só os
+jogadores, g2xxx) não valem mais: a página não os usa, mesmo que estejam na pasta.
+
+## O placar
+
+A central mostra, para cada tarefa, o placar da equipe (um ponto só conta depois de aprovado na
+revisão às cegas): aprovados na semana e no total, a taxa de aprovação, o **tempo por imagem** e o
+**tempo por revisão**, a concordância nos quadros em dupla, o gabarito e os dias seguidos. Os tempos
+são medianas do tempo ativo gravado em cada arquivo — a página só conta enquanto está visível e houve
+uso nos últimos 20 segundos. O tempo por imagem é o dos rótulos da própria pessoa, sem os descartes
+(levam segundos e não dizem quanto custa anotar) e sem as correções que ela fez revisando, que
+contam no tempo por revisão.
 
 ## Pasta de trabalho
 
@@ -151,10 +168,10 @@ trabalho/                                   a pasta da equipe, sincronizada com 
     manifesto.json, tomadas.json, fila.json
     quadros/<quadro>.jpg                      só os sorteados
     previsoes/pontos/<quadro>.json            pontos de um modelo (anotacao prever --tarefa pontos)
-    previsoes/jogadores/<quadro>.png          pré-pintura de um modelo (anotacao prever --tarefa jogadores)
+    previsoes/pessoas/<quadro>.png            pré-pintura de um modelo (anotacao prever --tarefa pessoas)
     rotulos/pontos/<quadro>__<código>__v<n>.json
-    rotulos/jogadores/<quadro>__<código>__v<n>.json + .png   o rótulo e a máscara ao lado
-    revisoes/pontos/…, revisoes/jogadores/…
+    rotulos/pessoas/<quadro>__<código>__v<n>.json + .png     o rótulo e a máscara ao lado
+    revisoes/pontos/…, revisoes/pessoas/…
   gabarito/itens/, gabarito/rotulos/          nunca entram no treino
   pessoas/<código>/<navegador>.json           em que computadores cada código é usado
   conjuntos/<data-hora>/                      saída do unificar
@@ -163,8 +180,8 @@ trabalho/                                   a pasta da equipe, sincronizada com 
 Um arquivo por pessoa e por versão: ninguém edita o arquivo de outra pessoa, então o Drive nunca
 entra em conflito. A escrita é atômica e nenhum rótulo ou revisão existente é sobrescrito. Os
 formatos estão em [docs/formatos.md](docs/formatos.md), com os JSON Schemas em `web/esquemas/`. Os
-arquivos das versões até a 0.7 (câmera, oclusão, pacotes de estádio) ficam onde estão e não entram
-em nada; as partidas importadas antes continuam valendo.
+arquivos das versões anteriores (câmera, oclusão e pacotes de estádio, até a 0.7; os jogadores, da
+0.8) ficam onde estão e não entram em nada; as partidas importadas antes continuam valendo.
 
 ## Para quem coordena e treina (Python)
 
@@ -173,16 +190,16 @@ python -m venv .venv && source .venv/bin/activate     # no Windows: .venv\Script
 pip install -e .
 
 anotacao exemplo trabalho                   # pasta de exemplo, com os nomes de A01 e A02
-anotacao gabarito ORIGEM --pasta P          # importa itens do gabarito (<id>.json + JPEG; nos jogadores, + PNG)
+anotacao gabarito ORIGEM --pasta P          # importa itens do gabarito (<id>.json + JPEG; nas pessoas, + PNG)
 anotacao prever --tarefa pontos --pasta P --previsor pacote.modulo:objeto      # pontos de um modelo
-anotacao prever --tarefa jogadores --pasta P --previsor pacote.modulo:objeto   # pré-pintura dos jogadores
+anotacao prever --tarefa pessoas --pasta P --previsor pacote.modulo:objeto     # pré-pintura das pessoas
 anotacao validar --pasta P                  # confere todos os arquivos
 anotacao unificar --pasta P                 # gera os conjuntos de treino
 anotacao esquemas DESTINO                   # exporta os JSON Schemas
 ```
 
 Com o laboratório ao lado: `scripts/lotes_de_ouro.py --laboratorio ../placas-exposicao --saida lotes`
-gera os lotes de ouro (um .zip por lote, `indice-pontos.csv`, `indice-jogadores.csv`, `lotes.json` e
+gera os lotes de ouro (um .zip por lote, `indice-pontos.csv`, `indice-pessoas.csv`, `lotes.json` e
 um mosaico de cada lote com a resposta por cima); `scripts/conferir_regras.py` passa anotadores
 simulados por esses lotes, com as regras da página; e `scripts/video_demo_do_laboratorio.py` monta
 um vídeo MP4 de demonstração a partir de uma transmissão sintética.
@@ -215,7 +232,7 @@ arquitetura em [docs/arquitetura.md](docs/arquitetura.md) e decisões em [docs/a
 ## Próximos passos
 
 - Previsor com o detector do laboratório (`anotacao prever --previsor pacote.modulo:objeto`): os
-  pontos já marcados e a máscara de jogadores como pré-pintura, para quem anota só corrigir.
+  pontos já marcados e a máscara de pessoas como pré-pintura, para quem anota só corrigir.
 - Gabarito arbitrado: rótulos reais aprovados por duas pessoas que concordam viram itens do gabarito
   (origem `arbitrado`), para medir também nas imagens de verdade.
 - Baixar o vídeo pela própria página (depende de onde os vídeos vêm).

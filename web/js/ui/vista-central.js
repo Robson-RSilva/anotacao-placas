@@ -6,7 +6,7 @@ import { REGRA } from "../nucleo/gabarito.js";
 import { calcularPlacar } from "../nucleo/placar.js";
 import { exportarZip, importarZip, soDaPessoa } from "../nucleo/transferencia.js";
 import { espaco } from "./armazenamento.js";
-import { baixar, carimbo, celula, el, formatarTempo, linhaVazia, local, mensagemDeErro, numero } from "./util.js";
+import { baixar, carimbo, celula, el, formatarDuracao, linhaVazia, local, mensagemDeErro, numero } from "./util.js";
 import { vigiar } from "./vigia.js";
 
 const porcento = (a, b) => (b ? `${a} (${Math.round((100 * a) / b)}%)` : String(a));
@@ -97,7 +97,7 @@ export async function montar(raiz, ctx) {
     setTimeout(recarregar, 0);
   };
   if (!pessoa) $("dica-pessoa").textContent = "digite o seu código para começar";
-  for (const id of ["ir-pontos", "ir-jogadores", "ir-revisao-pontos", "ir-revisao-jogadores"]) {
+  for (const id of ["ir-pontos", "ir-pessoas", "ir-revisao-pontos", "ir-revisao-pessoas"]) {
     $(id).classList.toggle("desligado", !pessoa);
     $(id).addEventListener("click", (e) => {
       if (e.currentTarget.classList.contains("desligado")) e.preventDefault();
@@ -152,33 +152,34 @@ export async function montar(raiz, ctx) {
 
   async function atualizarSituacao() {
     if (!pessoa) {
-      for (const id of ["st-pontos", "st-jogadores", "st-revisao", "st-gabarito"]) $(id).textContent = "Digite o seu código no alto da página.";
+      for (const id of ["st-pontos", "st-pessoas", "st-revisao", "st-gabarito"]) $(id).textContent = "Digite o seu código no alto da página.";
       return;
     }
     const [sp, sj, rp, rj] = await Promise.allSettled([
       situacao(indice, "pontos", pessoa),
-      situacao(indice, "jogadores", pessoa),
+      situacao(indice, "pessoas", pessoa),
       pendentesRevisao(indice, "pontos", pessoa),
-      pendentesRevisao(indice, "jogadores", pessoa),
+      pendentesRevisao(indice, "pessoas", pessoa),
     ]);
     if (!vivo) return;
-    for (const [tarefa, r] of [["pontos", sp], ["jogadores", sj]]) {
+    for (const [tarefa, r] of [["pontos", sp], ["pessoas", sj]]) {
       $(`st-${tarefa}`).textContent = r.status === "fulfilled" ? textoDaTarefa(tarefa, r.value) : mensagemDeErro(r.reason);
       const emTeste = r.status === "fulfilled" && !r.value.liberado;
-      $(`ir-${tarefa}`).textContent = emTeste ? "Fazer o teste" : tarefa === "pontos" ? "Marcar pontos" : "Pintar jogadores";
+      $(`ir-${tarefa}`).textContent = emTeste ? "Fazer o teste" : tarefa === "pontos" ? "Marcar pontos" : "Pintar pessoas";
     }
     if (rp.status === "fulfilled" && rj.status === "fulfilled") {
       const [np, nj] = [rp.value.length, rj.value.length];
-      $("st-revisao").textContent = np || nj ? `Esperando revisão: ${np} de pontos e ${nj} de jogadores.` : "Nada esperando revisão.";
+      $("st-revisao").textContent = np || nj ? `Esperando revisão: ${np} de pontos e ${nj} de pintura.` : "Nada esperando revisão.";
     } else {
       $("st-revisao").textContent = mensagemDeErro(rp.reason ?? rj.reason);
     }
     const partes = [];
-    for (const [tarefa, r] of [["pontos", sp], ["jogadores", sj]]) {
+    for (const [tarefa, r] of [["pontos", sp], ["pessoas", sj]]) {
       if (r.status !== "fulfilled") continue;
       const s = r.value;
-      if (!s.gabarito_total) partes.push(`${tarefa}: sem gabarito`);
-      else partes.push(`${tarefa}: ${s.liberado ? "liberado" : s.n ? `em teste (${s.acertos} certo(s) em ${s.ultimos})` : "teste a fazer"}`);
+      const nome = tarefa === "pontos" ? "pontos" : "pintura";
+      if (!s.gabarito_total) partes.push(`${nome}: sem gabarito`);
+      else partes.push(`${nome}: ${s.liberado ? "liberado" : s.n ? `em teste (${s.acertos} certo(s) em ${s.ultimos})` : "teste a fazer"}`);
     }
     $("st-gabarito").textContent = partes.length ? `${partes.join(" · ")}.` : "—";
   }
@@ -204,9 +205,9 @@ export async function montar(raiz, ctx) {
   const tPartidas = $("partidas").querySelector("tbody");
   const tPlacar = $("placar").querySelector("tbody");
   linhaVazia(tPartidas, 7, "calculando…");
-  linhaVazia(tPlacar, 9, "calculando…");
+  linhaVazia(tPlacar, 10, "calculando…");
   let ultimoPlacar = null;
-  let tarefaPlacar = local.ler("placar", "pontos") === "jogadores" ? "jogadores" : "pontos";
+  let tarefaPlacar = local.ler("placar", "pontos") === "pessoas" ? "pessoas" : "pontos";
 
   function mostrarPlacar() {
     const pl = ultimoPlacar;
@@ -216,7 +217,8 @@ export async function montar(raiz, ctx) {
     const dados = pl[tarefaPlacar];
     $("th-concordancia").textContent = pontos ? "Concordância (cegos, px)" : "Concordância (cegos, sobreposição)";
     const linhasPlacar = [];
-    for (const p of dados.pessoas) {
+    const duracao = (s) => (s === null ? "—" : formatarDuracao(s));
+    for (const p of dados.equipe) {
       if (!p.rotulos && !p.revisoes_feitas && !p.gabarito_n) continue; // quem ainda não fez nada nesta tarefa
       const tr = document.createElement("tr");
       const gab = p.gabarito_n ? `${p.gabarito_acertos} certo(s) em ${p.gabarito_n}` : "—";
@@ -226,7 +228,8 @@ export async function montar(raiz, ctx) {
         celula(String(p.aprovados_semana), "num"),
         celula(String(p.aprovados), "num"),
         celula(p.taxa_aprovacao === null ? "—" : `${Math.round(100 * p.taxa_aprovacao)}%`, "num"),
-        celula(p.tempo_mediano_s === null ? "—" : formatarTempo(p.tempo_mediano_s), "num"),
+        celula(duracao(p.tempo_mediano_s), "num"),
+        celula(duracao(p.tempo_mediano_revisao_s), "num"),
         celula(concordancia, "num"),
         celula(gab + (p.liberado ? "" : " · em teste")),
         celula(String(p.dias_seguidos), "num"),
@@ -235,7 +238,7 @@ export async function montar(raiz, ctx) {
       linhasPlacar.push(tr);
     }
     tPlacar.replaceChildren(...linhasPlacar);
-    if (!linhasPlacar.length) linhaVazia(tPlacar, 9, pontos ? "Ninguém marcou pontos ainda." : "Ninguém pintou ainda.");
+    if (!linhasPlacar.length) linhaVazia(tPlacar, 10, pontos ? "Ninguém marcou pontos ainda." : "Ninguém pintou ainda.");
   }
   for (const b of raiz.querySelectorAll("[data-placar]")) {
     b.onclick = () => {
@@ -265,11 +268,11 @@ export async function montar(raiz, ctx) {
       tr.append(celula(p.partida), aviso);
       linhasPartidas.push(tr);
     }
-    const jogadoresDe = new Map(pl.jogadores.partidas.map((g) => [g.partida, g]));
+    const pinturaDe = new Map(pl.pessoas.partidas.map((g) => [g.partida, g]));
     const aprovados = (g) => `${porcento(g.aprovados, g.sorteados)}${g.descartados ? ` (${g.descartados} desc.)` : ""}`;
     for (const g of [...pl.pontos.partidas].reverse()) {
       const c = (await indice.manifesto(g.partida)).cadastro;
-      const j = jogadoresDe.get(g.partida);
+      const j = pinturaDe.get(g.partida);
       const tr = document.createElement("tr");
       tr.append(
         celula(g.partida),
@@ -285,7 +288,7 @@ export async function montar(raiz, ctx) {
     if (!vivo) return;
     tPartidas.replaceChildren(...linhasPartidas);
     if (!linhasPartidas.length) linhaVazia(tPartidas, 7, "Nenhuma partida importada ainda.");
-    const codigos = new Set([...nomes.keys(), ...pl.pontos.pessoas.map((x) => x.pessoa), ...pl.jogadores.pessoas.map((x) => x.pessoa)]); // quem já anotou nesta pasta
+    const codigos = new Set([...nomes.keys(), ...pl.pontos.equipe.map((x) => x.pessoa), ...pl.pessoas.equipe.map((x) => x.pessoa)]); // quem já anotou nesta pasta
     const chave = [...codigos].sort().join(",");
     if (chave !== sugeridos) {
       sugeridos = chave;
