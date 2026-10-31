@@ -398,6 +398,9 @@ class GabaritoPontos(Modelo):
     pontos: list[PontoVerdadeiro]
     origem: Literal["simulador", "arbitrado"]
     observacao: str = ""
+    fora_de: list[Pessoa] = Field(
+        default_factory=list, description="quem não recebe o item: quem anotou ou revisou a imagem de onde ele veio"
+    )
 
     @model_validator(mode="after")
     def _coerencia(self):
@@ -549,6 +552,9 @@ class GabaritoPlacas(Modelo):
     resposta: Literal["pintar", "descartar"] = "pintar"
     origem: Literal["simulador", "arbitrado"]
     observacao: str = ""
+    fora_de: list[Pessoa] = Field(
+        default_factory=list, description="quem não recebe o item: quem anotou ou revisou o recorte de onde ele veio"
+    )
 
     @model_validator(mode="after")
     def _coerencia(self):

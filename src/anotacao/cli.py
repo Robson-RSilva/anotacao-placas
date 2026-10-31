@@ -10,6 +10,7 @@ anotacao prever --tarefa pontos --pasta trabalho/ --previsor pacote.modulo:objet
 anotacao prever --tarefa placas --pasta trabalho/ --previsor pacote.modulo:objeto     pré-pintura das placas
 anotacao validar --pasta trabalho/          confere todos os arquivos
 anotacao unificar --pasta trabalho/         gera os conjuntos de treino
+anotacao ouro --pasta trabalho/             monta um lote de ouro com os itens aprovados (gabarito arbitrado)
 anotacao esquemas DESTINO                   exporta os JSON Schemas dos formatos
 """
 
@@ -29,6 +30,7 @@ from .gabarito import conferir_mascara, ler_item
 from .gabarito import importar as importar_gabarito
 from .indice import Indice
 from .mascara import ler_png, rasterizar
+from .ouro import gerar_lote_real
 from .pasta import Pasta, escrever_json, ler_json
 from .previsores import carregar_previsor, prever
 from .recortes import importar_lote, tamanho_jpeg
@@ -213,6 +215,20 @@ def cmd_prever(a: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_ouro(a: argparse.Namespace) -> int:
+    r = gerar_lote_real(Pasta(a.pasta), Path(a.saida) if a.saida else None)
+    if r.arquivo is None:
+        print("nada novo: nenhum item aprovado (e já revisado de vez) que ainda não foi para um lote de ouro")
+    else:
+        print(f"{r.arquivo}: rodada {r.n}, {sum(r.por_lote.values())} itens")
+        for lote, n in sorted(r.por_lote.items()):
+            print(f"  {lote}: {n}")
+        print("importe pela página do gabarito (Importar lote de ouro) quando quiser usar")
+    for motivo, n in sorted(r.fora.items()):
+        print(f"  fora desta vez: {n} {motivo}")
+    return 0
+
+
 def cmd_esquemas(a: argparse.Namespace) -> int:
     for p in exportar_esquemas(Path(a.destino)):
         print(p)
@@ -257,6 +273,15 @@ def construir_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("unificar", help="gera os conjuntos de treino")
     p.add_argument("--pasta", default=_pasta_padrao())
     p.set_defaults(func=cmd_unificar)
+
+    p = sub.add_parser(
+        "ouro",
+        help="monta um lote de ouro (.zip) com os itens aprovados que ainda não foram para nenhum lote: o gabarito "
+        "arbitrado, tirado das imagens reais",
+    )
+    p.add_argument("--pasta", default=_pasta_padrao())
+    p.add_argument("--saida", help="onde gravar o .zip (padrão: conjuntos/ouro-reais-<n>.zip, na pasta)")
+    p.set_defaults(func=cmd_ouro)
 
     p = sub.add_parser("esquemas", help="exporta os JSON Schemas dos formatos")
     p.add_argument("destino")

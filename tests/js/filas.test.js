@@ -191,6 +191,31 @@ test("gabarito das placas: a pintura certa libera depois do treino inteiro (12);
   assert.deepEqual(s2.resultados.map((r) => [r.resultado.resposta, r.resultado.descartada]), [["pintar", true], ["descartar", false], ["descartar", true]]);
 });
 
+test("gabarito arbitrado: o item tirado de rótulos reais não vai para quem trabalhou neles", async () => {
+  const { pasta, indice } = await pastaExemplo();
+  await criarGabaritoPontos(pasta, 12, { lote: "PR1-treino", primeiro: 5001, foraDe: ["A01", "A02"] });
+  // para quem anotou ou revisou, é como se não houvesse gabarito: nada de teste, nada escondido
+  const a01 = await situacao(indice, "pontos", "A01");
+  assert.equal(a01.gabarito_total, 0);
+  assert.equal(a01.gabarito_na_pasta, 12);
+  assert.equal(a01.liberado, true);
+  await criarPartida(pasta, [{}, {}]);
+  const item = await proximo(indice, "pontos", "A01");
+  assert.equal(item.gabarito, false);
+  assert.equal(item.partida, PARTIDA);
+  // para quem não trabalhou nele, é um teste como o do simulador
+  const a03 = await situacao(indice, "pontos", "A03");
+  assert.equal(a03.gabarito_total, 12);
+  assert.equal(a03.liberado, false);
+  const teste = await proximo(indice, "pontos", "A03");
+  assert.ok(teste.treino && teste.quadro.startsWith("g50"));
+  // no placar, quem anotou e quem revisou não ficam "em teste" por causa desses itens
+  const placar = await calcularPlacar(indice, AGORA);
+  const linha = (cod) => placar.pontos.equipe.find((l) => l.pessoa === cod);
+  assert.equal(linha("A01").liberado, true);
+  assert.equal(linha("A02").liberado, true);
+});
+
 test("devolvido volta primeiro, como versão nova, partindo da versão anterior", async () => {
   const { pasta, indice } = await pastaExemplo();
   await criarPartida(pasta, [{}, {}]);

@@ -10,7 +10,7 @@
 // 4. Métricas em pixels na referência 960 x 540.
 
 /** Versão da ferramenta, gravada em cada arquivo (igual a `anotacao.__version__`). */
-export const VERSAO = "0.10.0";
+export const VERSAO = "0.11.0";
 
 export const REF_W = 960;
 export const REF_H = 540;

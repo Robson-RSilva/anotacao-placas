@@ -144,7 +144,11 @@ export async function montar(raiz, ctx) {
   // ------------------------------------------------------------------ situação de cada tarefa
   function textoDaTarefa(tarefa, s) {
     const regra = REGRA[tarefa];
-    if (!s.gabarito_total) return "Pode anotar (ainda não há gabarito desta tarefa na pasta).";
+    if (!s.gabarito_total) {
+      return s.gabarito_na_pasta
+        ? "Pode anotar (o gabarito desta tarefa veio de imagens em que você trabalhou: não vale para você)."
+        : "Pode anotar (ainda não há gabarito desta tarefa na pasta).";
+    }
     if (s.liberado) return `Liberado: ${s.acertos} certos nos últimos ${Math.min(regra.n, s.ultimos)} itens do gabarito.`;
     if (!s.n) return `Primeiro, o teste do gabarito: imagens com resposta (a meta é ${regra.meta}).`;
     return `Primeiro, o teste do gabarito: ${s.n} feito(s), ${s.acertos} certo(s) nos últimos ${s.ultimos} (a meta é ${regra.meta}).`;
@@ -178,7 +182,7 @@ export async function montar(raiz, ctx) {
       if (r.status !== "fulfilled") continue;
       const s = r.value;
       const nome = tarefa === "pontos" ? "pontos" : "placas";
-      if (!s.gabarito_total) partes.push(`${nome}: sem gabarito`);
+      if (!s.gabarito_total) partes.push(`${nome}: ${s.gabarito_na_pasta ? "sem gabarito para você" : "sem gabarito"}`);
       else partes.push(`${nome}: ${s.liberado ? "liberado" : s.n ? `em teste (${s.acertos} certo(s) em ${s.ultimos})` : "teste a fazer"}`);
     }
     $("st-gabarito").textContent = partes.length ? `${partes.join(" · ")}.` : "—";

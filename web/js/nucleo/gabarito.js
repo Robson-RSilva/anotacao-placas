@@ -287,6 +287,12 @@ export async function resultados(indice, tarefa, pessoa, itens = null) {
   return out.sort((x, y) => Date.parse(x.criado_em) - Date.parse(y.criado_em));
 }
 
+/**
+ * Os itens do gabarito que valem para a pessoa: um item tirado de rótulos reais (o gabarito
+ * arbitrado) nunca vai para quem já trabalhou nele (`fora_de`: quem anotou, revisou ou corrigiu).
+ */
+export const gabaritoDaPessoa = (itens, pessoa) => itens.filter((g) => !(g.fora_de ?? []).includes(pessoa));
+
 /** Quantos itens a pessoa faz, no mínimo, antes de poder ser liberada. */
 export const minimoDoTreino = (regra) => Math.max(regra.n, regra.minimo ?? 0);
 

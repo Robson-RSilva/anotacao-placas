@@ -5,6 +5,23 @@ Formato de [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); versões
 
 ## [Não lançado]
 
+## [0.11.0] - 2026-10-31
+
+Lotes de ouro tirados das imagens reais: o que a equipe anota e aprova vira gabarito (ADR-0013).
+
+### Adicionado
+
+- `anotacao ouro --pasta P` monta um lote de ouro (`conjuntos/ouro-reais-<n>.zip`) com os itens
+  aprovados na revisão que ainda não foram para nenhum lote: nos pontos, os pontos do rótulo aprovado
+  (os rentes à borda, opcionais); nas placas, a máscara aprovada, com cada pedaço pintado como uma
+  coisa na frente da placa, ou "descartar" quando o recorte foi descartado como fora do lugar. Um em
+  cada três itens vai para o treino (`PR<n>-treino`, `PLR<n>-treino`) e os outros para os escondidos
+  (`PR<n>-controle`, `PLR<n>-controle`). Cada rodada leva só o que é novo, com ids que nunca se
+  repetem (g5xxx nos pontos, g6xxx nas placas); o registro fica em `conjuntos/ouro-reais.json`.
+- Itens do gabarito com `fora_de`: quem anotou, revisou ou corrigiu a imagem de origem não recebe o
+  item, nem no teste nem escondido, e não fica "em teste" por causa dele. A central e a página do
+  gabarito dizem quando o gabarito da pasta não vale para a pessoa.
+
 ## [0.10.0] - 2026-10-30
 
 A pintura passa a ser no recorte de cada placa: a página recebe a placa pronta, endireitada, e só se

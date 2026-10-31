@@ -8,6 +8,15 @@
       "title": "Altura",
       "type": "integer"
     },
+    "fora_de": {
+      "description": "quem não recebe o item: quem anotou ou revisou o recorte de onde ele veio",
+      "items": {
+        "pattern": "^[A-Z][A-Z0-9]{1,9}$",
+        "type": "string"
+      },
+      "title": "Fora De",
+      "type": "array"
+    },
     "formato": {
       "const": "gabarito.placas/1",
       "default": "gabarito.placas/1",

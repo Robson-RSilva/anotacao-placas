@@ -226,11 +226,11 @@ export function pontosVerdadeiros(k = 0) {
 }
 
 /** Itens do gabarito dos pontos (sem imagem): g1001, g1002… */
-export async function criarGabaritoPontos(pasta, n = 12, { lote = "P1-treino", primeiro = 1001 } = {}) {
+export async function criarGabaritoPontos(pasta, n = 12, { lote = "P1-treino", primeiro = 1001, foraDe = [] } = {}) {
   const itens = {};
   for (let k = 0; k < n; k++) {
     const id = `g${primeiro + k}`;
-    itens[id] = { formato: "gabarito.pontos/1", id, lote, imagem: `${id}.jpg`, largura: W, altura: H, pontos: pontosVerdadeiros(k), origem: "simulador", observacao: "" };
+    itens[id] = { formato: "gabarito.pontos/1", id, lote, imagem: `${id}.jpg`, largura: W, altura: H, pontos: pontosVerdadeiros(k), origem: foraDe.length ? "arbitrado" : "simulador", observacao: "", fora_de: foraDe };
     await pasta.gravar("gabarito_pontos", pasta.itemGabarito(id), itens[id]);
   }
   return itens;

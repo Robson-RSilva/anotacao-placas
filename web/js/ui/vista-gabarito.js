@@ -43,7 +43,9 @@ export async function montar(raiz, ctx) {
       return;
     }
     if (!sit.gabarito_total) {
-      st.textContent = "Ainda não há gabarito desta tarefa na pasta: importe um lote de ouro (abaixo). Sem gabarito, ninguém passa pelo teste.";
+      st.textContent = sit.gabarito_na_pasta
+        ? "Os itens do gabarito desta tarefa vieram de imagens em que você trabalhou (anotou ou revisou): não valem para você, e não há teste a fazer."
+        : "Ainda não há gabarito desta tarefa na pasta: importe um lote de ouro (abaixo). Sem gabarito, ninguém passa pelo teste.";
       barra.style.width = "0";
       return;
     }

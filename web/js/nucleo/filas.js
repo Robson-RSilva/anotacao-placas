@@ -23,7 +23,7 @@
 
 import { Aleatorio } from "./aleatorio.js";
 import { PARTIDA_GABARITO } from "./convencoes.js";
-import { REGRA, liberacao, nTreino, resultados } from "./gabarito.js";
+import { REGRA, gabaritoDaPessoa, liberacao, nTreino, resultados } from "./gabarito.js";
 import { sha256Hex } from "./hash.js";
 
 export const INTERVALO_GABARITO = 15;
@@ -70,12 +70,14 @@ export function rotuloAprovado(ip, quadro) {
 
 /** Liberação da pessoa para as imagens reais da tarefa, e o resultado dela no gabarito. */
 export async function situacao(indice, tarefa, pessoa) {
-  const itens = await indice.itensGabarito(tarefa);
+  const todos = await indice.itensGabarito(tarefa);
+  const itens = gabaritoDaPessoa(todos, pessoa);
   const res = await resultados(indice, tarefa, pessoa, itens);
   const feitos = new Set(res.map((r) => r.item));
   return {
     ...liberacao(res, itens.length > 0, REGRA[tarefa]),
     gabarito_total: itens.length,
+    gabarito_na_pasta: todos.length, // com os que não valem para a pessoa (ela trabalhou nas imagens deles)
     gabarito_feitos: feitos.size,
     gabarito_faltam: itens.filter((g) => !feitos.has(g.id)).length,
     resultados: res,
@@ -173,7 +175,7 @@ async function montar(indice, tarefa, pessoa, { partida, manifesto: man, ip }, i
  */
 export async function proximo(indice, tarefa, pessoa, { treino: pedirTreino = false } = {}) {
   const regra = REGRA[tarefa];
-  const itensGab = await indice.itensGabarito(tarefa);
+  const itensGab = gabaritoDaPessoa(await indice.itensGabarito(tarefa), pessoa);
   const res = await resultados(indice, tarefa, pessoa, itensGab);
   const lib = liberacao(res, itensGab.length > 0, regra);
   if (pedirTreino || !lib.liberado) {

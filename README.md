@@ -162,6 +162,14 @@ e [ADR-0012](docs/adr/0012-pintar-a-oclusao-no-recorte-da-placa.md)). Os lotes d
 da 0.9 (J1, J2, PE1 e PE2: g2xxx e g3xxx) não valem mais: a página não os usa, mesmo que estejam na
 pasta.
 
+**Lotes de ouro das imagens reais.** `anotacao ouro --pasta P` monta um lote com o que a equipe já
+anotou e foi aprovado na revisão — o gabarito arbitrado ([ADR-0013](docs/adr/0013-gabarito-arbitrado-dos-rotulos-aprovados.md)):
+cada rodada grava `conjuntos/ouro-reais-<n>.zip` só com os itens que ainda não foram para nenhum lote,
+um em cada três no treino (`PR<n>-treino` nos pontos, `PLR<n>-treino` nas placas) e os outros nos
+escondidos (`PR<n>-controle`, `PLR<n>-controle`). Ele entra pela página do gabarito como os do
+simulador, quando você quiser. Cada item nunca vai para quem trabalhou nele (quem anotou, revisou ou
+corrigiu a imagem), então ele serve sobretudo para medir quem chega depois.
+
 ## O placar
 
 A central mostra, para cada tarefa, o placar da equipe (um ponto só conta depois de aprovado na
@@ -211,6 +219,7 @@ anotacao prever --tarefa pontos --pasta P --previsor pacote.modulo:objeto      #
 anotacao prever --tarefa placas --pasta P --previsor pacote.modulo:objeto      # pré-pintura das placas
 anotacao validar --pasta P                  # confere todos os arquivos
 anotacao unificar --pasta P                 # gera os conjuntos de treino
+anotacao ouro --pasta P                     # um lote de ouro com os itens aprovados (gabarito arbitrado)
 anotacao esquemas DESTINO                   # exporta os JSON Schemas
 ```
 
@@ -253,8 +262,8 @@ arquitetura em [docs/arquitetura.md](docs/arquitetura.md) e decisões em [docs/a
   das placas do estádio dão a projeção de cada placa, e dela o lote de recortes (`origem: "modelo"`).
 - Previsor com o detector do laboratório (`anotacao prever --previsor pacote.modulo:objeto`): os
   pontos já marcados e a oclusão das placas como pré-pintura, para quem anota só corrigir.
-- Gabarito arbitrado: rótulos reais aprovados por duas pessoas que concordam viram itens do gabarito
-  (origem `arbitrado`), para medir também nas imagens de verdade.
+- Gabarito arbitrado mais exigente: só os itens em que as duas pessoas da dupla às cegas concordam,
+  e uma terceira que decide quando divergem.
 - Baixar o vídeo pela própria página (depende de onde os vídeos vêm).
 
 ## Dados e privacidade

@@ -13,7 +13,7 @@ import { Molde } from "./campo.js";
 import { REF_W } from "./convencoes.js";
 import { arredondar, mediana } from "./estatistica.js";
 import { rotuloAprovado } from "./filas.js";
-import { REGRA, liberacao, resultados } from "./gabarito.js";
+import { REGRA, gabaritoDaPessoa, liberacao, resultados } from "./gabarito.js";
 import { mascaraDaRegiao } from "./regiao.js";
 
 const DIA = 86_400_000;
@@ -213,8 +213,9 @@ async function placarDaTarefa(indice, agora, tarefa, nomes) {
   const linhas = [];
   for (const cod of [...new Set([...nomes.keys(), ...conta.keys()])].sort()) {
     const s = c(cod);
-    const res = await resultados(indice, tarefa, cod, itensGab);
-    const lib = liberacao(res, itensGab.length > 0, REGRA[tarefa]);
+    const daPessoa = gabaritoDaPessoa(itensGab, cod);
+    const res = await resultados(indice, tarefa, cod, daPessoa);
+    const lib = liberacao(res, daPessoa.length > 0, REGRA[tarefa]);
     const marcos = [];
     if (s.aprovados >= 100) marcos.push("100 aprovados");
     if ((revisadosSemana.get(cod) || 0) >= 10 && !(devolvidosSemana.get(cod) || 0)) marcos.push("uma semana sem devolução");
