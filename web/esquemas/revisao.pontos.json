@@ -100,7 +100,6 @@
   },
   "required": [
     "partida",
-    "quadro",
     "rotulo",
     "revisor",
     "versao",
@@ -108,7 +107,8 @@
     "ferramenta",
     "manual",
     "criado_em",
-    "segundos_ativos"
+    "segundos_ativos",
+    "quadro"
   ],
   "title": "RevisaoPontos",
   "type": "object"

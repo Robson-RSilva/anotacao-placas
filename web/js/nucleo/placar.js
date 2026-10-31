@@ -14,6 +14,7 @@ import { REF_W } from "./convencoes.js";
 import { arredondar, mediana } from "./estatistica.js";
 import { rotuloAprovado } from "./filas.js";
 import { REGRA, liberacao, resultados } from "./gabarito.js";
+import { mascaraDaRegiao } from "./regiao.js";
 
 const DIA = 86_400_000;
 const CAMPO = Molde.doCampo();
@@ -65,8 +66,11 @@ export function concordanciaPontos(r1, r2) {
   return melhor ? melhor.m : null;
 }
 
-/** Concordância de duas máscaras das pessoas: a sobreposição (IoU), sem a borda de 1 px de cada uma. */
-export function concordanciaPessoas(a, b, w, h) {
+/**
+ * Concordância de duas pinturas do mesmo recorte: a sobreposição (IoU) dentro da região da placa
+ * (`regiao`: 1 dentro, 0 fora; sem ela, o recorte todo), sem a borda de 1 px de cada uma.
+ */
+export function concordanciaPlacas(a, b, w, h, regiao = null) {
   const borda = (m, x, y) => {
     const v = m[y * w + x] ? 1 : 0;
     for (let dy = -1; dy <= 1; dy++) {
@@ -83,7 +87,7 @@ export function concordanciaPessoas(a, b, w, h) {
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
       const i = y * w + x;
-      if (!a[i] && !b[i]) continue;
+      if ((!a[i] && !b[i]) || (regiao && !regiao[i])) continue;
       if (borda(a, x, y) || borda(b, x, y)) continue;
       uniao += 1;
       if (a[i] && b[i]) inter += 1;
@@ -94,20 +98,21 @@ export function concordanciaPessoas(a, b, w, h) {
 
 const _concordancias = new WeakMap(); // máscara do primeiro rótulo -> {outra, valor}
 
-/** O que muda de uma tarefa para outra: a concordância dos rótulos às cegas. */
+/** O que muda de uma tarefa para outra: a concordância dos rótulos às cegas (`item`: o da fila). */
 const CONCORDANCIA = {
   pontos: async (a1, a2) => {
     if (a1.dados.situacao !== "ok" || a2.dados.situacao !== "ok") return null;
     return concordanciaPontos(a1.dados, a2.dados);
   },
-  pessoas: async (a1, a2, indice) => {
+  placas: async (a1, a2, indice, item) => {
     const [r1, r2] = [a1.dados, a2.dados];
     if (r1.mascara === null || r2.mascara === null || r1.largura !== r2.largura || r1.altura !== r2.altura) return null;
-    const dir = indice.pasta.rotulos(a1.partida, "pessoas");
+    const dir = indice.pasta.rotulos(a1.partida, "placas");
     const [m1, m2] = [await indice.mascara(`${dir}/${r1.mascara}`), await indice.mascara(`${dir}/${r2.mascara}`)];
     const hit = _concordancias.get(m1); // refeita só quando uma das máscaras muda
     if (hit && hit.outra === m2) return hit.valor;
-    const valor = concordanciaPessoas(m1.dados, m2.dados, r1.largura, r1.altura);
+    const regiao = item.regiao ? mascaraDaRegiao(item.regiao, r1.largura, r1.altura) : null;
+    const valor = concordanciaPlacas(m1.dados, m2.dados, r1.largura, r1.altura, regiao);
     _concordancias.set(m1, { outra: m2, valor });
     return valor;
   },
@@ -163,7 +168,7 @@ async function placarDaTarefa(indice, agora, tarefa, nomes) {
         marcarDia(rv.revisor, rv.criado_em);
       }
     }
-    // concordância nos rótulos às cegas (quadros em dupla): o rótulo de cada pessoa, nunca uma
+    // concordância nos rótulos às cegas (itens em dupla): o rótulo de cada pessoa, nunca uma
     // correção que ela fez revisando o da outra
     const ultimos = ip.ultimosProprios();
     const doQuadro = new Map();
@@ -175,7 +180,7 @@ async function placarDaTarefa(indice, agora, tarefa, nomes) {
       if (!a1 || !a2) continue;
       let d = null;
       try {
-        d = await CONCORDANCIA[tarefa](a1, a2, indice);
+        d = await CONCORDANCIA[tarefa](a1, a2, indice, item);
       } catch {
         d = null; // uma máscara ilegível (ou ainda sincronizando) fica fora da concordância
       }
@@ -240,13 +245,14 @@ async function placarDaTarefa(indice, agora, tarefa, nomes) {
 }
 
 /**
- * Placar da equipe e progresso das partidas, um para cada tarefa: {pontos, pessoas, problemas}; em
- * cada tarefa, `equipe` tem uma linha por código.
+ * Placar da equipe e progresso das partidas, um para cada tarefa: {pontos, placas, problemas}; em
+ * cada tarefa, `equipe` tem uma linha por código e `partidas` uma por partida (nas placas, `sorteados`
+ * são os recortes dos lotes dela).
  */
 export async function calcularPlacar(indice, agora = new Date()) {
   const equipe = await indice.equipe();
   const nomes = new Map(equipe.membros.map((m) => [m.codigo, m.nome]));
   const pontos = await placarDaTarefa(indice, agora, "pontos", nomes);
-  const pessoas = await placarDaTarefa(indice, agora, "pessoas", nomes);
-  return { calculado_em: agora.toISOString(), pontos, pessoas, problemas: pontos.problemas };
+  const placas = await placarDaTarefa(indice, agora, "placas", nomes);
+  return { calculado_em: agora.toISOString(), pontos, placas, problemas: pontos.problemas };
 }

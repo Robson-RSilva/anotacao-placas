@@ -1,5 +1,5 @@
 // Aplicativo de uma página só: escolhe a pasta de trabalho e troca de vista pelo endereço
-// (#/, #/pontos, #/pessoas, #/revisao-pontos, #/revisao-pessoas, #/gabarito, #/importar,
+// (#/, #/pontos, #/placas, #/revisao-pontos, #/revisao-placas, #/gabarito, #/importar,
 // #/coordenacao). Uma página só porque a permissão da pasta vale para a aba aberta: trocar de vista
 // não pede de novo.
 
@@ -14,23 +14,31 @@ import * as coordenacao from "./vista-coordenacao.js";
 import * as gabarito from "./vista-gabarito.js";
 import * as importar from "./vista-importar.js";
 import * as inicio from "./vista-inicio.js";
-import * as pessoas from "./vista-pessoas.js";
+import * as placas from "./vista-placas.js";
 import * as pontos from "./vista-pontos.js";
-import { revisaoPessoas, revisaoPontos } from "./vista-revisao.js";
+import { revisaoPlacas, revisaoPontos } from "./vista-revisao.js";
 
 const ROTAS = {
   "": ["central", central],
   pontos: ["pontos", pontos],
-  pessoas: ["pessoas", pessoas],
+  placas: ["placas", placas],
   "revisao-pontos": ["revisao-pontos", revisaoPontos],
-  "revisao-pessoas": ["revisao-pessoas", revisaoPessoas],
+  "revisao-placas": ["revisao-placas", revisaoPlacas],
   gabarito: ["gabarito", gabarito],
   importar: ["importar", importar],
   coordenacao: ["coordenacao", coordenacao],
 };
 
-/** Endereços da 0.8, quando a pintura era só dos jogadores. */
-const ANTIGAS = { jogadores: "pessoas", "revisao-jogadores": "revisao-pessoas" };
+/**
+ * Endereços das versões anteriores, quando a pintura era dos jogadores (0.8) ou das pessoas (0.9) no
+ * quadro inteiro: levam à pintura das placas.
+ */
+const ANTIGAS = {
+  jogadores: "placas",
+  "revisao-jogadores": "revisao-placas",
+  pessoas: "placas",
+  "revisao-pessoas": "revisao-placas",
+};
 
 /** O que as vistas compartilham: a pasta, o índice, quem está anotando e a importação em curso. */
 const ctx = {

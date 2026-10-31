@@ -1,0 +1,171 @@
+{
+  "$defs": {
+    "ItemRecorte": {
+      "additionalProperties": false,
+      "description": "Uma placa num quadro: o recorte dela, endireitado (`<recorte>.jpg`, ao lado do lote).\n\nO recorte mostra a placa como um retângulo, com um pouco em volta para dar o contexto; `regiao` é a\nparte que se pinta — a placa, só o que cai dentro do quadro. `placa` e `no_quadro` dizem onde os\nquatro cantos da placa estão no recorte e no quadro, para levar a máscara de volta ao quadro.",
+      "properties": {
+        "altura": {
+          "description": "altura do recorte (px)",
+          "exclusiveMinimum": 0,
+          "maximum": 8192,
+          "title": "Altura",
+          "type": "integer"
+        },
+        "dupla": {
+          "default": false,
+          "description": "às cegas: duas pessoas pintam do zero, sem ver a pintura da outra",
+          "title": "Dupla",
+          "type": "boolean"
+        },
+        "largura": {
+          "description": "largura do recorte (px)",
+          "exclusiveMinimum": 0,
+          "maximum": 8192,
+          "title": "Largura",
+          "type": "integer"
+        },
+        "no_quadro": {
+          "description": "os mesmos cantos, no quadro (px)",
+          "items": {
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "type": "array"
+          },
+          "maxItems": 4,
+          "minItems": 4,
+          "title": "No Quadro",
+          "type": "array"
+        },
+        "placa": {
+          "description": "os cantos da placa no recorte (px): em cima à esquerda, em cima à direita, embaixo à direita, embaixo à esquerda",
+          "items": {
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "type": "array"
+          },
+          "maxItems": 4,
+          "minItems": 4,
+          "title": "Placa",
+          "type": "array"
+        },
+        "recorte": {
+          "maxLength": 48,
+          "pattern": "^t\\d{10}_[a-z0-9]+(?:-[a-z0-9]+)*$",
+          "title": "Recorte",
+          "type": "string"
+        },
+        "regiao": {
+          "description": "o que se pinta: a placa, dentro do quadro (polígono, px do recorte)",
+          "items": {
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "type": "array"
+          },
+          "maxItems": 64,
+          "minItems": 3,
+          "title": "Regiao",
+          "type": "array"
+        },
+        "sem_previsao": {
+          "default": false,
+          "description": "começa sem a pré-pintura, para medir o viés de ancoragem",
+          "title": "Sem Previsao",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "recorte",
+        "largura",
+        "altura",
+        "regiao",
+        "placa",
+        "no_quadro"
+      ],
+      "title": "ItemRecorte",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Os recortes de uma partida que chegaram juntos: `partidas/<partida>/recortes/<lote>.json`, com as\nimagens ao lado. Feito fora das páginas (pelo simulador, por enquanto; depois, pela projeção das\nplacas) e trazido por `anotacao recortes` ou por um .zip. Um recorte que já está em outro lote da\npartida fica de fora.",
+  "properties": {
+    "criado_em": {
+      "format": "date-time",
+      "title": "Criado Em",
+      "type": "string"
+    },
+    "formato": {
+      "const": "recortes.lote/1",
+      "default": "recortes.lote/1",
+      "title": "Formato",
+      "type": "string"
+    },
+    "gerador": {
+      "description": "o que gerou os recortes, com a versão",
+      "minLength": 1,
+      "title": "Gerador",
+      "type": "string"
+    },
+    "itens": {
+      "items": {
+        "$ref": "#/$defs/ItemRecorte"
+      },
+      "minItems": 1,
+      "title": "Itens",
+      "type": "array"
+    },
+    "lote": {
+      "maxLength": 40,
+      "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
+      "title": "Lote",
+      "type": "string"
+    },
+    "origem": {
+      "description": "de onde vêm as placas: o simulador ou um modelo",
+      "enum": [
+        "simulador",
+        "modelo"
+      ],
+      "title": "Origem",
+      "type": "string"
+    },
+    "partida": {
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}_[a-z0-9]+(?:-[a-z0-9]+)*_[a-z0-9]+(?:-[a-z0-9]+)*$",
+      "title": "Partida",
+      "type": "string"
+    }
+  },
+  "required": [
+    "partida",
+    "lote",
+    "criado_em",
+    "origem",
+    "gerador",
+    "itens"
+  ],
+  "title": "LoteRecortes",
+  "type": "object"
+}

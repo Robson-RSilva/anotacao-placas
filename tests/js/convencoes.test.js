@@ -13,7 +13,7 @@ test("versão, referência, tarefas, manual, motivos e regex iguais aos do Pytho
   assert.deepEqual([...c.TAREFAS], ref.tarefas);
   assert.deepEqual({ ...c.MANUAL }, ref.manual);
   assert.equal(c.PARTIDA_GABARITO, ref.partida_gabarito);
-  assert.deepEqual(Object.keys(c.MOTIVOS_DESCARTE), ref.motivos_descarte);
+  assert.deepEqual(Object.fromEntries(Object.entries(c.MOTIVOS_DESCARTE).map(([t, m]) => [t, Object.keys(m)])), ref.motivos_descarte);
   for (const [nome, padrao] of Object.entries(ref.regex)) assert.equal(c[nome].source, padrao.replaceAll("/", "\\/"), nome);
 });
 
@@ -35,8 +35,14 @@ test("nomes de arquivo por pessoa e versão", () => {
   assert.throws(() => c.nomeArquivo("t1", "A01", 1));
   assert.throws(() => c.nomeArquivo("t0000001000", "a01", 1));
   assert.throws(() => c.nomeArquivo("t0000001000", "A01", 0));
-  assert.deepEqual(c.lerNomeMascara("t0000001000__A01__v2.png"), { quadro: "t0000001000", pessoa: "A01", versao: 2 });
-  assert.equal(c.mascaraDe("g2001__RS__v3.json"), "g2001__RS__v3.png");
+  assert.equal(c.lerNomeMascara("t0000001000__A01__v2.png"), null); // máscara só nas placas
+  assert.deepEqual(c.lerNomeMascara("t0000001000_opo-3__A01__v2.png"), { quadro: "t0000001000_opo-3", pessoa: "A01", versao: 2 });
+  assert.equal(c.mascaraDe("g4001__RS__v3.json"), "g4001__RS__v3.png");
+  // nas placas, o item é o recorte: o quadro e a placa
+  assert.equal(c.nomeArquivo("t0000001000_cab-02", "A01", 1), "t0000001000_cab-02__A01__v1.json");
+  assert.deepEqual(c.lerNome("t0000001000_cab-02__A01__v1.json"), { quadro: "t0000001000_cab-02", pessoa: "A01", versao: 1 });
+  assert.equal(c.lerNome("t0000001000_cab_02__A01__v1.json"), null);
+  assert.throws(() => c.nomeArquivo("t0000001000_CAB", "A01", 1));
 });
 
 test("código da pessoa: o que ela digitar, em maiúsculas, sem acento nem espaço", () => {

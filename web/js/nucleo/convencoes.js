@@ -10,41 +10,58 @@
 // 4. Métricas em pixels na referência 960 x 540.
 
 /** Versão da ferramenta, gravada em cada arquivo (igual a `anotacao.__version__`). */
-export const VERSAO = "0.9.0";
+export const VERSAO = "0.10.0";
 
 export const REF_W = 960;
 export const REF_H = 540;
 
 /**
- * As tarefas: marcar os pontos do campo e pintar as pessoas (todas as que estão no gramado e em volta
- * dele, do lado de dentro das placas), cada uma direto na imagem.
+ * As tarefas: marcar os pontos do campo, direto no quadro, e pintar o que está na frente de cada placa,
+ * no recorte dela (a placa já endireitada, que vem pronta de fora das páginas).
  */
-export const TAREFAS = Object.freeze(["pontos", "pessoas"]);
+export const TAREFAS = Object.freeze(["pontos", "placas"]);
 
 /** Versão do Manual de anotação que esta versão da ferramenta segue, por tarefa. */
-export const MANUAL = Object.freeze({ pontos: "pontos-0.1", pessoas: "pessoas-0.1", revisao: "revisao-0.3" });
+export const MANUAL = Object.freeze({ pontos: "pontos-0.1", placas: "placas-0.1", revisao: "revisao-0.4" });
 
-/** Motivos para descartar uma imagem (em qualquer das tarefas), com o texto das páginas. */
+/**
+ * Motivos para descartar, por tarefa, com o texto das páginas. Nas placas, o grafismo da emissora por
+ * cima da placa se pinta (ele esconde a placa de quem assiste); o que se descarta é o recorte que não
+ * está na placa — ele não se ajusta.
+ */
 export const MOTIVOS_DESCARTE = Object.freeze({
-  transicao: "Transição entre tomadas (fusão, corte no meio)",
-  borrao: "Borrada ou fora de foco demais",
-  grafismo: "Grafismo da emissora cobre a imagem",
-  outro: "Outro motivo (com comentário)",
+  pontos: Object.freeze({
+    transicao: "Transição entre tomadas (fusão, corte no meio)",
+    borrao: "Borrada ou fora de foco demais",
+    grafismo: "Grafismo da emissora cobre a imagem",
+    outro: "Outro motivo (com comentário)",
+  }),
+  placas: Object.freeze({
+    placa_fora_do_lugar: "O recorte não está na placa (fora do lugar, outra coisa)",
+    transicao: "Transição entre tomadas (fusão, corte no meio)",
+    borrao: "Borrado ou fora de foco demais",
+    outro: "Outro motivo (com comentário)",
+  }),
 });
 
 export const RE_ESTADIO = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 export const RE_VERSAO_PACOTE = /^\d+\.\d+$/;
 export const RE_PARTIDA = /^\d{4}-\d{2}-\d{2}_[a-z0-9]+(?:-[a-z0-9]+)*_[a-z0-9]+(?:-[a-z0-9]+)*$/;
 export const RE_QUADRO = /^t\d{10}$/;
+/** Uma placa num quadro: o quadro e a placa, que o gerador dos recortes nomeia (t0001234567_opo-03). */
+export const RE_RECORTE = /^t\d{10}_[a-z0-9]+(?:-[a-z0-9]+)*$/;
+/** Um lote de recortes de uma partida (o arquivo `recortes/<lote>.json`). */
+export const RE_LOTE = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
 export const RE_GABARITO = /^g\d{4}$/;
 export const RE_PESSOA = /^[A-Z][A-Z0-9]{1,9}$/;
 /** Pacote do estádio dos manifestos das versões até a 0.7 (hoje ignorado). */
 export const RE_PACOTE_REF = /^[a-z0-9]+(?:-[a-z0-9]+)*\/pacote-\d+\.\d+$/;
 /** Navegador de um computador (um identificador aleatório, guardado no próprio navegador). */
 export const RE_DISPOSITIVO = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-export const RE_ARQUIVO = /^(t\d{10}|g\d{4})__([A-Z][A-Z0-9]{1,9})__v(\d+)\.json$/;
-/** A máscara das pessoas, ao lado do rótulo: o mesmo nome, com .png. */
-export const RE_MASCARA = /^(t\d{10}|g\d{4})__([A-Z][A-Z0-9]{1,9})__v(\d+)\.png$/;
+/** O rótulo ou a revisão de um item (quadro, recorte ou item do gabarito): um por pessoa e por versão. */
+export const RE_ARQUIVO = /^(t\d{10}(?:_[a-z0-9]+(?:-[a-z0-9]+)*)?|g\d{4})__([A-Z][A-Z0-9]{1,9})__v(\d+)\.json$/;
+/** A máscara da pintura das placas, ao lado do rótulo: o mesmo nome, com .png. */
+export const RE_MASCARA = /^(t\d{10}_[a-z0-9]+(?:-[a-z0-9]+)*|g\d{4})__([A-Z][A-Z0-9]{1,9})__v(\d+)\.png$/;
 
 /** Nome da "partida" que guarda os itens do gabarito (nunca entra nos conjuntos de treino). */
 export const PARTIDA_GABARITO = "gabarito";
@@ -96,27 +113,27 @@ export function codigoPessoa(texto) {
   return RE_PESSOA.test(c) ? c : null;
 }
 
-/** Nome do arquivo de rótulo ou revisão: um por pessoa e por versão. */
+/** Nome do arquivo de rótulo ou revisão de um item (quadro, recorte ou item do gabarito): um por pessoa e por versão. */
 export function nomeArquivo(quadro, pessoa, versao) {
-  if (!(RE_QUADRO.test(quadro) || RE_GABARITO.test(quadro))) throw new Error(`quadro inválido: ${quadro}`);
+  if (!(RE_QUADRO.test(quadro) || RE_RECORTE.test(quadro) || RE_GABARITO.test(quadro))) throw new Error(`item inválido: ${quadro}`);
   if (!RE_PESSOA.test(pessoa)) throw new Error(`código de pessoa inválido: ${pessoa}`);
   if (!(Number.isInteger(versao) && versao >= 1)) throw new Error("versão começa em 1");
   return `${quadro}__${pessoa}__v${versao}.json`;
 }
 
-/** Nome de arquivo -> {quadro, pessoa, versao}, ou null se não for um rótulo/revisão. */
+/** Nome de arquivo -> {quadro (o item), pessoa, versao}, ou null se não for um rótulo/revisão. */
 export function lerNome(nome) {
   const m = RE_ARQUIVO.exec(nome);
   return m ? { quadro: m[1], pessoa: m[2], versao: Number(m[3]) } : null;
 }
 
-/** Nome da máscara das pessoas -> {quadro, pessoa, versao}, ou null. */
+/** Nome da máscara da pintura das placas -> {quadro (o recorte), pessoa, versao}, ou null. */
 export function lerNomeMascara(nome) {
   const m = RE_MASCARA.exec(nome);
   return m ? { quadro: m[1], pessoa: m[2], versao: Number(m[3]) } : null;
 }
 
-/** A máscara que acompanha um rótulo das pessoas: o mesmo nome, com .png. */
+/** A máscara que acompanha um rótulo das placas: o mesmo nome, com .png. */
 export function mascaraDe(nomeRotulo) {
   return nomeRotulo.replace(/\.json$/, ".png");
 }

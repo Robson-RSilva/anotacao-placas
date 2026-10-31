@@ -30,7 +30,7 @@ passa.
 ## Fluxo
 
 - `main` sempre verde e protegida; cada mudança num ramo (`feat/...`, `fix/...`, `docs/...`) e PR.
-- Commits no estilo Conventional Commits, em português: `feat: página das pessoas`,
+- Commits no estilo Conventional Commits, em português: `feat: página das placas`,
   `fix: versão da revisão`, `docs: formato do rótulo`.
 - Mudança visível para quem anota entra no `CHANGELOG.md`, na seção "Não lançado".
 - Versões seguem SemVer; cada versão vira uma tag `vX.Y.Z`. A versão está em três lugares que um
@@ -52,15 +52,16 @@ passa.
   campo do laboratório. Mudou o campo lá, rode
   `python scripts/fixture_do_laboratorio.py --laboratorio ../placas-exposicao` e ajuste `campo.py` e
   `web/js/nucleo/campo.js` até os testes passarem.
-- **O PNG é o mesmo nos dois lados.** `mascara.py` e `web/js/nucleo/png.js` gravam e leem as máscaras
-  do mesmo jeito; os bytes de referência ficam em `tests/fixtures/png.json`
-  (`python scripts/gerar_arquivos_web.py`).
+- **O PNG e a região da placa são os mesmos nos dois lados.** `mascara.py` e `web/js/nucleo/png.js`
+  gravam e leem as máscaras do mesmo jeito, e `mascara.rasterizar` e `web/js/nucleo/regiao.js` põem os
+  mesmos pixels dentro de um polígono; as referências ficam em `tests/fixtures/png.json` e
+  `tests/fixtures/regioes.json` (`python scripts/gerar_arquivos_web.py`).
 - **As regras do gabarito ficam na página** (`REGRA` em `web/js/nucleo/gabarito.js`). Mudou uma regra,
   confira de novo com os anotadores simulados (`python scripts/conferir_regras.py --lotes <lotes>
-  --saida <tmp>`, ADR-0010 e ADR-0011) e atualize o README, `docs/formatos.md` e o texto da página do
+  --saida <tmp>`, ADR-0010 e ADR-0012) e atualize o README, `docs/formatos.md` e o texto da página do
   gabarito. Lotes novos saem de `scripts/lotes_de_ouro.py`, com faixas de id que não se sobrepõem às
-  dos lotes já entregues (nem às de lotes que não valem mais, como os g2xxx dos jogadores da 0.8: um
-  item com o id de outro que já está na pasta não é importado).
+  dos lotes já entregues (nem às de lotes que não valem mais, como os g2xxx e g3xxx da pintura da 0.8 e
+  da 0.9: um item com o id de outro que já está na pasta não é importado).
 - **Nunca dados no Git.** Vídeos, quadros, rótulos e conjuntos ficam na pasta de trabalho do Drive.
   Os únicos vídeos do repositório são os de teste, de poucos KB, em `tests/fixtures/video/`.
 - **Manual junto.** Regra de anotação nova vai primeiro para o Manual de anotação, com versão; a

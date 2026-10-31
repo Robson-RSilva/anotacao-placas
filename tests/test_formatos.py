@@ -8,27 +8,29 @@ from pydantic import ValidationError
 from anotacao.formatos import (
     DispositivoPessoa,
     Divisao,
-    GabaritoPessoas,
+    GabaritoPlacas,
     GabaritoPontos,
+    ItemRecorte,
+    LoteRecortes,
     Manifesto,
     PrevisaoPontos,
     Projeto,
-    RevisaoPessoas,
+    RevisaoPlacas,
     RevisaoPontos,
-    RotuloPessoas,
+    RotuloPlacas,
     RotuloPontos,
 )
 
 PARTIDA = "2026-11-02_estadio-sintetico_time-a-time-b"
+RECORTE = "t0000012340_opo-03"
 
 
 def _base(**kw):
     base = dict(
         partida=PARTIDA,
-        quadro="t0000012340",
         anotador="A01",
         versao=1,
-        ferramenta="0.9.0",
+        ferramenta="0.10.0",
         criado_em=datetime.now(UTC),
         segundos_ativos=31.0,
         largura=1280,
@@ -41,14 +43,16 @@ def _base(**kw):
 
 
 def pontos(**kw):
+    kw.setdefault("quadro", "t0000012340")
     kw.setdefault("pontos", [{"ponto": "centro", "x": 640.0, "y": 360.0}, {"ponto": "meio_cab", "x": 600.5, "y": 700}])
     return RotuloPontos(**_base(manual="pontos-0.1", **kw))
 
 
-def pessoas(**kw):
-    kw.setdefault("mascara", "t0000012340__A01__v1.png")
+def placas(**kw):
+    kw.setdefault("recorte", RECORTE)
+    kw.setdefault("mascara", f"{RECORTE}__A01__v1.png")
     kw.setdefault("pixels", 1500)
-    return RotuloPessoas(**_base(manual="pessoas-0.1", **kw))
+    return RotuloPlacas(**_base(manual="placas-0.1", **kw))
 
 
 def test_rotulos_validos():
@@ -59,10 +63,12 @@ def test_rotulos_validos():
     assert pontos(pontos=[]).pontos == []  # nenhum ponto à vista: vale (a imagem entra sem pontos)
     d = pontos(pontos=[], situacao="descartada", motivo_descarte="transicao")
     assert d.motivo_descarte == "transicao"
-    j = pessoas()
-    assert j.formato == "rotulo.pessoas/1" and j.pixels == 1500
-    assert pessoas(pixels=0).pixels == 0  # ninguém na imagem: a máscara toda 0
-    assert pessoas(mascara=None, pixels=0, situacao="descartada", motivo_descarte="borrao").mascara is None
+    j = placas()
+    assert j.formato == "rotulo.placas/1" and j.pixels == 1500
+    assert placas(pixels=0).pixels == 0  # nada na frente da placa: a máscara toda 0
+    d = placas(mascara=None, pixels=0, situacao="descartada", motivo_descarte="placa_fora_do_lugar")
+    assert d.mascara is None
+    assert placas(recorte="g4001", partida="gabarito", mascara="g4001__A01__v1.png").recorte == "g4001"
 
 
 @pytest.mark.parametrize(
@@ -95,29 +101,45 @@ def test_rotulo_de_pontos_incoerente(mudanca, trecho):
         (dict(mascara=None, pixels=3, situacao="descartada", motivo_descarte="borrao"), "pixels pintados só"),
         (dict(mascara="outra.png"), "nome da máscara"),
         (dict(pixels=1280 * 720 + 1), "mais pixels"),
+        (dict(mascara=None, pixels=0, situacao="descartada", motivo_descarte="outro"), "exige comentário"),
     ],
 )
-def test_rotulo_das_pessoas_incoerente(mudanca, trecho):
+def test_rotulo_das_placas_incoerente(mudanca, trecho):
     with pytest.raises(ValidationError, match=trecho):
-        pessoas(**mudanca)
+        placas(**mudanca)
+
+
+@pytest.mark.parametrize(
+    "mudanca",
+    [
+        dict(recorte="t0000012340"),  # um quadro, não um recorte
+        dict(recorte="t0000012340_OPO"),
+        dict(recorte="t0000012340_opo__03"),
+        dict(mascara=None, pixels=0, situacao="descartada", motivo_descarte="grafismo"),  # nas placas, se pinta
+        dict(quadro="t0000012340"),  # o campo dos pontos
+    ],
+)
+def test_rotulo_das_placas_recusa(mudanca):
+    with pytest.raises(ValidationError):
+        placas(**mudanca)
 
 
 def test_revisao_regras():
-    base = dict(
+    comum = dict(
         partida=PARTIDA,
-        quadro="t0000012340",
         rotulo="t0000012340__A01__v1.json",
         revisor="A02",
         versao=1,
-        ferramenta="0.9.0",
-        manual="revisao-0.3",
+        ferramenta="0.10.0",
+        manual="revisao-0.4",
         criado_em=datetime.now(UTC),
         segundos_ativos=5,
     )
-    for modelo, motivo, alheio in (
-        (RevisaoPontos, "nome_trocado", "faltou_pessoa"),
-        (RevisaoPessoas, "faltou_pessoa", "nome_trocado"),
+    for modelo, item, motivo, alheio in (
+        (RevisaoPontos, {"quadro": "t0000012340"}, "nome_trocado", "faltou_pintar"),
+        (RevisaoPlacas, {"recorte": RECORTE}, "faltou_pintar", "nome_trocado"),
     ):
+        base = {**comum, **item}
         assert modelo(decisao="aprovar", **base).formato.startswith("revisao.")
         modelo(decisao="devolver", motivo=motivo, **base)
         modelo(decisao="devolver", motivo="descarte_errado", **base)
@@ -150,17 +172,69 @@ def test_itens_do_gabarito():
         GabaritoPontos(**{**g.model_dump(), "pontos": [g.pontos[0].model_dump()] * 2})
     with pytest.raises(ValidationError, match="fora da imagem"):
         GabaritoPontos(**{**g.model_dump(), "pontos": [{"ponto": "centro", "x": 2000, "y": 1, "visivel": True}]})
-    j = GabaritoPessoas(
-        id="g3001", imagem="g3001.jpg", mascara="g3001.png", largura=1280, altura=720, pessoas=16, origem="simulador"
+    regiao = [[10, 8], [290, 8], [290, 62], [10, 62]]
+    j = GabaritoPlacas(
+        id="g4001",
+        imagem="g4001.jpg",
+        mascara="g4001.png",
+        largura=300,
+        altura=70,
+        regiao=regiao,
+        oclusores=3,
+        origem="simulador",
     )
-    assert j.lote == "" and j.formato == "gabarito.pessoas/1"
-    assert GabaritoPessoas(**{**j.model_dump(), "pessoas": 0}).pessoas == 0  # ninguém na imagem: vale
-    with pytest.raises(ValidationError):
-        GabaritoPessoas(**{**j.model_dump(), "pessoas": 256})  # os números vão até 255
-    with pytest.raises(ValidationError):
-        GabaritoPessoas(**{**j.model_dump(), "jogadores": 12})  # o campo da 0.8
+    assert j.lote == "" and j.formato == "gabarito.placas/1" and j.resposta == "pintar"
+    assert GabaritoPlacas(**{**j.model_dump(), "oclusores": 0}).oclusores == 0  # nada na frente: vale
+    d = GabaritoPlacas(**{**j.model_dump(), "mascara": None, "oclusores": 0, "resposta": "descartar"})
+    assert d.resposta == "descartar"
+    for ruim in (
+        {"oclusores": 256},  # os números vão até 255
+        {"mascara": None},  # pintar precisa da máscara
+        {"resposta": "descartar"},  # descartar não leva máscara
+        {"mascara": None, "resposta": "descartar"},  # nem o que pintar
+        {"regiao": [[10, 8], [301, 8], [290, 62]]},  # a região sai do recorte
+        {"regiao": [[10, 8], [20, 8], [30, 8]]},  # sem área
+        {"pessoas": 3},  # o campo da 0.9
+    ):
+        with pytest.raises(ValidationError):
+            GabaritoPlacas(**{**j.model_dump(), **ruim})
     with pytest.raises(ValidationError):
         GabaritoPontos(**{**g.model_dump(), "id": "g12"})
+
+
+def test_lote_de_recortes():
+    item = {
+        "recorte": RECORTE,
+        "largura": 300,
+        "altura": 70,
+        "regiao": [[10, 8], [290, 8], [290, 62], [10, 62]],
+        "placa": [[10, 8], [290, 8], [290, 62], [10, 62]],
+        "no_quadro": [[512.2, 100.5], [903.0, 120.25], [902.5, 160.0], [511.0, 141.0]],
+    }
+    lote = LoteRecortes(
+        partida=PARTIDA, lote="r1", criado_em=datetime.now(UTC), origem="simulador", gerador="teste", itens=[item]
+    )
+    it = lote.itens[0]
+    assert (it.quadro, it.id_placa, it.dupla, it.sem_previsao) == ("t0000012340", "opo-03", False, False)
+    assert lote.formato == "recortes.lote/1"
+    # a placa cortada pela borda do quadro: a região é só a parte de dentro
+    ItemRecorte(**{**item, "regiao": [[10, 8], [120.5, 8], [140.2, 62], [10, 62]]})
+    for ruim in (
+        {"recorte": "t0000012340"},
+        {"regiao": [[10, 8], [290, 8]]},  # poucos vértices
+        {"regiao": [[10, 8], [290, 8], [310, 62], [10, 62]]},  # sai do recorte
+        {"placa": [[10, 8], [290, 8], [290, 62]]},  # quatro cantos
+        {"no_quadro": [[1, 2], [3, 4], [5, 6], [7, float("nan")]]},
+        {"largura": 0},
+    ):
+        with pytest.raises(ValidationError):
+            ItemRecorte(**{**item, **ruim})
+    with pytest.raises(ValidationError, match="repetido"):
+        LoteRecortes(**{**lote.model_dump(), "itens": [item, item]})
+    with pytest.raises(ValidationError):
+        LoteRecortes(**{**lote.model_dump(), "lote": "R_1"})
+    with pytest.raises(ValidationError):
+        LoteRecortes(**{**lote.model_dump(), "itens": []})
 
 
 def test_previsao_de_pontos():

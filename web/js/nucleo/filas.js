@@ -1,14 +1,16 @@
-// Filas: o que cada pessoa faz a seguir, em cada tarefa (pontos e pessoas). Tudo sai dos arquivos e
+// Filas: o que cada pessoa faz a seguir, em cada tarefa (pontos e placas). Tudo sai dos arquivos e
 // dá o mesmo em qualquer máquina. Não há equipe cadastrada: quem anota se identifica por um código
-// (as iniciais, por exemplo).
+// (as iniciais, por exemplo). Nos pontos, a fila é a dos quadros sorteados da partida; nas placas, a
+// dos recortes dos lotes dela — em tudo o mais, as duas filas andam igual. O "quadro" de um item da
+// fila é o item: o quadro nos pontos, o recorte nas placas.
 //
 // Anotar (fila aberta, a mesma regra nas duas tarefas)
 //   1. quem ainda não foi liberado anota o gabarito da tarefa, com o resultado na hora (treino);
 //   2. depois, um rótulo devolvido na revisão volta primeiro, como versão nova;
-//   3. depois, o próximo quadro sorteado que ainda não tem rótulo — ou, nos quadros em dupla às
-//      cegas, que ainda não tem rótulos de duas pessoas. Cada pessoa percorre cada partida a partir
-//      de um ponto próprio, para duas pessoas trabalhando ao mesmo tempo raramente pegarem o mesmo
-//      quadro (se pegarem, o quadro fica com dois rótulos, o que não estraga nada);
+//   3. depois, o próximo item da fila que ainda não tem rótulo — ou, nos itens em dupla às cegas,
+//      que ainda não tem rótulos de duas pessoas. Cada pessoa percorre cada partida a partir de um
+//      ponto próprio, para duas pessoas trabalhando ao mesmo tempo raramente pegarem o mesmo item (se
+//      pegarem, o item fica com dois rótulos, o que não estraga nada);
 //   4. a cada 15 rótulos, um item do gabarito entra escondido na fila.
 //
 // Revisão cruzada às cegas (fila aberta)
@@ -103,6 +105,7 @@ async function itemDoGabarito(indice, tarefa, pessoa, g, treino) {
     versao,
     largura: g.largura,
     altura: g.altura,
+    regiao: g.regiao ?? null,
     inicio: null,
     partiu_de: { fonte: "nenhuma", versao: null, referencia: null },
     dupla: false,
@@ -115,7 +118,7 @@ async function itemDoGabarito(indice, tarefa, pessoa, g, treino) {
 
 /**
  * De onde a imagem começa: a versão devolvida, a previsão de um modelo ou nada. Devolve {inicio,
- * partiu_de}; `inicio` é a lista de pontos (pontos) ou o caminho de uma máscara (pessoas), ou null.
+ * partiu_de}; `inicio` é a lista de pontos (pontos) ou o caminho de uma máscara (placas), ou null.
  */
 async function comecarDe(indice, tarefa, partida, item, anterior) {
   const pasta = indice.pasta;
@@ -133,8 +136,8 @@ async function comecarDe(indice, tarefa, partida, item, anterior) {
         prev = null; // previsão inválida não impede de anotar
       }
       if (prev && prev.pontos.length) return { inicio: prev.pontos, partiu_de: { fonte: "modelo", versao: `${prev.fonte}@${prev.versao}`, referencia: null } };
-    } else if (await pasta.existe(pasta.previsaoPessoas(partida, item.quadro))) {
-      return { inicio: pasta.previsaoPessoas(partida, item.quadro), partiu_de: { fonte: "modelo", versao: null, referencia: null } };
+    } else if (await pasta.existe(pasta.previsaoPlacas(partida, item.quadro))) {
+      return { inicio: pasta.previsaoPlacas(partida, item.quadro), partiu_de: { fonte: "modelo", versao: null, referencia: null } };
     }
   }
   return { inicio: null, partiu_de: { fonte: "nenhuma", versao: null, referencia: null } };
@@ -149,8 +152,9 @@ async function montar(indice, tarefa, pessoa, { partida, manifesto: man, ip }, i
     partida,
     quadro: item.quadro,
     versao: Math.max(versoes.length ? versoes[versoes.length - 1].versao + 1 : 1, await indice.pasta.proximaVersao(dir, item.quadro, pessoa)),
-    largura: man.video.largura,
-    altura: man.video.altura,
+    largura: item.largura ?? man.video.largura, // o recorte tem o tamanho dele; o quadro, o do vídeo
+    altura: item.altura ?? man.video.altura,
+    regiao: item.regiao ?? null,
     inicio,
     partiu_de,
     dupla: item.dupla,
@@ -162,9 +166,10 @@ async function montar(indice, tarefa, pessoa, { partida, manifesto: man, ip }, i
 }
 
 /**
- * O próximo item da pessoa na tarefa, ou null. O item diz a partida (ou "gabarito"), o quadro, a
- * versão a gravar, o tamanho da imagem, de onde começa e se é treino. Com `{treino: true}`, só itens
- * do gabarito, com o resultado na hora (o "fazer o teste" da página do gabarito).
+ * O próximo item da pessoa na tarefa, ou null. O item diz a partida (ou "gabarito"), o quadro (nas
+ * placas, o recorte), a versão a gravar, o tamanho da imagem (e, nas placas, a região da placa), de
+ * onde começa e se é treino. Com `{treino: true}`, só itens do gabarito, com o resultado na hora (o
+ * "fazer o teste" da página do gabarito).
  */
 export async function proximo(indice, tarefa, pessoa, { treino: pedirTreino = false } = {}) {
   const regra = REGRA[tarefa];
@@ -202,7 +207,7 @@ export async function proximo(indice, tarefa, pessoa, { treino: pedirTreino = fa
     }
     if (candidato) break;
   }
-  // 2) o próximo quadro que ainda precisa de rótulo (e que a pessoa ainda não anotou)
+  // 2) o próximo item que ainda precisa de rótulo (e que a pessoa ainda não anotou)
   for (const p of candidato ? [] : prontas) {
     for (const item of emOrdemDaPessoa(p.fila.itens, pessoa, p.partida)) {
       if (item.atribuido_a.length && !item.atribuido_a.includes(pessoa)) continue; // fila da 0.2
@@ -223,7 +228,10 @@ export async function proximo(indice, tarefa, pessoa, { treino: pedirTreino = fa
   return candidato;
 }
 
-/** Rótulos da tarefa esperando revisão que a pessoa pode revisar: [{arquivo, rotulo}], na ordem das partidas. */
+/**
+ * Rótulos da tarefa esperando revisão que a pessoa pode revisar: [{arquivo, rotulo, item}], na ordem das
+ * partidas; `item` é o da fila (nas placas, com a região da placa).
+ */
 export async function pendentesRevisao(indice, tarefa, pessoa) {
   const out = [];
   for (const { partida, fila, ip } of (await indice.partidasProntas(tarefa)).prontas) {
@@ -232,12 +240,12 @@ export async function pendentesRevisao(indice, tarefa, pessoa) {
     const aRevisar = [...ip.ultimosProprios().values()].filter((a) => {
       if (a.pessoa === pessoa || (ip.revisoesDe.get(a.nome) || []).length) return false;
       const item = itemDe.get(a.quadro);
-      if (!item) return false; // um quadro que não está na fila (o `anotacao validar` mostra)
+      if (!item) return false; // um item que não está na fila (o `anotacao validar` mostra)
       // dupla às cegas: só depois dos dois rótulos (antes, quem revisasse poderia ser a segunda pessoa)
       return !item.dupla || quemAnotou(ip, a.quadro).size >= 2;
     });
     aRevisar.sort((x, y) => (x.quadro < y.quadro ? -1 : x.quadro > y.quadro ? 1 : x.pessoa < y.pessoa ? -1 : 1));
-    for (const a of emOrdemDaPessoa(aRevisar, pessoa, partida)) out.push({ arquivo: a, rotulo: a.dados });
+    for (const a of emOrdemDaPessoa(aRevisar, pessoa, partida)) out.push({ arquivo: a, rotulo: a.dados, item: itemDe.get(a.quadro) });
   }
   return out;
 }

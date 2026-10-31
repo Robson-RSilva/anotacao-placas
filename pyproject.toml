@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "anotacao-placas"
-version = "0.9.0"
-description = "Ferramentas da pasta de trabalho da anotação de dados de treino (pontos do campo e pessoas): formatos, validar, unificar, gabarito e previsões."
+version = "0.10.0"
+description = "Ferramentas da pasta de trabalho da anotação de dados de treino (pontos do campo e o que cobre as placas): formatos, recortes, validar, unificar, gabarito e previsões."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "Todos os direitos reservados" }

@@ -1,26 +1,34 @@
 {
   "descricao": "Gerado por scripts/gerar_arquivos_web.py a partir de src/anotacao; não editar à mão.",
-  "versao": "0.9.0",
+  "versao": "0.10.0",
   "ref": [
     960,
     540
   ],
   "tarefas": [
     "pontos",
-    "pessoas"
+    "placas"
   ],
   "manual": {
     "pontos": "pontos-0.1",
-    "pessoas": "pessoas-0.1",
-    "revisao": "revisao-0.3"
+    "placas": "placas-0.1",
+    "revisao": "revisao-0.4"
   },
   "partida_gabarito": "gabarito",
-  "motivos_descarte": [
-    "transicao",
-    "borrao",
-    "grafismo",
-    "outro"
-  ],
+  "motivos_descarte": {
+    "pontos": [
+      "transicao",
+      "borrao",
+      "grafismo",
+      "outro"
+    ],
+    "placas": [
+      "placa_fora_do_lugar",
+      "transicao",
+      "borrao",
+      "outro"
+    ]
+  },
   "pontos_marcaveis": [
     "canto_esq_cab",
     "canto_esq_opo",
@@ -118,11 +126,14 @@
     "RE_VERSAO_PACOTE": "^\\d+\\.\\d+$",
     "RE_PARTIDA": "^\\d{4}-\\d{2}-\\d{2}_[a-z0-9]+(?:-[a-z0-9]+)*_[a-z0-9]+(?:-[a-z0-9]+)*$",
     "RE_QUADRO": "^t\\d{10}$",
+    "RE_RECORTE": "^t\\d{10}_[a-z0-9]+(?:-[a-z0-9]+)*$",
+    "RE_LOTE": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
     "RE_GABARITO": "^g\\d{4}$",
     "RE_PESSOA": "^[A-Z][A-Z0-9]{1,9}$",
     "RE_PACOTE_REF": "^[a-z0-9]+(?:-[a-z0-9]+)*/pacote-\\d+\\.\\d+$",
     "RE_DISPOSITIVO": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
-    "RE_MASCARA": "^(t\\d{10}|g\\d{4})__([A-Z][A-Z0-9]{1,9})__v(\\d+)\\.png$"
+    "RE_MASCARA": "^(t\\d{10}_[a-z0-9]+(?:-[a-z0-9]+)*|g\\d{4})__([A-Z][A-Z0-9]{1,9})__v(\\d+)\\.png$",
+    "RE_ARQUIVO": "^(t\\d{10}(?:_[a-z0-9]+(?:-[a-z0-9]+)*)?|g\\d{4})__([A-Z][A-Z0-9]{1,9})__v(\\d+)\\.json$"
   },
   "slug": [
     [

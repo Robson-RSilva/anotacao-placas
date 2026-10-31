@@ -46,7 +46,7 @@
     }
   },
   "additionalProperties": false,
-  "description": "A máscara das pessoas do quadro (PNG ao lado, com o mesmo nome do rótulo: 1 onde há pessoa, 0 no\nresto). Pinta-se toda pessoa no gramado e em volta dele, do lado de dentro das placas — jogadores,\ngoleiros, árbitros, gandulas, fotógrafos, comissão técnica, seguranças —, e não a torcida nem as\nsombras. Sem nenhuma pessoa, a máscara é toda 0. Imagem descartada não leva máscara.",
+  "description": "O que está na frente da placa, pintado no recorte dela (PNG ao lado, com o mesmo nome do rótulo:\n1 onde algo cobre a placa, 0 no resto e fora da região da placa). Pinta-se tudo o que esconde a\nplaca de quem assiste — gente, bola, trave, outra placa, câmera, bandeira, grafismo da emissora —,\ne não o próprio anúncio, sombra, reflexo nem o que deixa ver a placa através (a rede). Sem nada na\nfrente, a máscara é toda 0. Recorte descartado não leva máscara.",
   "properties": {
     "altura": {
       "description": "altura da imagem (px)",
@@ -87,8 +87,8 @@
       "type": "string"
     },
     "formato": {
-      "const": "rotulo.pessoas/1",
-      "default": "rotulo.pessoas/1",
+      "const": "rotulo.placas/1",
+      "default": "rotulo.placas/1",
       "title": "Formato",
       "type": "string"
     },
@@ -119,9 +119,9 @@
       "anyOf": [
         {
           "enum": [
+            "placa_fora_do_lugar",
             "transicao",
             "borrao",
-            "grafismo",
             "outro"
           ],
           "type": "string"
@@ -143,14 +143,15 @@
     },
     "pixels": {
       "default": 0,
-      "description": "pixels pintados (pessoa) na máscara",
+      "description": "pixels pintados (algo na frente da placa) na máscara",
       "minimum": 0,
       "title": "Pixels",
       "type": "integer"
     },
-    "quadro": {
-      "description": "ID do quadro (t + PTS em ms) ou do item do gabarito (g1001)",
-      "title": "Quadro",
+    "recorte": {
+      "description": "ID do recorte (<quadro>_<placa>) ou do item do gabarito (g4001)",
+      "maxLength": 48,
+      "title": "Recorte",
       "type": "string"
     },
     "segundos_ativos": {
@@ -174,7 +175,6 @@
   },
   "required": [
     "partida",
-    "quadro",
     "anotador",
     "versao",
     "ferramenta",
@@ -184,8 +184,9 @@
     "largura",
     "altura",
     "partiu_de",
-    "situacao"
+    "situacao",
+    "recorte"
   ],
-  "title": "RotuloPessoas",
+  "title": "RotuloPlacas",
   "type": "object"
 }

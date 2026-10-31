@@ -1,21 +1,36 @@
 // O que as páginas das duas tarefas (e as das revisões) têm em comum: as caixas de descartar e de
-// confirmar, abrir a imagem de um item, os textos do que veio da revisão e o resultado do treino.
+// confirmar, abrir a imagem de um item (o quadro ou o recorte da placa), os textos do que veio da
+// revisão e o resultado do treino.
 
 import { MOTIVOS_DESCARTE } from "../nucleo/convencoes.js";
 import { MOTIVOS } from "../nucleo/formatos.js";
-import { REGRA } from "../nucleo/gabarito.js";
+import { REGRA, minimoDoTreino } from "../nucleo/gabarito.js";
 import { el, imagemDoArquivo } from "./util.js";
 
+/** O texto da caixa de descartar, por tarefa. */
+const DESCARTE = {
+  pontos: {
+    titulo: "Descartar esta imagem?",
+    texto: "Descarte só a imagem que não dá para anotar direito. Uma imagem normal em que não aparece nada para marcar você salva vazia — ela também serve para o treino.",
+  },
+  placas: {
+    titulo: "Descartar este recorte?",
+    texto: "O recorte não se ajusta: se o contorno não está na placa (fora do lugar, ou é outra coisa), descarte. Uma placa sem nada na frente você salva sem pintar — ela também serve para o treino.",
+  },
+};
+
 /**
- * Põe as caixas de descartar e de confirmar na vista. Devolve {pedirDescarte, confirmar, aberta}:
- * `pedirDescarte()` resolve com {motivo, comentario} ou null (voltou); `confirmar(titulo, texto)`, com
- * true ou false.
+ * Põe as caixas de descartar e de confirmar na vista, com os motivos de descarte da tarefa. Devolve
+ * {pedirDescarte, confirmar, aberta}: `pedirDescarte()` resolve com {motivo, comentario} ou null
+ * (voltou); `confirmar(titulo, texto)`, com true ou false.
  */
-export function caixas(raiz) {
+export function caixas(raiz, tarefa = "pontos") {
   raiz.append(document.getElementById("tpl-caixas").content.cloneNode(true));
   const $ = (id) => el(id, raiz);
+  $("titulo-descartar").textContent = DESCARTE[tarefa].titulo;
+  $("texto-descartar").textContent = DESCARTE[tarefa].texto;
   $("motivos-descarte").replaceChildren(
-    ...Object.entries(MOTIVOS_DESCARTE).map(([valor, texto]) => {
+    ...Object.entries(MOTIVOS_DESCARTE[tarefa]).map(([valor, texto]) => {
       const rotulo = document.createElement("label");
       const r = Object.assign(document.createElement("input"), { type: "radio", name: "motivo-descarte", value: valor });
       rotulo.append(r, ` ${texto}`);
@@ -82,9 +97,12 @@ export function caixas(raiz) {
   };
 }
 
-/** A imagem de um item da fila (um quadro da partida ou um item do gabarito): {img, url}. */
+/**
+ * A imagem de um item da fila — um quadro da partida (pontos), um recorte (placas) ou um item do
+ * gabarito: {img, url}. `item.tarefa` diz qual (sem ela, pontos).
+ */
 export async function abrirImagem(pasta, item) {
-  const arquivo = await pasta.arquivo(pasta.quadro(item.partida, item.quadro));
+  const arquivo = await pasta.arquivo(pasta.imagem(item.partida, item.tarefa ?? "pontos", item.quadro));
   if (!arquivo) throw new Error("A imagem ainda não chegou na pasta (o Drive terminou de sincronizar?).");
   const aberta = await imagemDoArquivo(arquivo);
   if (aberta.img.naturalWidth !== item.largura || aberta.img.naturalHeight !== item.altura) {
@@ -108,16 +126,20 @@ export function textoPartiu(tarefa, partiu) {
 }
 
 /** O texto da situação de um rótulo (para a revisão). */
-export function textoSituacao(r) {
-  if (r.situacao !== "descartada") return "Anotada";
-  const motivo = MOTIVOS_DESCARTE[r.motivo_descarte] || r.motivo_descarte;
-  return `Descartada: ${motivo.charAt(0).toLowerCase()}${motivo.slice(1)}`;
+export function textoSituacao(r, tarefa = "pontos") {
+  if (r.situacao !== "descartada") return tarefa === "placas" ? "Pintado" : "Anotada";
+  const motivo = MOTIVOS_DESCARTE[tarefa][r.motivo_descarte] || r.motivo_descarte;
+  return `${tarefa === "placas" ? "Descartado" : "Descartada"}: ${motivo.charAt(0).toLowerCase()}${motivo.slice(1)}`;
 }
 
 /** Quanto falta para a liberação, em português ("Faltam 3 acertos…" / "Liberado…"). */
 export function textoLiberacao(tarefa, sit) {
   const regra = REGRA[tarefa];
   if (sit.liberado) return sit.gabarito_total ? "Você está liberado para as imagens reais." : "";
+  const minimo = minimoDoTreino(regra);
+  if (minimo > regra.n && sit.n < minimo) {
+    return `Para a liberação: fazer pelo menos ${minimo} (até aqui, ${sit.n}) e acertar ${regra.k} dos últimos ${regra.n} (nos últimos ${sit.ultimos}, ${sit.acertos} certo(s)).`;
+  }
   const faltamItens = Math.max(0, regra.n - sit.ultimos);
   const faltamAcertos = Math.max(0, regra.k - sit.acertos);
   if (faltamItens > 0 && faltamAcertos > 0) return `Para a liberação: acertar ${regra.k} dos últimos ${regra.n} (até aqui, ${sit.acertos} de ${sit.ultimos}).`;

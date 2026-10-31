@@ -4,9 +4,10 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { Molde } from "../../web/js/nucleo/campo.js";
-import { calcularPlacar, concordanciaPessoas, concordanciaPontos } from "../../web/js/nucleo/placar.js";
+import { calcularPlacar, concordanciaPlacas, concordanciaPontos } from "../../web/js/nucleo/placar.js";
+import { mascaraDaRegiao } from "../../web/js/nucleo/regiao.js";
 import { formatarDuracao } from "../../web/js/ui/util.js";
-import { AGORA, criarGabaritoPontos, criarPartida, esquemas, gravarPessoas, gravarPontos, gravarRevisao, pastaExemplo } from "./apoio.js";
+import { AGORA, RH, RW, criarGabaritoPontos, criarPartida, criarRecortes, esquemas, gravarPlacas, gravarPontos, gravarRevisao, pastaExemplo } from "./apoio.js";
 
 await esquemas();
 
@@ -23,19 +24,25 @@ test("concordância dos pontos: a distância mediana dos que os dois marcaram, d
   assert.equal(concordanciaPontos(r1, { largura: 640, pontos: [{ ponto: "penalti_dir", x: 1, y: 1 }] }), null);
 });
 
-test("concordância das pessoas: a sobreposição, sem a borda de 1 px", () => {
+test("concordância das placas: a sobreposição dentro da placa, sem a borda de 1 px", () => {
   const w = 20;
   const h = 10;
   const a = new Uint8Array(w * h);
   const b = new Uint8Array(w * h);
   for (let y = 2; y < 8; y++) for (let x = 2; x < 8; x++) a[y * w + x] = 1;
   for (let y = 2; y < 8; y++) for (let x = 3; x < 9; x++) b[y * w + x] = 1; // 1 px ao lado
-  assert.equal(concordanciaPessoas(a, a, w, h), 1);
-  assert.equal(concordanciaPessoas(a, b, w, h), 1); // 1 px de diferença na borda não conta
+  assert.equal(concordanciaPlacas(a, a, w, h), 1);
+  assert.equal(concordanciaPlacas(a, b, w, h), 1); // 1 px de diferença na borda não conta
   const c = new Uint8Array(w * h);
   for (let y = 2; y < 8; y++) for (let x = 12; x < 18; x++) c[y * w + x] = 1;
-  assert.equal(concordanciaPessoas(a, c, w, h), 0);
-  assert.equal(concordanciaPessoas(new Uint8Array(w * h), new Uint8Array(w * h), w, h), 1);
+  assert.equal(concordanciaPlacas(a, c, w, h), 0);
+  assert.equal(concordanciaPlacas(new Uint8Array(w * h), new Uint8Array(w * h), w, h), 1);
+  // fora da placa não conta
+  const regiao = mascaraDaRegiao([[0, 0], [10, 0], [10, 10], [0, 10]], w, h);
+  const d = a.slice();
+  for (let y = 2; y < 8; y++) for (let x = 12; x < 18; x++) d[y * w + x] = 1;
+  assert.ok(concordanciaPlacas(a, d, w, h) < 0.6);
+  assert.equal(concordanciaPlacas(a, d, w, h, regiao), 1);
 });
 
 test("placar: aprovados, devolvidos, descartes, concordância dos cegos e progresso das partidas", async () => {
@@ -50,7 +57,8 @@ test("placar: aprovados, devolvidos, descartes, concordância dos cegos e progre
   await gravarRevisao(pasta, { quadro: quadro(0), rotulo: n2, revisor: "A01", m: 30 });
   await gravarRevisao(pasta, { quadro: quadro(1), rotulo: n3, revisor: "A02", decisao: "devolver", m: 31 });
   await gravarRevisao(pasta, { quadro: quadro(3), rotulo: n4, revisor: "A02", m: 32 });
-  await gravarPessoas(pasta, { quadro: quadro(0), pessoa: "A02", mascara: new Uint8Array(640 * 360) });
+  await criarRecortes(pasta, [{}, {}, {}]);
+  await gravarPlacas(pasta, { quadro: `${quadro(0)}_p0`, pessoa: "A02", mascara: new Uint8Array(RW * RH) });
   await criarGabaritoPontos(pasta, 2);
   const pl = await calcularPlacar(indice, new Date(AGORA.getTime() + 3_600_000));
   const a01 = pl.pontos.equipe.find((p) => p.pessoa === "A01");
@@ -77,10 +85,10 @@ test("placar: aprovados, devolvidos, descartes, concordância dos cegos e progre
   });
   assert.deepEqual(pl.pontos.total, { sorteados: 4, anotados: 4, aprovados: 2, descartados: 1, pendentes_revisao: 1 });
   assert.equal(pl.pontos.equipe[0].pessoa, "A01"); // mais aprovados na semana
-  // a pintura das pessoas tem o placar dela
-  assert.deepEqual(pl.pessoas.total, { sorteados: 4, anotados: 1, aprovados: 0, descartados: 0, pendentes_revisao: 1 });
-  assert.equal(pl.pessoas.equipe.find((p) => p.pessoa === "A02").rotulos, 1);
-  assert.equal(pl.pessoas.gabarito_importado, false);
+  // a pintura das placas tem o placar dela: os "sorteados" são os recortes
+  assert.deepEqual(pl.placas.total, { sorteados: 3, anotados: 1, aprovados: 0, descartados: 0, pendentes_revisao: 1 });
+  assert.equal(pl.placas.equipe.find((p) => p.pessoa === "A02").rotulos, 1);
+  assert.equal(pl.placas.gabarito_importado, false);
 });
 
 test("placar: o tempo por imagem é o dos rótulos da própria pessoa, sem descartes nem correções", async () => {

@@ -11,8 +11,10 @@ Convenções (ADR-0001, em `convencoes.py`):
 - **Campo:** origem no centro do gramado, x ao longo do comprimento, y ao longo da largura, z para
   cima, metros. O lado `cab` (das cabines, da câmera principal) é y < 0; `opo`, y > 0; os fundos
   `esq` (x < 0) e `dir` (x > 0), vistos da câmera principal. Os nomes dos pontos seguem esses lados.
-- **Imagem:** px do quadro na resolução do vídeo, origem no canto de cima à esquerda — o primeiro
-  pixel vai de 0 a 1 (o centro dele é 0,5) —, x para a direita e y para baixo.
+- **Imagem:** px do quadro na resolução do vídeo (ou do recorte da placa), origem no canto de cima à
+  esquerda — o primeiro pixel vai de 0 a 1 (o centro dele é 0,5) —, x para a direita e y para baixo.
+  Um polígono (a região da placa no recorte) contém o pixel cujo centro cai dentro dele (regra
+  par-ímpar), a mesma conta nas páginas e no Python.
 - **Tempo:** o ID do quadro é o PTS em milissegundos.
 - **Medidas** (erros, tolerâncias, áreas) em px na referência de 960 de largura: px da imagem ×
   960 / largura.
@@ -23,6 +25,8 @@ Convenções (ADR-0001, em `convencoes.py`):
 | --- | --- | --- |
 | partida | `AAAA-MM-DD_<estadio>_<mandante>-<visitante>` | `2026-11-02_arena-x_time-a-time-b` |
 | quadro | `t` + PTS em ms com 10 dígitos | `t0001234567` |
+| recorte | `<quadro>_<placa>`: o quadro e a placa (letras minúsculas, dígitos e hífens) | `t0001234567_opo-05` |
+| lote de recortes | letra minúscula + letras minúsculas, dígitos e hífens (até 40) | `r1`, `projecao-2026-11` |
 | item do gabarito | `g` + 4 dígitos | `g1001` |
 | pessoa | o código que a pessoa digita: letra maiúscula + 1 a 9 letras maiúsculas ou dígitos | `RS`, `A03`, `ANACLARA` |
 
@@ -53,21 +57,25 @@ desenha o mesmo campo, e o gabarito e a concordância aceitam as duas leituras.
 
 ## O que vale nas duas tarefas
 
-Rótulo: `partidas/<partida>/rotulos/<tarefa>/<quadro>__<anotador>__v<n>.json` (no gabarito,
+Rótulo: `partidas/<partida>/rotulos/<tarefa>/<item>__<anotador>__v<n>.json` (no gabarito,
 `gabarito/rotulos/<tarefa>/<gNNNN>__<anotador>__v<n>.json`). Revisão:
-`partidas/<partida>/revisoes/<tarefa>/<quadro>__<revisor>__v<n>.json`. A tarefa é `pontos` ou
-`pessoas`. O conteúdo precisa bater com o nome (partida, quadro, pessoa e versão); um arquivo que
-não bate conta como inválido.
+`partidas/<partida>/revisoes/<tarefa>/<item>__<revisor>__v<n>.json`. A tarefa é `pontos` (o item é o
+quadro, no campo `quadro`) ou `placas` (o item é o recorte da placa, no campo `recorte`). O conteúdo
+precisa bater com o nome (partida, item, pessoa e versão); um arquivo que não bate conta como
+inválido.
 
-- `situacao`: `ok` (anotada; sem pontos, ou sem ninguém para pintar, também é `ok`) ou `descartada`, com
-  `motivo_descarte`: `transicao` (fusão, corte no meio), `borrao` (borrada ou fora de foco demais),
-  `grafismo` (grafismo da emissora cobre a imagem) ou `outro` (exige `comentario`).
+- `situacao`: `ok` (anotada; sem pontos, ou sem nada na frente da placa, também é `ok`) ou
+  `descartada`, com `motivo_descarte`. Nos pontos: `transicao` (fusão, corte no meio), `borrao`
+  (borrada ou fora de foco demais), `grafismo` (grafismo da emissora cobre a imagem) ou `outro` (exige
+  `comentario`). Nas placas: `placa_fora_do_lugar` (o recorte não está na placa: fora do lugar, outra
+  coisa), `transicao`, `borrao` ou `outro` — o grafismo da emissora por cima da placa se pinta, não se
+  descarta.
 - `partiu_de.fonte`: `nenhuma`, `modelo` (a previsão da pasta), `rotulo_anterior` (a versão devolvida
   na revisão, que volta para a mesma pessoa como versão nova) ou `rotulo_revisado` (a correção feita
   na revisão, com `corrige` apontando o rótulo corrigido).
 - `largura` e `altura`: o tamanho da imagem anotada, em px.
 - `ferramenta` e `manual`: as versões da ferramenta e do Manual de anotação da tarefa
-  (`pontos-0.1`, `pessoas-0.1`; as revisões, `revisao-0.3`).
+  (`pontos-0.1`, `placas-0.1`; as revisões, `revisao-0.4`).
 - `segundos_ativos`: o tempo ativo na imagem (ou na revisão), em segundos — a página só conta enquanto
   está visível e houve uso nos últimos 20 s. Uma correção feita na revisão leva, no rótulo novo e na
   revisão, o tempo da revisão.
@@ -83,7 +91,7 @@ não bate conta como inválido.
   "quadro": "t0001234567",
   "anotador": "A03",
   "versao": 1,
-  "ferramenta": "0.9.0",
+  "ferramenta": "0.10.0",
   "manual": "pontos-0.1",
   "criado_em": "2026-11-03T14:05:11Z",
   "segundos_ativos": 41.0,
@@ -110,46 +118,48 @@ não bate conta como inválido.
 `revisao.pontos/1` — os motivos de devolver: `ponto_fora_do_lugar` (mais de 2 px), `nome_trocado`,
 `faltou_ponto`, `ponto_que_nao_se_ve`, `descarte_errado` ou `outro`.
 
-## `rotulo.pessoas/1` — a máscara das pessoas em campo
+## `rotulo.placas/1` — o que está na frente da placa
 
-O rótulo, com a máscara `<quadro>__<anotador>__v<n>.png` ao lado (o mesmo nome, com .png):
+O rótulo, com a máscara `<recorte>__<anotador>__v<n>.png` ao lado (o mesmo nome, com .png):
 
 ```json
 {
-  "formato": "rotulo.pessoas/1",
+  "formato": "rotulo.placas/1",
   "partida": "2026-11-02_arena-x_time-a-time-b",
-  "quadro": "t0001234567",
+  "recorte": "t0001234567_opo-05",
   "anotador": "A03",
   "versao": 1,
-  "ferramenta": "0.9.0",
-  "manual": "pessoas-0.1",
+  "ferramenta": "0.10.0",
+  "manual": "placas-0.1",
   "criado_em": "2026-11-03T14:12:40Z",
-  "segundos_ativos": 95.0,
-  "largura": 1280,
-  "altura": 720,
+  "segundos_ativos": 38.0,
+  "largura": 410,
+  "altura": 103,
   "partiu_de": {"fonte": "nenhuma", "versao": null, "referencia": null},
   "situacao": "ok",
   "motivo_descarte": null,
   "comentario": "",
   "corrige": null,
-  "mascara": "t0001234567__A03__v1.png",
-  "pixels": 18342
+  "mascara": "t0001234567_opo-05__A03__v1.png",
+  "pixels": 2214
 }
 ```
 
-- **A máscara** é um PNG de 8 bits com paleta, do tamanho da imagem: 1 onde há pessoa, 0 no resto.
-  Pessoa é todo mundo no gramado e em volta dele, até as placas — jogadores e goleiros, árbitros e
-  assistentes, gandulas, fotógrafos e cinegrafistas, comissão técnica e reservas, seguranças,
-  maqueiros: qualquer um que possa ficar na frente de uma placa. A torcida e as sombras ficam em 0.
-  Sem ninguém na imagem, a máscara é toda 0 (`pixels: 0`). `pixels` é quantos pixels valem 1, e o
-  `validar` confere com a máscara.
-- Imagem descartada não leva máscara (`mascara: null`, `pixels: 0`). O rótulo é gravado depois da
+- **A máscara** é um PNG de 8 bits com paleta, do tamanho do recorte: 1 onde algo na frente cobre a
+  placa, 0 no resto e em tudo fora da região da placa (a página não pinta fora dela). Pinta-se tudo o
+  que esconde a placa de quem assiste — gente (jogador, árbitro, gandula, fotógrafo, quem for), bola,
+  trave e travessão, outra placa mais perto, câmera, bandeira, o grafismo da emissora —, e não o
+  próprio anúncio (mesmo uma pessoa desenhada nele), sombra, reflexo nem o que deixa ver a placa
+  através (a rede do gol). Sem nada na frente, a máscara é toda 0 (`pixels: 0`). `pixels` é quantos
+  pixels valem 1, e o `validar` confere com a máscara.
+- Recorte descartado não leva máscara (`mascara: null`, `pixels: 0`). O rótulo é gravado depois da
   máscara; um rótulo cuja máscara ainda não chegou pelo Drive fica esperando nas páginas, e o
   `validar` e o `unificar` o apontam.
 
-`revisao.pessoas/1` — os motivos de devolver: `faltou_pessoa` (o árbitro e quem trabalha em volta do
-campo também), `contorno_impreciso` (mais de 1 px), `pintou_o_que_nao_e_pessoa` (a torcida, uma
-sombra, uma placa), `descarte_errado` ou `outro`.
+`revisao.placas/1` (com `recorte` no lugar de `quadro`) — os motivos de devolver: `faltou_pintar`
+(alguém ou algo na frente da placa ficou sem pintar: a trave e o grafismo também), `contorno_impreciso`
+(mais de 1 px), `pintou_o_que_nao_cobre` (o anúncio, uma sombra, a rede), `descarte_errado` ou
+`outro`.
 
 ## Por partida
 
@@ -157,11 +167,57 @@ sombra, uma placa), `descarte_errado` ou `outro`.
 | --- | --- | --- |
 | `manifesto.json` | `manifesto.partida/1` | cadastro (estádio, emissora, competição, data e hora com fuso, mandante, visitante, iluminação, chuva), vídeo (nome, sha256 do arquivo inteiro, duração, fps, resolução, quadros) e parâmetros da importação (sorteio, origem do PTS, codec, decodificador, cortes, quadros perdidos, quadros sem chave no início, quadros não extraídos, amostras além do fim de um arquivo cortado e, quando a importação foi só de uns trechos, `trechos` em segundos — `"300-3000;3900-6600"` — e `quadros_nos_trechos`). Gravado por último: a partida só existe quando o manifesto existe — e um manifesto vazio (escrita interrompida) não conta. `pacote` e `cadastro.pacote_versao` são das versões até a 0.7 e são ignorados. |
 | `tomadas.json` | `tomadas.partida/1` | cortes, transições e tomadas (índices, PTS, zoom e grupo aproximados — só para o sorteio). `replay` fica `null`: replays são conferidos na solução assistida. Com trechos, o começo e o fim de cada trecho também são cortes, e os quadros de fora não são sorteados. |
-| `fila.json` | `fila.partida/1` | quadros sorteados e as marcas de dupla às cegas e de "sem previsão". A fila é aberta (`equipe` e `atribuido_a` vazios) e vale para as duas tarefas: em cada uma, um quadro precisa de um rótulo, ou de duas pessoas diferentes na dupla. |
+| `fila.json` | `fila.partida/1` | os quadros sorteados para os pontos e as marcas de dupla às cegas e de "sem previsão". A fila é aberta (`equipe` e `atribuido_a` vazios): um quadro precisa de um rótulo, ou de duas pessoas diferentes na dupla. |
 | `quadros/<quadro>.jpg` | JPEG | os quadros sorteados, na resolução original do vídeo. |
 | `previsoes/pontos/<quadro>.json` | `previsao.pontos/1` | os pontos de um modelo (`fonte`, `versao` e a lista de pontos, como no rótulo), gravados por `anotacao prever --tarefa pontos` (nunca nos quadros "sem previsão"). A página começa com eles. |
-| `previsoes/pessoas/<quadro>.png` | PNG de 8 bits | a pré-pintura de um modelo (diferente de 0: pessoa), gravada por `anotacao prever --tarefa pessoas`. A página começa com ela. |
+| `recortes/<lote>.json` | `recortes.lote/1` | um lote de recortes das placas (abaixo). A fila das placas são os recortes de todos os lotes da partida, com a dupla e o "sem previsão" de cada um. |
+| `recortes/<recorte>.jpg` | JPEG | a placa endireitada, com um pouco em volta. |
+| `previsoes/placas/<recorte>.png` | PNG de 8 bits | a pré-pintura de um modelo (diferente de 0: algo na frente; só dentro da região da placa), gravada por `anotacao prever --tarefa placas`. A página começa com ela. |
 | `importando.json` | — | só durante a importação: quem está importando a partida (some no fim; não vai para o .zip). Uma marca sem renovação há 10 minutos é de uma importação que parou. |
+
+### `recortes.lote/1` — os recortes das placas
+
+O que a pintura das placas recebe, pronto, de fora das páginas: hoje, do simulador do laboratório;
+depois, da projeção das placas com a câmera de cada quadro. Cada recorte é uma placa num quadro,
+endireitada — o retângulo da placa com 0,6 da altura dela em volta, de cada lado — e é considerado
+certo: quem pinta não ajusta o contorno; se ele não está na placa, descarta.
+
+```json
+{
+  "formato": "recortes.lote/1",
+  "partida": "2026-11-02_arena-x_time-a-time-b",
+  "lote": "r1",
+  "criado_em": "2026-11-03T12:00:00Z",
+  "origem": "simulador",
+  "gerador": "scripts/lotes_de_ouro.py (anotacao 0.10.0)",
+  "itens": [
+    {
+      "recorte": "t0000235720_opo-12",
+      "largura": 410,
+      "altura": 103,
+      "regiao": [[28.0, 28.0], [382.0, 28.0], [382.0, 75.0], [28.0, 75.0]],
+      "placa": [[28.0, 28.0], [382.0, 28.0], [382.0, 75.0], [28.0, 75.0]],
+      "no_quadro": [[533.93, 414.86], [886.09, 383.19], [886.01, 428.43], [534.61, 461.58]],
+      "dupla": false,
+      "sem_previsao": true
+    }
+  ]
+}
+```
+
+- `regiao`: o que se pinta — a placa, só a parte dentro do quadro (polígono de 3 a 64 vértices, px do
+  recorte). A placa que sai pelo lado do quadro tem a região cortada ali; fora do quadro, o recorte é
+  cinza.
+- `placa` e `no_quadro`: os quatro cantos da placa (em cima à esquerda, em cima à direita, embaixo à
+  direita, embaixo à esquerda) no recorte e no quadro, para levar a máscara de volta ao quadro.
+- `origem`: `simulador` ou `modelo`; `gerador`: o que gerou os recortes, com a versão.
+- `dupla` e `sem_previsao`: como na fila dos pontos; `montar_lote` (`anotacao.recortes`) sorteia ~10% de
+  cada.
+
+Os lotes entram por `anotacao recortes LOTE.json --pasta P` (com os `<recorte>.jpg` ao lado; a
+partida precisa estar na pasta) ou por um .zip com `partidas/<partida>/recortes/…` ("Trazer arquivos
+de um .zip"). As imagens vão antes e o lote por último; um recorte que já veio em outro lote da
+partida é recusado, e nada é sobrescrito.
 
 ## Da pasta
 
@@ -172,7 +228,7 @@ sombra, uma placa), `descarte_errado` ou `outro`.
 | `projeto.json` | `projeto/1` | opcional: nome do projeto e link (https) do Manual de anotação, mostrados nas páginas. |
 | `divisao.json` | `divisao/1` | partidas de validação, teste congelado e teste externo; o resto é treino. |
 | `gabarito/itens/<id>.json` + `.jpg` | `gabarito.pontos/1` | um item dos pontos (abaixo). |
-| `gabarito/itens/<id>.json` + `.jpg` + `.png` | `gabarito.pessoas/1` | um item das pessoas (abaixo). O formato dentro do arquivo diz a tarefa do item. |
+| `gabarito/itens/<id>.json` + `.jpg` (+ `.png`) | `gabarito.placas/1` | um item das placas (abaixo); o recorte para descartar não leva a máscara. O formato dentro do arquivo diz a tarefa do item. |
 
 ## O gabarito
 
@@ -209,44 +265,49 @@ Um item dá **certo** quando nenhum ponto marcado está errado (com um nome que 
 mais de 8 px do lugar certo), pelo menos 80% dos pontos visíveis foram marcados e o erro mediano dos
 visíveis é de até 2 px (ref. 960). Um ponto opcional marcado não conta no erro, mas também não pode
 estar errado. Vale a leitura do mesmo lado do campo ou do outro (a rotação de 180°), a que acha mais
-pontos. Libera com 8 certos dos últimos 10.
+pontos. Libera com 8 certos dos últimos 10 (depois de pelo menos 10 itens).
 
-### `gabarito.pessoas/1`
+### `gabarito.placas/1`
 
 ```json
 {
-  "formato": "gabarito.pessoas/1",
-  "id": "g3001",
-  "lote": "PE1-treino",
-  "imagem": "g3001.jpg",
-  "mascara": "g3001.png",
-  "largura": 1280,
-  "altura": 720,
-  "pessoas": 6,
+  "formato": "gabarito.placas/1",
+  "id": "g4003",
+  "lote": "PL1-treino",
+  "imagem": "g4003.jpg",
+  "mascara": "g4003.png",
+  "largura": 791,
+  "altura": 326,
+  "regiao": [[89.0, 89.0], [702.0, 89.0], [702.0, 237.0], [89.0, 237.0]],
+  "oclusores": 3,
+  "resposta": "pintar",
   "origem": "simulador",
-  "observacao": "simulador do laboratório, domínio A, semente 86014"
+  "observacao": "simulador do laboratório, domínio A, semente 91010, placa opo-06"
 }
 ```
 
-A máscara verdadeira (`mascara`, o PNG ao lado) tem um número por pessoa, de 1 a `pessoas` (N), e 0
-no resto; jogadores, árbitro, gandulas e fotógrafos, todos se pintam. A importação confere que não há
-outro número.
+O recorte da placa, como num lote de recortes (`regiao`), e a resposta: `pintar`, com a máscara
+verdadeira (`mascara`, o PNG ao lado) — um número por coisa na frente da placa, de 1 a `oclusores`
+(N), e 0 no resto e fora da região —, ou `descartar` (o recorte não está na placa), sem máscara e com
+`oclusores: 0`. A importação confere o tamanho da máscara, que não há outro número e que nada fica
+fora da região.
 
-A pintura dá **certo** quando, sem contar a borda de 1 px das pessoas (os pixels com um vizinho do
-outro lado do contorno), cada pessoa está pintada em pelo menos metade da área e a sobreposição com a
-resposta (IoU) é de pelo menos 80% — o que se pinta a mais (a torcida, uma sombra, um contorno largo)
-derruba a sobreposição. Pessoa com menos de 30 px de área (ref. 960) não precisa ser pintada. Uma
-imagem sem ninguém (só a torcida, por exemplo) dá certo sem nada pintado. Libera com 4 certos dos
-últimos 5.
+A pintura dá **certo** quando, dentro da região e sem contar a borda de 1 px do que está na frente
+(os pixels com um vizinho do outro lado do contorno), cada coisa na frente está pintada em pelo menos
+metade da área e a sobreposição com a resposta (IoU) é de pelo menos 80% — o que se pinta a mais (o
+anúncio, uma sombra, um contorno largo) derruba a sobreposição. Coisa com menos de 30 px de área (px
+do recorte) não precisa ser pintada. Uma placa sem nada na frente dá certo sem nada pintado; um item
+`descartar` dá certo só descartado como `placa_fora_do_lugar`. Libera com 4 certos dos últimos 5,
+depois de pelo menos 12 itens — o lote de treino inteiro (ADR-0012).
 
-Descartar um item do gabarito conta como erro: todo item tem resposta (uma imagem sem pontos ou sem
-ninguém se salva vazia).
+Nas duas tarefas, descartar um item que tem resposta conta como erro: uma imagem sem pontos ou uma
+placa sem nada na frente se salva vazia — só o recorte fora do lugar se descarta.
 
 ## Saída do unificar
 
 Em `conjuntos/<data-hora>/`, só os rótulos aprovados na revisão (ou a correção de quem revisou); num
-quadro em dupla, o aprovado primeiro. Imagens descartadas ficam de fora; imagem sem pontos ou sem
-ninguém entra.
+item em dupla, o aprovado primeiro. Imagens descartadas ficam de fora; imagem sem pontos ou placa sem
+nada na frente entra.
 
 - `pontos.parquet` — um quadro por linha: conjunto (`treino`, `validacao`, `teste_congelado`,
   `teste_externo`), partida, quadro, caminho da imagem, largura, altura, PTS, tomada, `n_pontos`,
@@ -254,12 +315,15 @@ ninguém entra.
   (estádio, emissora, competição, data e hora, iluminação, chuva).
 - `pontos_lista.parquet` — um ponto por linha: conjunto, partida, quadro, `ponto`, `x`, `y` (px da
   imagem).
-- `pessoas.parquet` — um quadro por linha: os mesmos dados do quadro, o caminho da máscara e
-  `pixels` (quantos valem 1).
-- `manifesto.json` (`conjuntos/4`) — por tarefa, os quadros, as contagens por conjunto, quantos sem
-  pontos (`sem_pontos`) ou sem ninguém (`sem_pessoas`) e o hash do conteúdo; os descartes por tarefa
-  e motivo; as partidas de cada conjunto e a divisão usada.
-- `problemas.json` — os arquivos inválidos e os quadros ainda sem rótulo aprovado em cada tarefa.
+- `placas.parquet` — um recorte por linha: conjunto, partida, quadro, `recorte`, `placa`, `lote`, o
+  caminho da imagem, largura, altura, `regiao`, `placa_no_recorte` e `placa_no_quadro` (em JSON, px),
+  o caminho da máscara, `pixels` (quantos valem 1), `pixels_regiao` (quantos a região tem) e
+  `cobertura` (a fração da placa coberta), com a autoria e as condições do jogo como nos pontos.
+- `manifesto.json` (`conjuntos/5`) — por tarefa, as contagens por conjunto, quantos sem pontos
+  (`sem_pontos`) ou sem nada na frente da placa (`sem_nada_na_frente`) e o hash do conteúdo; os
+  descartes por tarefa e motivo; as partidas de cada conjunto e a divisão usada.
+- `problemas.json` — os arquivos inválidos (lotes de recortes também) e os itens ainda sem rótulo
+  aprovado em cada tarefa.
 
 ## Das versões anteriores
 
@@ -267,5 +331,7 @@ Até a 0.7: `rotulo.camera/1`, `revisao.camera/1`, `gabarito.camera/1`, `rotulo.
 `revisao.oclusao/1`, `gabarito.oclusao/1`, `previsao.camera/1` e `pacote.estadio/1` (com a pasta
 `estadios/`) (ADR-0010). Da 0.8: `rotulo.jogadores/1`, `revisao.jogadores/1` e `gabarito.jogadores/1`
 (com as pastas `rotulos/jogadores`, `revisoes/jogadores` e `previsoes/jogadores`), que pintavam só os
-jogadores (ADR-0011). Ficam onde estão, mas nenhuma página nem o `unificar` os lê, e os .zip não os
-levam.
+jogadores (ADR-0011). Da 0.9: `rotulo.pessoas/1`, `revisao.pessoas/1` e `gabarito.pessoas/1` (com as
+pastas `rotulos/pessoas`, `revisoes/pessoas` e `previsoes/pessoas`), que pintavam todas as pessoas no
+quadro inteiro (ADR-0012). Ficam onde estão, mas nenhuma página nem o `unificar` os lê, e os .zip não
+os levam.

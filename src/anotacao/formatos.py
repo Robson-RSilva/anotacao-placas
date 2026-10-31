@@ -4,20 +4,22 @@ As páginas validam pelos JSON Schemas gerados daqui (`web/esquemas/`, via
 `scripts/gerar_arquivos_web.py`) antes de gravar, e o Python valida de novo ao unificar. Os
 formatos estão documentados em `docs/formatos.md`.
 
-Duas tarefas, cada uma direto na imagem:
+Duas tarefas:
 
 * pontos (`rotulo.pontos/1`): os pontos do campo que aparecem no quadro, clicados um a um;
-* pessoas (`rotulo.pessoas/1`): a máscara de todas as pessoas no gramado e em volta dele (jogadores,
-  árbitros, gandulas, fotógrafos, comissão…: quem pode ficar na frente de uma placa), no quadro
-  inteiro (PNG ao lado).
+* placas (`rotulo.placas/1`): o que está na frente da placa, pintado no recorte dela — a placa já
+  endireitada, com um pouco em volta, que vem pronta de fora das páginas (`recortes.lote/1`). A
+  máscara (PNG ao lado) só vale dentro da placa.
 
-Em qualquer das duas, uma imagem que não dá para anotar (transição, borrão, grafismo por cima) é
-descartada com um motivo — o descarte também passa pela revisão cruzada.
+Em qualquer das duas, uma imagem que não dá para anotar é descartada com um motivo (nas placas,
+também o recorte que não está na placa: ele não se ajusta, se descarta) — o descarte também passa
+pela revisão cruzada.
 """
 
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Literal
@@ -29,11 +31,13 @@ from .convencoes import (
     RE_DISPOSITIVO,
     RE_ESTADIO,
     RE_GABARITO,
+    RE_LOTE,
     RE_MASCARA,
     RE_PACOTE_REF,
     RE_PARTIDA,
     RE_PESSOA,
     RE_QUADRO,
+    RE_RECORTE,
     RE_VERSAO_PACOTE,
 )
 
@@ -41,19 +45,42 @@ NOMES_PONTOS = frozenset(pontos_marcaveis())
 
 Partida = Annotated[str, Field(pattern=RE_PARTIDA.pattern)]
 Quadro = Annotated[str, Field(pattern=RE_QUADRO.pattern)]
+Recorte = Annotated[str, Field(pattern=RE_RECORTE.pattern, max_length=48)]
 Pessoa = Annotated[str, Field(pattern=RE_PESSOA.pattern)]
 IdGabarito = Annotated[str, Field(pattern=RE_GABARITO.pattern)]
+#: Um número finito (o JSON não tem NaN nem infinito; o pydantic recusa os dois).
+Numero = Annotated[float, Field(allow_inf_nan=False)]
+#: Um ponto (x, y) em px.
+Px = tuple[Numero, Numero]
 
 
 class Modelo(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-def _partida_e_quadro(partida: str, quadro: str) -> None:
+def _partida_e_item(partida: str, item: str, regex: re.Pattern, oque: str) -> None:
     if not (RE_PARTIDA.match(partida) or partida == "gabarito"):
         raise ValueError("partida inválida")
-    if not (RE_QUADRO.match(quadro) or RE_GABARITO.match(quadro)):
-        raise ValueError("quadro inválido")
+    if not (regex.match(item) or RE_GABARITO.match(item)):
+        raise ValueError(f"{oque} inválido")
+
+
+def area_poligono(pol) -> float:
+    """A área de um polígono (fórmula do laço), em px²."""
+    a = 0.0
+    for i in range(len(pol)):
+        x0, y0 = pol[i - 1]
+        x1, y1 = pol[i]
+        a += x0 * y1 - x1 * y0
+    return abs(a) / 2
+
+
+def _regiao_coerente(regiao, largura: int, altura: int) -> None:
+    for x, y in regiao:
+        if not (0 <= x <= largura and 0 <= y <= altura):
+            raise ValueError("a região da placa sai do recorte")
+    if area_poligono(regiao) < 1:
+        raise ValueError("a região da placa não tem área")
 
 
 # ----------------------------------------------------------------------------- projeto, equipe e divisão
@@ -218,13 +245,24 @@ class PartiuDe(Modelo):
 
 Situacao = Literal["ok", "descartada"]
 MotivoDescarte = Literal["transicao", "borrao", "grafismo", "outro"]
+MotivoDescartePlacas = Literal["placa_fora_do_lugar", "transicao", "borrao", "outro"]
 
-#: Motivos para descartar uma imagem, com o texto das páginas.
+#: Motivos para descartar uma imagem, por tarefa, com o texto das páginas. Nas placas, o grafismo da
+#: emissora por cima da placa se pinta (ele esconde a placa de quem assiste); o que se descarta é o
+#: recorte que não está na placa.
 MOTIVOS_DESCARTE = {
-    "transicao": "transição entre tomadas (fusão, corte no meio)",
-    "borrao": "borrada ou fora de foco demais",
-    "grafismo": "grafismo da emissora cobre a imagem",
-    "outro": "outro motivo (com comentário)",
+    "pontos": {
+        "transicao": "transição entre tomadas (fusão, corte no meio)",
+        "borrao": "borrada ou fora de foco demais",
+        "grafismo": "grafismo da emissora cobre a imagem",
+        "outro": "outro motivo (com comentário)",
+    },
+    "placas": {
+        "placa_fora_do_lugar": "o recorte não está na placa (fora do lugar, outra coisa)",
+        "transicao": "transição entre tomadas (fusão, corte no meio)",
+        "borrao": "borrado ou fora de foco demais",
+        "outro": "outro motivo (com comentário)",
+    },
 }
 
 
@@ -236,9 +274,10 @@ def _situacao(situacao: str, motivo: str | None, comentario: str) -> None:
 
 
 class _Rotulo(Modelo):
+    """O que vale nas duas tarefas. O item (`quadro` nos pontos, `recorte` nas placas) vem em cada uma."""
+
     formato: str
     partida: str = Field(description="ID da partida, ou 'gabarito'")
-    quadro: str = Field(description="ID do quadro (t + PTS em ms) ou do item do gabarito (g1001)")
     anotador: Pessoa
     versao: int = Field(ge=1)
     ferramenta: str
@@ -264,9 +303,10 @@ def _revisao_coerente(r) -> None:
 
 
 class _Revisao(Modelo):
+    """O que vale nas duas tarefas. O item (`quadro` nos pontos, `recorte` nas placas) vem em cada uma."""
+
     formato: str
     partida: Partida
-    quadro: Quadro
     rotulo: str = Field(description="arquivo do rótulo revisado")
     revisor: Pessoa
     versao: int = Field(ge=1)
@@ -306,11 +346,12 @@ class RotuloPontos(_Rotulo):
     torcida): a imagem entra no treino sem pontos. Imagem descartada não leva pontos."""
 
     formato: Literal["rotulo.pontos/1"] = "rotulo.pontos/1"
+    quadro: str = Field(description="ID do quadro (t + PTS em ms) ou do item do gabarito (g1001)")
     pontos: list[Ponto] = []
 
     @model_validator(mode="after")
     def _coerencia(self):
-        _partida_e_quadro(self.partida, self.quadro)
+        _partida_e_item(self.partida, self.quadro, RE_QUADRO, "quadro")
         _situacao(self.situacao, self.motivo_descarte, self.comentario)
         if self.situacao == "descartada" and self.pontos:
             raise ValueError("imagem descartada não leva pontos")
@@ -330,6 +371,7 @@ MotivoPontos = Literal[
 
 class RevisaoPontos(_Revisao):
     formato: Literal["revisao.pontos/1"] = "revisao.pontos/1"
+    quadro: Quadro
     motivo: MotivoPontos | None = None
 
     @model_validator(mode="after")
@@ -381,44 +423,108 @@ class PrevisaoPontos(Modelo):
         return self
 
 
-# ----------------------------------------------------------------------------- pessoas
-class RotuloPessoas(_Rotulo):
-    """A máscara das pessoas do quadro (PNG ao lado, com o mesmo nome do rótulo: 1 onde há pessoa, 0 no
-    resto). Pinta-se toda pessoa no gramado e em volta dele, do lado de dentro das placas — jogadores,
-    goleiros, árbitros, gandulas, fotógrafos, comissão técnica, seguranças —, e não a torcida nem as
-    sombras. Sem nenhuma pessoa, a máscara é toda 0. Imagem descartada não leva máscara."""
+# ----------------------------------------------------------------------------- recortes das placas
+class ItemRecorte(Modelo):
+    """Uma placa num quadro: o recorte dela, endireitado (`<recorte>.jpg`, ao lado do lote).
 
-    formato: Literal["rotulo.pessoas/1"] = "rotulo.pessoas/1"
-    mascara: str | None = Field(None, description="o PNG da máscara, ao lado (o mesmo nome, com .png)")
-    pixels: int = Field(0, ge=0, description="pixels pintados (pessoa) na máscara")
+    O recorte mostra a placa como um retângulo, com um pouco em volta para dar o contexto; `regiao` é a
+    parte que se pinta — a placa, só o que cai dentro do quadro. `placa` e `no_quadro` dizem onde os
+    quatro cantos da placa estão no recorte e no quadro, para levar a máscara de volta ao quadro."""
+
+    recorte: Recorte
+    largura: int = Field(gt=0, le=8192, description="largura do recorte (px)")
+    altura: int = Field(gt=0, le=8192, description="altura do recorte (px)")
+    regiao: list[Px] = Field(
+        min_length=3, max_length=64, description="o que se pinta: a placa, dentro do quadro (polígono, px do recorte)"
+    )
+    placa: list[Px] = Field(
+        min_length=4,
+        max_length=4,
+        description="os cantos da placa no recorte (px): em cima à esquerda, em cima à direita, embaixo à direita, "
+        "embaixo à esquerda",
+    )
+    no_quadro: list[Px] = Field(min_length=4, max_length=4, description="os mesmos cantos, no quadro (px)")
+    dupla: bool = Field(False, description="às cegas: duas pessoas pintam do zero, sem ver a pintura da outra")
+    sem_previsao: bool = Field(False, description="começa sem a pré-pintura, para medir o viés de ancoragem")
 
     @model_validator(mode="after")
     def _coerencia(self):
-        _partida_e_quadro(self.partida, self.quadro)
+        _regiao_coerente(self.regiao, self.largura, self.altura)
+        return self
+
+    @property
+    def quadro(self) -> str:
+        return self.recorte.split("_", 1)[0]
+
+    @property
+    def id_placa(self) -> str:
+        return self.recorte.split("_", 1)[1]
+
+
+class LoteRecortes(Modelo):
+    """Os recortes de uma partida que chegaram juntos: `partidas/<partida>/recortes/<lote>.json`, com as
+    imagens ao lado. Feito fora das páginas (pelo simulador, por enquanto; depois, pela projeção das
+    placas) e trazido por `anotacao recortes` ou por um .zip. Um recorte que já está em outro lote da
+    partida fica de fora."""
+
+    formato: Literal["recortes.lote/1"] = "recortes.lote/1"
+    partida: Partida
+    lote: Annotated[str, Field(pattern=RE_LOTE.pattern, max_length=40)]
+    criado_em: datetime
+    origem: Literal["simulador", "modelo"] = Field(description="de onde vêm as placas: o simulador ou um modelo")
+    gerador: Annotated[str, Field(min_length=1)] = Field(description="o que gerou os recortes, com a versão")
+    itens: list[ItemRecorte] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _unicos(self):
+        ids = [it.recorte for it in self.itens]
+        if len(ids) != len(set(ids)):
+            raise ValueError("recorte repetido no lote")
+        return self
+
+
+# ----------------------------------------------------------------------------- placas
+class RotuloPlacas(_Rotulo):
+    """O que está na frente da placa, pintado no recorte dela (PNG ao lado, com o mesmo nome do rótulo:
+    1 onde algo cobre a placa, 0 no resto e fora da região da placa). Pinta-se tudo o que esconde a
+    placa de quem assiste — gente, bola, trave, outra placa, câmera, bandeira, grafismo da emissora —,
+    e não o próprio anúncio, sombra, reflexo nem o que deixa ver a placa através (a rede). Sem nada na
+    frente, a máscara é toda 0. Recorte descartado não leva máscara."""
+
+    formato: Literal["rotulo.placas/1"] = "rotulo.placas/1"
+    recorte: str = Field(max_length=48, description="ID do recorte (<quadro>_<placa>) ou do item do gabarito (g4001)")
+    motivo_descarte: MotivoDescartePlacas | None = None
+    mascara: str | None = Field(None, description="o PNG da máscara, ao lado (o mesmo nome, com .png)")
+    pixels: int = Field(0, ge=0, description="pixels pintados (algo na frente da placa) na máscara")
+
+    @model_validator(mode="after")
+    def _coerencia(self):
+        _partida_e_item(self.partida, self.recorte, RE_RECORTE, "recorte")
         _situacao(self.situacao, self.motivo_descarte, self.comentario)
         if self.mascara is not None and not RE_MASCARA.match(self.mascara):
             raise ValueError("nome da máscara inválido")
         if (self.situacao == "ok") != (self.mascara is not None):
-            raise ValueError("a máscara vem sempre, e só, com a imagem anotada (não descartada)")
+            raise ValueError("a máscara vem sempre, e só, com o recorte pintado (não descartado)")
         if self.mascara is None and self.pixels:
             raise ValueError("pixels pintados só com a máscara")
         if self.pixels > self.largura * self.altura:
-            raise ValueError("mais pixels pintados que a imagem tem")
+            raise ValueError("mais pixels pintados que o recorte tem")
         return self
 
 
-MotivoPessoas = Literal[
-    "faltou_pessoa",
+MotivoPlacas = Literal[
+    "faltou_pintar",
     "contorno_impreciso",
-    "pintou_o_que_nao_e_pessoa",
+    "pintou_o_que_nao_cobre",
     "descarte_errado",
     "outro",
 ]
 
 
-class RevisaoPessoas(_Revisao):
-    formato: Literal["revisao.pessoas/1"] = "revisao.pessoas/1"
-    motivo: MotivoPessoas | None = None
+class RevisaoPlacas(_Revisao):
+    formato: Literal["revisao.placas/1"] = "revisao.placas/1"
+    recorte: Recorte
+    motivo: MotivoPlacas | None = None
 
     @model_validator(mode="after")
     def _coerencia(self):
@@ -426,20 +532,32 @@ class RevisaoPessoas(_Revisao):
         return self
 
 
-class GabaritoPessoas(Modelo):
-    """Item do gabarito das pessoas: a imagem e a máscara verdadeira (PNG ao lado), com um número por
-    pessoa (de 1 a N) e 0 no resto."""
+class GabaritoPlacas(Modelo):
+    """Item do gabarito das placas: o recorte e a resposta — a máscara verdadeira (PNG ao lado), com um
+    número por coisa na frente da placa (de 1 a N) e 0 no resto, ou "descartar" (o recorte não está
+    na placa, e não leva máscara)."""
 
-    formato: Literal["gabarito.pessoas/1"] = "gabarito.pessoas/1"
+    formato: Literal["gabarito.placas/1"] = "gabarito.placas/1"
     id: IdGabarito
     lote: str = Field("", description="o lote de ouro de onde o item veio")
     imagem: str
-    mascara: str = Field(description="a máscara verdadeira, ao lado")
-    largura: int = Field(gt=0)
-    altura: int = Field(gt=0)
-    pessoas: int = Field(ge=0, le=255, description="quantas pessoas: os números 1 a N da máscara")
+    mascara: str | None = Field(description="a máscara verdadeira, ao lado (null quando a resposta é descartar)")
+    largura: int = Field(gt=0, le=8192)
+    altura: int = Field(gt=0, le=8192)
+    regiao: list[Px] = Field(min_length=3, max_length=64, description="o que se pinta (polígono, px do recorte)")
+    oclusores: int = Field(ge=0, le=255, description="quantas coisas na frente da placa: os números 1 a N da máscara")
+    resposta: Literal["pintar", "descartar"] = "pintar"
     origem: Literal["simulador", "arbitrado"]
     observacao: str = ""
+
+    @model_validator(mode="after")
+    def _coerencia(self):
+        _regiao_coerente(self.regiao, self.largura, self.altura)
+        if (self.resposta == "descartar") != (self.mascara is None):
+            raise ValueError("a máscara vem sempre, e só, quando a resposta é pintar")
+        if self.resposta == "descartar" and self.oclusores:
+            raise ValueError("um item para descartar não tem o que pintar")
+        return self
 
 
 # ----------------------------------------------------------------------------- esquemas
@@ -455,15 +573,16 @@ ESQUEMAS: dict[str, type[Modelo]] = {
     "revisao.pontos.json": RevisaoPontos,
     "gabarito.pontos.json": GabaritoPontos,
     "previsao.pontos.json": PrevisaoPontos,
-    "rotulo.pessoas.json": RotuloPessoas,
-    "revisao.pessoas.json": RevisaoPessoas,
-    "gabarito.pessoas.json": GabaritoPessoas,
+    "recortes.lote.json": LoteRecortes,
+    "rotulo.placas.json": RotuloPlacas,
+    "revisao.placas.json": RevisaoPlacas,
+    "gabarito.placas.json": GabaritoPlacas,
 }
 
 #: Modelos de cada tarefa: o rótulo, a revisão e o item do gabarito.
 TAREFA = {
     "pontos": (RotuloPontos, RevisaoPontos, GabaritoPontos),
-    "pessoas": (RotuloPessoas, RevisaoPessoas, GabaritoPessoas),
+    "placas": (RotuloPlacas, RevisaoPlacas, GabaritoPlacas),
 }
 
 

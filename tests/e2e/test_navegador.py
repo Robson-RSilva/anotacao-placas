@@ -1,6 +1,6 @@
-"""Ponta a ponta no navegador: importar um vídeo (inteiro ou só uns trechos), marcar os pontos e pintar
-as pessoas direto na imagem, descartar, revisar às cegas, fazer o teste do gabarito e unificar em
-Python os arquivos que a página gravou.
+"""Ponta a ponta no navegador: importar um vídeo (inteiro ou só uns trechos), marcar os pontos direto na
+imagem, trazer um lote de recortes das placas e pintar o que está na frente delas, descartar, revisar às
+cegas, fazer o teste do gabarito e unificar em Python os arquivos que a página gravou.
 
 Roda só com `pytest -m e2e`; precisa do Playwright com o Chromium e do ffmpeg (para o vídeo de
 teste em AV1 ou VP9 — o Chromium do Playwright não decodifica H.264). A página usa o armazenamento
@@ -28,18 +28,28 @@ import pytest
 from anotacao.cli import main
 from anotacao.formatos import (
     Fila,
-    GabaritoPessoas,
+    GabaritoPlacas,
     GabaritoPontos,
+    ItemRecorte,
+    LoteRecortes,
     Manifesto,
     RevisaoPontos,
-    RotuloPessoas,
+    RotuloPlacas,
     RotuloPontos,
     Tomadas,
 )
-from anotacao.mascara import gravar_png, ler_png
+from anotacao.mascara import gravar_png, ler_png, rasterizar
 
-from conftest import PLANOS
-from sintetico import Camera, codificadores_ffmpeg, codificar, gravar_quadros, marcar_chaves_falsas, renderizar
+from conftest import AGORA, PLANOS
+from sintetico import (
+    Camera,
+    codificadores_ffmpeg,
+    codificar,
+    gravar_quadros,
+    marcar_chaves_falsas,
+    recorte_sintetico,
+    renderizar,
+)
 
 pytestmark = pytest.mark.e2e
 playwright = pytest.importorskip("playwright.sync_api")
@@ -234,7 +244,7 @@ def _laco(pagina, contorno: np.ndarray, *, fechar_no_mouse: bool = True) -> None
 
 
 def _contornos(mascara: np.ndarray) -> list[np.ndarray]:
-    """O contorno de cada pessoa da máscara, um pouco por fora (o centro do pixel decide no laço)."""
+    """O contorno de cada coisa da máscara, um pouco por fora (o centro do pixel decide no laço)."""
     m = cv2.dilate(mascara.astype(np.uint8), np.ones((2, 2), np.uint8))
     cs, _ = cv2.findContours(m, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     return [c.reshape(-1, 2).astype(float) + 0.5 for c in cs if len(c) >= 3]
@@ -459,46 +469,122 @@ def test_importar_marcar_revisar_e_unificar(site, video, navegador, capturas, tm
     assert not erros, erros
 
 
-# ---------------------------------------------------------------- de ponta a ponta: pessoas
+# ---------------------------------------------------------------- de ponta a ponta: placas
 
 
-def test_pintar_revisar_e_unificar(site, video, navegador, capturas, tmp_path):
-    """As pessoas de ponta a ponta: pintar com o laço (num quadro) e com o pincel e a borracha (no
-    outro), descartar o terceiro; outra pessoa revisa às cegas, aprova e corrige; o `unificar` monta o
-    conjunto das pessoas com as máscaras que a página gravou."""
-    caminho, verdade = video
+def _zip_dos_recortes(destino: Path, n: int = 3, lote: str = "r1", duplas=()) -> tuple[Path, dict]:
+    """Um .zip com um lote de recortes das placas para a partida, como chega do simulador (as imagens
+    antes, o lote por último). Devolve o .zip e, por recorte, {verdade (cada coisa na frente da placa
+    numerada, só dentro da placa), regiao}."""
+    arquivo = destino / f"recortes-{lote}.zip"
+    info, itens = {}, []
+    with zipfile.ZipFile(arquivo, "w") as z:
+        for k in range(n):
+            img, regiao, verdade = recorte_sintetico(300 + k, oclusores=[2, 3, 1][k % 3])
+            h, w = verdade.shape
+            recorte = f"t{1000 * (k + 1):010d}_cab-{k + 1:02d}"
+            z.writestr(
+                f"partidas/{PARTIDA}/recortes/{recorte}.jpg",
+                cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 97])[1].tobytes(),
+            )
+            itens.append(
+                ItemRecorte(
+                    recorte=recorte,
+                    largura=w,
+                    altura=h,
+                    regiao=regiao,
+                    placa=regiao,
+                    dupla=k in duplas,
+                    no_quadro=[[100 + x, 50 + y] for x, y in regiao],
+                )
+            )
+            info[recorte] = {"verdade": verdade, "regiao": regiao}
+        lr = LoteRecortes(partida=PARTIDA, lote=lote, criado_em=AGORA, origem="simulador", gerador="teste", itens=itens)
+        z.writestr(f"partidas/{PARTIDA}/recortes/{lote}.json", lr.model_dump_json())
+    return arquivo, info
+
+
+def _trazer_zip(pagina, site: str, arquivo: Path, novos: int) -> None:
+    pagina.goto(site + "#/")
+    pagina.wait_for_selector("#trazer-zip", state="attached")
+    pagina.set_input_files("#trazer-zip", str(arquivo))
+    pagina.wait_for_function(
+        "(n) => document.querySelector('#res-pasta').textContent.startsWith(`${n} arquivo(s) novo(s)`)", arg=novos
+    )
+
+
+def _dentro_da_placa(pagina, w: int, h: int) -> np.ndarray:
+    return np.array(pagina.evaluate("Array.from(pintor.permitido)"), np.uint8).reshape(h, w) > 0
+
+
+def test_pintar_placas_revisar_e_unificar(site, video, navegador, capturas, tmp_path):
+    """As placas de ponta a ponta: o lote de recortes chega por .zip; pinta-se com o laço (num recorte,
+    passando do contorno: só a placa é pintada) e com o pincel e a borracha (no outro), e o terceiro se
+    descarta (o recorte fora do lugar); outra pessoa revisa às cegas, aprova e corrige; o `unificar`
+    monta o conjunto das placas com as máscaras que a página gravou."""
+    caminho, _ = video
     erros: list[str] = []
     pagina = _pagina(navegador, erros)
     _importar(pagina, site, caminho)
-    pagina.goto(site + "#/pessoas")
+    lote, info = _zip_dos_recortes(tmp_path)
+    _trazer_zip(pagina, site, lote, 4)  # as três imagens e o lote
+    pagina.wait_for_selector("#partidas tbody td:nth-child(6):text-is('3')")  # os recortes da partida
+    pagina.goto(site + "#/placas")
     feitos = {}
-    # 1) o laço em volta de cada pessoa
-    pagina.wait_for_function("window.itemPessoas && window.pintor")
-    fila = Fila.model_validate_json(_ler(pagina, f"partidas/{PARTIDA}/fila.json"))
-    v = _verdade_do_quadro(pagina, fila, verdade, "itemPessoas")
-    for contorno in _contornos(v["pessoas"]):
+    # 1) o laço em volta de cada coisa na frente da placa, passando do contorno dela
+    pagina.wait_for_function("window.itemPlacas && window.pintor")
+    r1 = pagina.evaluate("itemPlacas.quadro")
+    v = info[r1]
+    h, w = v["verdade"].shape
+    dentro = _dentro_da_placa(pagina, w, h)
+    assert np.array_equal(dentro, rasterizar(v["regiao"], w, h))
+    for contorno in _contornos(v["verdade"] > 0):
         _laco(pagina, contorno)
-    pintado = np.array(pagina.evaluate("Array.from(pintor.mascara())"), np.uint8).reshape(360, 640)
-    assert _iou(pintado, v["pessoas"]) > 0.8
-    pagina.screenshot(path=str(capturas / "e2e_7_pessoas.png"))
-    q1 = pagina.evaluate("itemPessoas.quadro")
-    feitos[q1] = v["pessoas"]
+    # um laço inteiro fora da placa (na arquibancada) não pinta nada; um que passa do contorno, só a parte
+    # de dentro
+    n_antes = pagina.evaluate("pintor.pixels()")
+    _laco(pagina, np.array([[2, 2], [40, 2], [40, 10], [2, 10]], float))
+    assert pagina.evaluate("pintor.pixels()") == n_antes
+    pagina.keyboard.press("e")
+    _laco(pagina, np.array([[200, 2], [230, 2], [230, 70], [200, 70]], float))  # apaga: a ponta da placa, e fora dela
+    pagina.keyboard.press("e")
+    _laco(pagina, np.array([[200, 2], [230, 2], [230, 70], [200, 70]], float))  # pinta de novo, passando do contorno
+    passou = np.array(pagina.evaluate("Array.from(pintor.mascara())"), np.uint8).reshape(h, w)
+    assert (
+        passou[14:58, 200:226].all() and not passou[:14].any() and not passou[58:].any() and not passou[:, 226:].any()
+    )
+    pagina.keyboard.press("e")
+    _laco(pagina, np.array([[200, 2], [230, 2], [230, 70], [200, 70]], float))
+    pagina.keyboard.press("e")
+    for contorno in _contornos(v["verdade"] > 0):
+        _laco(pagina, contorno)
+    pintado = np.array(pagina.evaluate("Array.from(pintor.mascara())"), np.uint8).reshape(h, w)
+    assert not (pintado.astype(bool) & ~dentro).any()
+    assert _iou(pintado, v["verdade"]) > 0.8
+    pagina.screenshot(path=str(capturas / "e2e_7_placas.png"))
+    feitos[r1] = v["verdade"]
     pagina.keyboard.press("s")
-    pagina.wait_for_function("(q) => window.itemPessoas && itemPessoas.quadro !== q", arg=q1)
-    # 2) o pincel, a borracha e o desfazer
-    q2 = pagina.evaluate("itemPessoas.quadro")
+    pagina.wait_for_function("(q) => window.itemPlacas && itemPlacas.quadro !== q", arg=r1)
+    # 2) o pincel, a borracha e o desfazer; o pincel não passa do contorno da placa
+    r2 = pagina.evaluate("itemPlacas.quadro")
     pagina.keyboard.press("b")
     pagina.evaluate("pintor.raio = 5")
-    a, b = _janela(pagina, "pintor", 100, 100), _janela(pagina, "pintor", 140, 100)
+    a, b = _janela(pagina, "pintor", 60, 30), _janela(pagina, "pintor", 100, 30)
     pagina.mouse.move(*a)
     pagina.mouse.down()
     pagina.mouse.move(*b, steps=8)
     pagina.mouse.up()
     n = pagina.evaluate("pintor.pixels()")
     assert n > 200
+    a, b = _janela(pagina, "pintor", 60, 4), _janela(pagina, "pintor", 100, 4)  # na arquibancada: fora da placa
+    pagina.mouse.move(*a)
+    pagina.mouse.down()
+    pagina.mouse.move(*b, steps=8)
+    pagina.mouse.up()
+    assert pagina.evaluate("pintor.pixels()") == n
     pagina.keyboard.press("e")  # borracha
     assert pagina.get_attribute("#borracha", "aria-pressed") == "true"
-    c = _janela(pagina, "pintor", 120, 100)
+    c = _janela(pagina, "pintor", 80, 30)
     pagina.mouse.move(*c)
     pagina.mouse.down()
     pagina.mouse.move(c[0], c[1] + 1)
@@ -508,56 +594,57 @@ def test_pintar_revisar_e_unificar(site, video, navegador, capturas, tmp_path):
     assert pagina.evaluate("pintor.pixels()") == n
     pagina.keyboard.press("e")
     pagina.keyboard.press("s")
-    pagina.wait_for_function("(q) => window.itemPessoas && itemPessoas.quadro !== q", arg=q2)
-    # 3) descartar
-    q3 = pagina.evaluate("itemPessoas.quadro")
+    pagina.wait_for_function("(q) => window.itemPlacas && itemPlacas.quadro !== q", arg=r2)
+    # 3) o recorte fora do lugar: descartar
+    r3 = pagina.evaluate("itemPlacas.quadro")
     pagina.click("#descartar")
-    pagina.check("input[name=motivo-descarte][value=borrao]")
+    assert pagina.inner_text("#titulo-descartar") == "Descartar este recorte?"
+    pagina.check("input[name=motivo-descarte][value=placa_fora_do_lugar]")
     pagina.click("#confirmar-descartar")
     pagina.wait_for_selector("#vazio:has-text('Nada para pintar agora')")
-    d = f"partidas/{PARTIDA}/rotulos/pessoas"
+    d = f"partidas/{PARTIDA}/rotulos/placas"
     assert sorted(_listar(pagina, d)) == sorted(
         [
-            f"{q1}__A01__v1.json",
-            f"{q1}__A01__v1.png",
-            f"{q2}__A01__v1.json",
-            f"{q2}__A01__v1.png",
-            f"{q3}__A01__v1.json",
+            f"{r1}__A01__v1.json",
+            f"{r1}__A01__v1.png",
+            f"{r2}__A01__v1.json",
+            f"{r2}__A01__v1.png",
+            f"{r3}__A01__v1.json",
         ]
     )
-    r1 = RotuloPessoas.model_validate_json(_ler(pagina, f"{d}/{q1}__A01__v1.json"))
-    m1 = ler_png(_bytes(pagina, f"{d}/{r1.mascara}"))
-    assert m1.shape == (360, 640) and set(np.unique(m1)) <= {0, 1} and int(m1.sum()) == r1.pixels
-    assert _iou(m1, feitos[q1]) > 0.8
-    r3 = RotuloPessoas.model_validate_json(_ler(pagina, f"{d}/{q3}__A01__v1.json"))
-    assert (r3.situacao, r3.motivo_descarte, r3.mascara) == ("descartada", "borrao", None)
+    rot1 = RotuloPlacas.model_validate_json(_ler(pagina, f"{d}/{r1}__A01__v1.json"))
+    m1 = ler_png(_bytes(pagina, f"{d}/{rot1.mascara}"))
+    assert m1.shape == (h, w) and set(np.unique(m1)) <= {0, 1} and int(m1.sum()) == rot1.pixels
+    assert _iou(m1, feitos[r1]) > 0.8 and rot1.recorte == r1
+    rot3 = RotuloPlacas.model_validate_json(_ler(pagina, f"{d}/{r3}__A01__v1.json"))
+    assert (rot3.situacao, rot3.motivo_descarte, rot3.mascara) == ("descartada", "placa_fora_do_lugar", None)
 
     # 4) outra pessoa revisa às cegas: corrige a pintura do pincel, aprova as outras
     _escolher_pessoa(pagina, site, "A02")
-    pagina.click("#ir-revisao-pessoas")
+    pagina.click("#ir-revisao-placas")
     corrigido = None
     for _ in range(3):
         pagina.wait_for_function("window.itemRevisao && !document.querySelector('#painel').hidden")
         q = pagina.evaluate("itemRevisao.quadro")
-        if q == q2:
+        if q == r2:
             pagina.keyboard.press("c")
             pagina.wait_for_selector("#secao-corrigir", state="visible")
             pagina.evaluate("window.pintor = revisando")
-            vq = verdade[next(it.i for it in fila.itens if it.quadro == q)]
+            assert np.array_equal(_dentro_da_placa(pagina, w, h), rasterizar(info[q]["regiao"], w, h))
             pagina.evaluate("pintor.definir(null)")  # apaga tudo e pinta de novo
-            for contorno in _contornos(vq["pessoas"]):
+            for contorno in _contornos(info[q]["verdade"] > 0):
                 _laco(pagina, contorno)
-            pagina.fill("#comentario-corr", "a pintura não era de ninguém")
+            pagina.fill("#comentario-corr", "a pintura não era de nada na frente")
             pagina.click("#salvar-correcao")
             corrigido = q
         else:
-            if q == q3:
-                assert pagina.inner_text("#r-situacao").startswith("Descartada")
+            if q == r3:
+                assert pagina.inner_text("#r-situacao").startswith("Descartado: o recorte não está na placa")
             pagina.keyboard.press("a")
         pagina.wait_for_function("(q) => !window.itemRevisao || itemRevisao.quadro !== q", arg=q)
-    pagina.wait_for_selector("#vazio:has-text('Nenhuma pintura')")
-    assert corrigido == q2
-    assert f"{q2}__A02__v1.png" in _listar(pagina, d)
+    pagina.wait_for_selector("#vazio:has-text('Nenhuma pintura de placa')")
+    assert corrigido == r2
+    assert f"{r2}__A02__v1.png" in _listar(pagina, d)
 
     # 5) o Python lê o que a página gravou
     raiz = tmp_path / "copia"
@@ -567,12 +654,13 @@ def test_pintar_revisar_e_unificar(site, video, navegador, capturas, tmp_path):
     assert main(["validar", "--pasta", str(raiz)]) == 0
     assert main(["unificar", "--pasta", str(raiz)]) == 0
     conjunto = next((raiz / "conjuntos").iterdir())
-    df = pd.read_parquet(conjunto / "pessoas.parquet").set_index("quadro")
-    assert set(df.index) == {q1, q2}
-    assert tuple(df.loc[q2, ["anotador", "decisao"]]) == ("A02", "corrigir")
-    assert df.loc[q1, "mascara"] == f"partidas/{PARTIDA}/rotulos/pessoas/{q1}__A01__v1.png"
+    df = pd.read_parquet(conjunto / "placas.parquet").set_index("recorte")
+    assert set(df.index) == {r1, r2}
+    assert tuple(df.loc[r2, ["anotador", "decisao"]]) == ("A02", "corrigir")
+    assert df.loc[r1, "mascara"] == f"partidas/{PARTIDA}/rotulos/placas/{r1}__A01__v1.png"
+    assert df.loc[r1, "imagem"] == f"partidas/{PARTIDA}/recortes/{r1}.jpg"
     man = json.loads((conjunto / "manifesto.json").read_text(encoding="utf-8"))
-    assert man["descartados"]["pessoas"] == {"borrao": 1}
+    assert man["descartados"]["placas"] == {"placa_fora_do_lugar": 1}
     assert not erros, erros
 
 
@@ -580,42 +668,50 @@ def test_pintar_revisar_e_unificar(site, video, navegador, capturas, tmp_path):
 
 
 def _lote_de_ouro(destino: Path) -> tuple[Path, dict]:
-    """Um lote de ouro pequeno: 2 itens dos pontos e 1 das pessoas (cada pessoa com o seu número)."""
+    """Um lote de ouro pequeno: 2 itens dos pontos e 2 das placas — um para pintar (cada coisa na frente
+    da placa com o seu número) e um para descartar (o recorte fora do lugar)."""
     lote = destino / "ouro-teste.zip"
     verdades = {}
     with zipfile.ZipFile(lote, "w") as z:
-        for gid, (C, alvo, hfov) in zip(["g1901", "g3901", "g1902"], PLANOS, strict=True):
+        for gid, (C, alvo, hfov) in zip(["g1901", "g1902"], [PLANOS[0], PLANOS[2]], strict=True):
             cam = Camera.look_at(C, alvo, hfov, 640, 360)
             img, v = renderizar(cam, int(gid[1:]))
             z.writestr(
                 f"gabarito/itens/{gid}.jpg", cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 95])[1].tobytes()
             )
-            if gid.startswith("g1"):
-                g = GabaritoPontos(
-                    id=gid,
-                    lote="T1-teste",
-                    imagem=f"{gid}.jpg",
-                    largura=640,
-                    altura=360,
-                    pontos=[{"ponto": n, "x": x, "y": y, "visivel": True} for n, (x, y) in v["pontos"].items()],
-                    origem="simulador",
-                )
-            else:
-                n, rot = cv2.connectedComponents(v["pessoas"])
-                rot = rot.astype(np.uint8)
-                z.writestr(f"gabarito/itens/{gid}.png", gravar_png(rot, [(i, i, i) for i in range(256)]))
-                g = GabaritoPessoas(
-                    id=gid,
-                    lote="T2-teste",
-                    imagem=f"{gid}.jpg",
-                    mascara=f"{gid}.png",
-                    largura=640,
-                    altura=360,
-                    pessoas=n - 1,
-                    origem="simulador",
-                )
+            g = GabaritoPontos(
+                id=gid,
+                lote="T1-teste",
+                imagem=f"{gid}.jpg",
+                largura=640,
+                altura=360,
+                pontos=[{"ponto": n, "x": x, "y": y, "visivel": True} for n, (x, y) in v["pontos"].items()],
+                origem="simulador",
+            )
             z.writestr(f"gabarito/itens/{gid}.json", g.model_dump_json())
             verdades[gid] = v
+        for gid, descartar in (("g4901", False), ("g4902", True)):
+            img, regiao, verdade = recorte_sintetico(int(gid[1:]), oclusores=3)
+            h, w = verdade.shape
+            z.writestr(
+                f"gabarito/itens/{gid}.jpg", cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 97])[1].tobytes()
+            )
+            if not descartar:
+                z.writestr(f"gabarito/itens/{gid}.png", gravar_png(verdade, [(i, i, i) for i in range(256)]))
+            g = GabaritoPlacas(
+                id=gid,
+                lote="T2-teste",
+                imagem=f"{gid}.jpg",
+                mascara=None if descartar else f"{gid}.png",
+                largura=w,
+                altura=h,
+                regiao=regiao,
+                oclusores=0 if descartar else 3,
+                resposta="descartar" if descartar else "pintar",
+                origem="simulador",
+            )
+            z.writestr(f"gabarito/itens/{gid}.json", g.model_dump_json())
+            verdades[gid] = {"placas": verdade}
     return lote, verdades
 
 
@@ -632,12 +728,12 @@ def test_teste_do_gabarito(site, navegador, capturas, tmp_path):
     pagina.wait_for_selector("#lotes tbody td")
     assert "Nenhum lote" in pagina.inner_text("#lotes")
     pagina.set_input_files("#importar-lote", str(lote))
-    pagina.wait_for_function("document.querySelector('#res-lote').textContent.startsWith('7 arquivo(s) novo(s)')")
+    pagina.wait_for_function("document.querySelector('#res-lote').textContent.startsWith('9 arquivo(s) novo(s)')")
     pagina.wait_for_function("document.querySelector('#lotes').textContent.includes('T1-teste')")
     linhas = pagina.eval_on_selector_all(
         "#lotes tbody tr", "trs => trs.map(tr => [...tr.children].map(td => td.textContent))"
     )
-    assert linhas == [["T1-teste", "pontos", "2", "g1901 a g1902"], ["T2-teste", "pintura", "1", "g3901 a g3901"]]
+    assert linhas == [["T1-teste", "pontos", "2", "g1901 a g1902"], ["T2-teste", "placas", "2", "g4901 a g4902"]]
     pagina.wait_for_function("document.querySelector('[data-tarefa=pontos] .st').textContent.startsWith('Em teste')")
     pagina.screenshot(path=str(capturas / "e2e_8_gabarito.png"), full_page=True)
     pagina.goto(site + "#/")
@@ -674,20 +770,32 @@ def test_teste_do_gabarito(site, navegador, capturas, tmp_path):
     pagina.wait_for_selector("#vazio:has-text('acabou antes da liberação')")
     assert sorted(_listar(pagina, "gabarito/rotulos/pontos")) == ["g1901__A01__v1.json", "g1902__A01__v1.json"]
 
-    # pessoas: pinta a resposta com o laço
-    pagina.goto(site + "#/pessoas")
-    pagina.wait_for_function("window.itemPessoas && itemPessoas.treino && window.pintor")
-    for contorno in _contornos(verdades["g3901"]["pessoas"]):
-        _laco(pagina, contorno)
-    pagina.keyboard.press("s")
-    pagina.wait_for_selector("#resultado:not([hidden])")
-    assert pagina.inner_text("#resultado-titulo") == "Certo", pagina.inner_text("#resultado-texto")
-    assert pagina.inner_text("#resultado-texto").startswith("Pessoas pintadas: ")
-    pagina.screenshot(path=str(capturas / "e2e_10_resultado_pessoas.png"))
-    pagina.click("#ver-resposta")
-    assert pagina.inner_text("#ver-resposta") == "Ver a minha pintura"
-    pagina.click("#ver-resposta")
-    assert pagina.inner_text("#ver-resposta") == "Ver o resultado"
+    # placas: pinta a resposta com o laço no recorte que está na placa, e descarta o que não está
+    pagina.goto(site + "#/placas")
+    for _ in range(2):
+        pagina.wait_for_function("window.itemPlacas && itemPlacas.treino && window.pintor")
+        gid = pagina.evaluate("itemPlacas.quadro")
+        if gid == "g4901":
+            for contorno in _contornos(verdades[gid]["placas"] > 0):
+                _laco(pagina, contorno)
+            pagina.keyboard.press("s")
+            pagina.wait_for_selector("#resultado:not([hidden])")
+            assert pagina.inner_text("#resultado-titulo") == "Certo", pagina.inner_text("#resultado-texto")
+            assert pagina.inner_text("#resultado-texto").startswith("Na frente da placa: 3 de 3 pintado(s)")
+            pagina.screenshot(path=str(capturas / "e2e_10_resultado_placas.png"))
+            pagina.click("#ver-resposta")
+            assert pagina.inner_text("#ver-resposta") == "Ver a minha pintura"
+            pagina.click("#ver-resposta")
+            assert pagina.inner_text("#ver-resposta") == "Ver o resultado"
+        else:
+            pagina.keyboard.press("d")
+            pagina.check("input[name=motivo-descarte][value=placa_fora_do_lugar]")
+            pagina.click("#confirmar-descartar")
+            pagina.wait_for_selector("#resultado:not([hidden])")
+            assert pagina.inner_text("#resultado-titulo") == "Certo: o recorte não estava na placa"
+            assert pagina.is_hidden("#ver-resposta") and pagina.is_hidden("#legenda-resultado")
+        pagina.keyboard.press("n")
+    pagina.wait_for_selector("#vazio:has-text('acabou antes da liberação')")
 
     # a página do gabarito: os resultados, e "Ver" abre o item com a resposta
     pagina.goto(site + "#/gabarito")
@@ -699,9 +807,14 @@ def test_teste_do_gabarito(site, navegador, capturas, tmp_path):
     assert pagina.inner_text("#resultado-titulo") == "Certo"
     assert pagina.is_visible("#voltar-gabarito") and pagina.is_hidden("#proximo")
     pagina.click("#voltar-gabarito")
-    pagina.wait_for_selector("[data-res=pessoas]")
-    pagina.click("[data-res=pessoas]")
-    pagina.wait_for_function("document.querySelector('#resultados tbody').textContent.includes('g3901')")
+    pagina.wait_for_selector("[data-res=placas]")
+    pagina.click("[data-res=placas]")
+    pagina.wait_for_function("document.querySelectorAll('#resultados tbody tr').length === 2")
+    linhas = pagina.eval_on_selector_all(
+        "#resultados tbody tr",
+        "trs => trs.map(tr => [tr.children[0].textContent, tr.children[3].textContent, tr.children[4].textContent])",
+    )
+    assert sorted(linhas) == [["g4901", "3 de 3 na frente · 100%", "certo"], ["g4902", "descartou", "certo"]]
     assert not erros, erros
 
 
@@ -1043,17 +1156,17 @@ def test_politica_de_seguranca_nao_bloqueia_nada(site, video, navegador):
     assert pagina.inner_text("#erro-importar") == ""
     for rota, seletor in [
         ("#/pontos", "#painel:not([hidden]) .mapa, #vazio:not([hidden])"),
-        ("#/pessoas", "#painel:not([hidden]), #vazio:not([hidden])"),
+        ("#/placas", "#painel:not([hidden]), #vazio:not([hidden])"),
         ("#/revisao-pontos", "#vazio:not([hidden])"),
-        ("#/revisao-pessoas", "#vazio:not([hidden])"),
+        ("#/revisao-placas", "#vazio:not([hidden])"),
         ("#/gabarito", "#lotes tbody td"),
         ("#/coordenacao", "#equipe"),
         ("#/", "#placar tbody td"),
     ]:
         pagina.goto(site + rota)
         pagina.wait_for_selector(seletor)
-    pagina.goto(site + "#/jogadores?treino")  # o endereço da 0.8 leva à página nova
-    pagina.wait_for_function("location.hash === '#/pessoas?treino'")
+    pagina.goto(site + "#/pessoas?treino")  # o endereço da 0.9 leva à página nova
+    pagina.wait_for_function("location.hash === '#/placas?treino'")
     pagina.wait_for_selector("#painel:not([hidden]), #vazio:not([hidden])")
     assert not avisos, avisos
     contexto.close()

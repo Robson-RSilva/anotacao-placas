@@ -1,5 +1,5 @@
 """Previsores de mentira para os testes de `anotacao prever`: sempre os mesmos pontos, e sempre a mesma
-pré-pintura das pessoas."""
+pré-pintura das placas."""
 
 from __future__ import annotations
 
@@ -26,7 +26,8 @@ class PontosFixos:
 
 
 class MascaraFixa:
-    """Pré-pintura de mentira para `anotacao prever --tarefa pessoas`: uma "pessoa" no meio do quadro."""
+    """Pré-pintura de mentira para `anotacao prever --tarefa placas`: uma faixa de cima a baixo do recorte,
+    no meio dele (o que sai da placa fica de fora da previsão)."""
 
     nome = "mascara-fixa"
     versao = "1"
@@ -34,5 +35,5 @@ class MascaraFixa:
     def __call__(self, imagem):
         h, w = imagem.shape[:2]
         m = np.zeros((h, w), np.uint8)
-        m[h // 4 : h // 2, w // 3 : w // 2] = 7  # qualquer valor diferente de zero é pessoa
+        m[:, w // 3 : w // 2] = 7  # qualquer valor diferente de zero cobre a placa
         return m

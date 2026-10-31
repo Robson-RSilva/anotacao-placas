@@ -1,6 +1,7 @@
-// Filas abertas (sem equipe cadastrada), as mesmas nas duas tarefas: treino e liberação pelo
-// gabarito, gabarito escondido a cada 15, devolvidos primeiro, dupla às cegas, de onde a imagem
-// começa, revisão cruzada às cegas e partidas incompletas.
+// Filas abertas (sem equipe cadastrada), as mesmas nas duas tarefas — os quadros sorteados nos pontos,
+// os recortes das placas nas placas: treino e liberação pelo gabarito, gabarito escondido a cada 15,
+// devolvidos primeiro, dupla às cegas, de onde a imagem começa, revisão cruzada às cegas e partidas
+// incompletas.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
@@ -10,11 +11,15 @@ import { calcularPlacar } from "../../web/js/nucleo/placar.js";
 import {
   AGORA,
   PARTIDA,
-  criarGabaritoPessoas,
+  REGIAO,
+  RH,
+  RW,
+  criarGabaritoPlacas,
   criarGabaritoPontos,
   criarPartida,
+  criarRecortes,
   esquemas,
-  gravarPessoas,
+  gravarPlacas,
   gravarPontos,
   gravarRevisao,
   mascaraVerdadeira,
@@ -24,6 +29,7 @@ import {
 await esquemas();
 
 const quadro = (k) => `t${String(1000 * (k + 1)).padStart(10, "0")}`;
+const recorte = (k) => `${quadro(k)}_p${k}`;
 const PONTOS = [{ ponto: "centro", x: 320, y: 180 }];
 /** A resposta certa de um item dos pontos (os que aparecem). */
 const certos = (item) => item.pontos.filter((p) => p.visivel).map(({ ponto, x, y }) => ({ ponto, x, y }));
@@ -31,7 +37,7 @@ const certos = (item) => item.pontos.filter((p) => p.visivel).map(({ ponto, x, y
 test("fila aberta: cada quadro uma vez, de qualquer pessoa, e sem gabarito não há bloqueio", async () => {
   const { pasta, indice } = await pastaExemplo();
   await criarPartida(pasta, [{}, {}, {}]);
-  for (const tarefa of ["pontos", "pessoas"]) {
+  for (const tarefa of ["pontos", "placas"]) {
     const sit = await situacao(indice, tarefa, "RS");
     assert.equal(sit.liberado, true);
     assert.equal(sit.gabarito_total, 0);
@@ -53,8 +59,37 @@ test("fila aberta: cada quadro uma vez, de qualquer pessoa, e sem gabarito não 
   await gravarPontos(pasta, { quadro: resto.quadro, pessoa: "ANACLARA", pontos: null }); // descartada também conta
   assert.equal(await proximo(indice, "pontos", "RS"), null);
   assert.equal(await proximo(indice, "pontos", "ANACLARA"), null);
-  // a outra tarefa tem a fila dela
-  assert.equal((await proximo(indice, "pessoas", "RS")).tarefa, "pessoas");
+  // a outra tarefa tem a fila dela: sem recortes, nada para pintar
+  assert.equal(await proximo(indice, "placas", "RS"), null);
+});
+
+test("placas: a fila são os recortes dos lotes da partida, com o tamanho e a região de cada um", async () => {
+  const { pasta, indice } = await pastaExemplo();
+  await criarPartida(pasta, [{}]);
+  await criarRecortes(pasta, [{}, { largura: 80, altura: 30, regiao: [[0, 0], [70, 0], [60, 30], [0, 30]] }]);
+  await criarRecortes(pasta, [{ recorte: recorte(1) }, { recorte: "t0000005000_opo-2" }], { lote: "r2" }); // um repetido
+  const vistos = [];
+  for (let k = 0; k < 3; k++) {
+    const item = await proximo(indice, "placas", "A01");
+    assert.equal(item.tarefa, "placas");
+    assert.equal(item.partida, PARTIDA);
+    vistos.push(item);
+    await gravarPlacas(pasta, { quadro: item.quadro, pessoa: "A01", mascara: new Uint8Array(item.largura * item.altura), largura: item.largura, altura: item.altura, m: k });
+  }
+  assert.deepEqual(vistos.map((it) => it.quadro).sort(), [recorte(0), recorte(1), "t0000005000_opo-2"]);
+  const r1 = vistos.find((it) => it.quadro === recorte(1));
+  assert.deepEqual([r1.largura, r1.altura, r1.regiao[2]], [80, 30, [60, 30]]); // o do primeiro lote vale
+  assert.deepEqual(vistos.find((it) => it.quadro === recorte(0)).regiao, REGIAO);
+  assert.equal(await proximo(indice, "placas", "A01"), null);
+  assert.equal((await pendentesRevisao(indice, "placas", "A02")).length, 3);
+  const rec = await indice.recortes(PARTIDA);
+  assert.deepEqual(rec.repetidos, [{ lote: "r2", recorte: recorte(1) }]);
+  // um lote quebrado (ou ainda sincronizando) não trava os outros
+  await pasta.escrever(pasta.loteRecortes(PARTIDA, "r3"), "{ quebrado");
+  await pasta.escrever(pasta.loteRecortes(PARTIDA, "r4"), "");
+  const rec2 = await indice.recortes(PARTIDA);
+  assert.equal(rec2.itens.size, 3);
+  assert.deepEqual(rec2.invalidos.map((x) => x.caminho), [pasta.loteRecortes(PARTIDA, "r3")]);
 });
 
 test("cada pessoa começa num ponto próprio da fila, para duas pessoas não pegarem o mesmo quadro", () => {
@@ -124,27 +159,36 @@ test("errar o gabarito não libera; o treino usa primeiro o lote de treino", asy
   assert.ok(Object.keys(controle).length === 4);
 });
 
-test("gabarito das pessoas: a pintura certa libera depois de 5", async () => {
+test("gabarito das placas: a pintura certa libera depois do treino inteiro (12); o recorte fora do lugar se descarta", async () => {
   const { pasta, indice } = await pastaExemplo();
-  const itens = await criarGabaritoPessoas(pasta, 6);
+  const itens = await criarGabaritoPlacas(pasta, 14, { descartar: [5, 6] });
   const ids = Object.keys(itens);
-  const v = mascaraVerdadeira();
-  const certa = v.map((x) => (x ? 1 : 0));
-  for (let k = 0; k < 5; k++) {
-    const item = await proximo(indice, "pessoas", "A01");
+  const certa = mascaraVerdadeira().map((x) => (x ? 1 : 0));
+  for (let k = 0; k < 12; k++) {
+    const item = await proximo(indice, "placas", "A01");
     assert.ok(item.treino && ids.includes(item.quadro));
-    assert.deepEqual([item.largura, item.altura], [64, 48]);
-    await gravarPessoas(pasta, { partida: "gabarito", quadro: item.quadro, pessoa: "A01", mascara: certa, largura: 64, altura: 48, m: k });
+    assert.deepEqual([item.largura, item.altura, item.regiao], [RW, RH, REGIAO]);
+    const g = itens[item.quadro];
+    if (g.resposta === "descartar") await gravarPlacas(pasta, { partida: "gabarito", quadro: item.quadro, pessoa: "A01", mascara: null, motivo: "placa_fora_do_lugar", m: k });
+    else await gravarPlacas(pasta, { partida: "gabarito", quadro: item.quadro, pessoa: "A01", mascara: certa, m: k });
+    if (k === 4) {
+      const antes = await situacao(indice, "placas", "A01");
+      assert.equal(antes.liberado, false, "5 certos ainda não liberam: falta o resto do treino");
+      assert.match(antes.motivo, /5 de 12 feitos/);
+    }
   }
-  const sit = await situacao(indice, "pessoas", "A01");
+  const sit = await situacao(indice, "placas", "A01");
   assert.equal(sit.liberado, true);
-  assert.equal(sit.resultados.length, 5);
-  assert.ok(sit.resultados.every((r) => r.acerto && r.resultado.iou === 1));
-  // descartar um item do gabarito conta como erro
-  await gravarPessoas(pasta, { partida: "gabarito", quadro: ids[5], pessoa: "A02", mascara: null, largura: 64, altura: 48 });
-  const s2 = await situacao(indice, "pessoas", "A02");
-  assert.equal(s2.resultados[0].acerto, false);
-  assert.equal(s2.resultados[0].resultado.descartada, true);
+  assert.equal(sit.resultados.length, 12);
+  assert.ok(sit.resultados.every((r) => r.acerto));
+  // descartar um item que tinha resposta conta como erro; pintar o que era para descartar, também; e
+  // descartar o que era para descartar por outro motivo
+  await gravarPlacas(pasta, { partida: "gabarito", quadro: ids[0], pessoa: "A02", mascara: null, m: 1 });
+  await gravarPlacas(pasta, { partida: "gabarito", quadro: ids[5], pessoa: "A02", mascara: certa, m: 2 });
+  await gravarPlacas(pasta, { partida: "gabarito", quadro: ids[6], pessoa: "A02", mascara: null, motivo: "borrao", m: 3 });
+  const s2 = await situacao(indice, "placas", "A02");
+  assert.deepEqual(s2.resultados.map((r) => r.acerto), [false, false, false]);
+  assert.deepEqual(s2.resultados.map((r) => [r.resultado.resposta, r.resultado.descartada]), [["pintar", true], ["descartar", false], ["descartar", true]]);
 });
 
 test("devolvido volta primeiro, como versão nova, partindo da versão anterior", async () => {
@@ -159,19 +203,24 @@ test("devolvido volta primeiro, como versão nova, partindo da versão anterior"
   assert.equal(item.partiu_de.fonte, "rotulo_anterior");
   assert.equal(item.partiu_de.referencia, nome);
   assert.deepEqual(item.inicio, PONTOS);
-  // na pintura, começa da máscara devolvida
-  const m = new Uint8Array(640 * 360);
-  m[5] = 1;
-  const nomeJ = await gravarPessoas(pasta, { quadro: quadro(1), pessoa: "A01", mascara: m });
-  await gravarRevisao(pasta, { tarefa: "pessoas", quadro: quadro(1), rotulo: nomeJ, revisor: "A02", decisao: "devolver" });
-  const itemJ = await proximo(indice, "pessoas", "A01");
-  assert.equal(itemJ.inicio, `${pasta.rotulos(PARTIDA, "pessoas")}/${nomeJ.replace(".json", ".png")}`);
+  // na pintura das placas, começa da máscara devolvida
+  await criarRecortes(pasta, [{}, {}]);
+  const m = new Uint8Array(RW * RH);
+  m[10 * RW + 10] = 1;
+  const nomeJ = await gravarPlacas(pasta, { quadro: recorte(1), pessoa: "A01", mascara: m });
+  await gravarRevisao(pasta, { tarefa: "placas", quadro: recorte(1), rotulo: nomeJ, revisor: "A02", decisao: "devolver" });
+  const itemJ = await proximo(indice, "placas", "A01");
+  assert.equal(itemJ.quadro, recorte(1));
+  assert.equal(itemJ.versao, 2);
+  assert.deepEqual(itemJ.devolvido, { motivo: "faltou_pintar", comentario: "" });
+  assert.equal(itemJ.inicio, `${pasta.rotulos(PARTIDA, "placas")}/${nomeJ.replace(".json", ".png")}`);
 });
 
-test("de onde a imagem começa: a previsão do modelo, a não ser nos quadros sem previsão", async () => {
+test("de onde a imagem começa: a previsão do modelo, a não ser nos itens sem previsão", async () => {
   const { pasta, indice } = await pastaExemplo();
   const fila = await criarPartida(pasta, [{}, { sem_previsao: true }]);
-  for (const it of fila.itens) {
+  await criarRecortes(pasta, [{}, { sem_previsao: true }]);
+  for (const [k, it] of fila.itens.entries()) {
     await pasta.gravar("previsao_pontos", pasta.previsaoPontos(PARTIDA, it.quadro), {
       formato: "previsao.pontos/1",
       partida: PARTIDA,
@@ -180,16 +229,16 @@ test("de onde a imagem começa: a previsão do modelo, a não ser nos quadros se
       versao: "3f9c",
       pontos: PONTOS,
     });
-    await pasta.escrever(pasta.previsaoPessoas(PARTIDA, it.quadro), Uint8Array.of(137, 80, 78, 71, 13, 10, 26, 10));
+    await pasta.escrever(pasta.previsaoPlacas(PARTIDA, recorte(k)), Uint8Array.of(137, 80, 78, 71, 13, 10, 26, 10));
   }
-  // A01 pega os dois quadros, um depois do outro
-  const vistos = { pontos: new Map(), pessoas: new Map() };
-  for (const tarefa of ["pontos", "pessoas"]) {
+  // A01 pega os dois itens de cada tarefa, um depois do outro
+  const vistos = { pontos: new Map(), placas: new Map() };
+  for (const tarefa of ["pontos", "placas"]) {
     for (let k = 0; k < 2; k++) {
       const it = await proximo(indice, tarefa, "A01");
       vistos[tarefa].set(it.quadro, it);
       if (tarefa === "pontos") await gravarPontos(pasta, { quadro: it.quadro, pessoa: "A01", pontos: PONTOS, m: k });
-      else await gravarPessoas(pasta, { quadro: it.quadro, pessoa: "A01", mascara: new Uint8Array(640 * 360), m: k });
+      else await gravarPlacas(pasta, { quadro: it.quadro, pessoa: "A01", mascara: new Uint8Array(RW * RH), m: k });
     }
   }
   const [q0, q1] = fila.itens.map((it) => it.quadro);
@@ -197,9 +246,9 @@ test("de onde a imagem começa: a previsão do modelo, a não ser nos quadros se
   assert.deepEqual(vistos.pontos.get(q0).inicio, PONTOS);
   assert.equal(vistos.pontos.get(q1).partiu_de.fonte, "nenhuma");
   assert.equal(vistos.pontos.get(q1).inicio, null);
-  assert.equal(vistos.pessoas.get(q0).inicio, pasta.previsaoPessoas(PARTIDA, q0));
-  assert.equal(vistos.pessoas.get(q0).partiu_de.fonte, "modelo");
-  assert.equal(vistos.pessoas.get(q1).inicio, null);
+  assert.equal(vistos.placas.get(recorte(0)).inicio, pasta.previsaoPlacas(PARTIDA, recorte(0)));
+  assert.equal(vistos.placas.get(recorte(0)).partiu_de.fonte, "modelo");
+  assert.equal(vistos.placas.get(recorte(1)).inicio, null);
 });
 
 test("revisão às cegas: qualquer pessoa menos o autor, cada rótulo uma vez, correções fora", async () => {
@@ -208,7 +257,7 @@ test("revisão às cegas: qualquer pessoa menos o autor, cada rótulo uma vez, c
   const nomes = [];
   for (let k = 0; k < 12; k++) nomes.push(await gravarPontos(pasta, { quadro: quadro(k), pessoa: "A01", pontos: k === 3 ? null : PONTOS, m: k }));
   assert.equal((await pendentesRevisao(indice, "pontos", "A01")).length, 0);
-  assert.equal((await pendentesRevisao(indice, "pessoas", "A02")).length, 0);
+  assert.equal((await pendentesRevisao(indice, "placas", "A02")).length, 0);
   const deA02 = await pendentesRevisao(indice, "pontos", "A02");
   const deRS = await pendentesRevisao(indice, "pontos", "RS");
   assert.deepEqual([...deA02.map((p) => p.arquivo.nome)].sort(), [...nomes].sort()); // o descarte também se revisa
@@ -254,6 +303,26 @@ test("dupla às cegas: duas pessoas anotam do zero, e a revisão só vem depois 
   // a concordância das duas pessoas entra no placar: 1 px de 640 = 1,5 px na referência 960
   const pl = await calcularPlacar(indice, AGORA);
   assert.equal(pl.pontos.equipe.find((p) => p.pessoa === "A01").concordancia, 1.5);
+});
+
+test("dupla às cegas nas placas: dois recortes pintados, e a concordância é a sobreposição dentro da placa", async () => {
+  const { pasta, indice } = await pastaExemplo();
+  await criarPartida(pasta, [{}]);
+  await criarRecortes(pasta, [{ dupla: true }]);
+  const r = recorte(0);
+  const a = mascaraVerdadeira().map((x) => (x ? 1 : 0));
+  await gravarPlacas(pasta, { quadro: r, pessoa: "A01", mascara: a, m: 1 });
+  assert.deepEqual(await pendentesRevisao(indice, "placas", "A02"), []);
+  const item = await proximo(indice, "placas", "A02");
+  assert.equal(item.quadro, r);
+  assert.equal(item.inicio, null);
+  const b = a.slice();
+  for (let x = 10; x < 18; x++) b[30 * RW + x] = 1; // uma linha a mais embaixo do primeiro: a borda não conta
+  await gravarPlacas(pasta, { quadro: r, pessoa: "A02", mascara: b, m: 2 });
+  assert.equal((await pendentesRevisao(indice, "placas", "RS")).length, 2);
+  const pl = await calcularPlacar(indice, AGORA);
+  assert.equal(pl.placas.equipe.find((p) => p.pessoa === "A01").concordancia, 1);
+  assert.equal(pl.placas.partidas[0].sorteados, 1);
 });
 
 test("os itens escondidos do gabarito contam a partir da liberação", async () => {

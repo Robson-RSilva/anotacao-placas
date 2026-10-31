@@ -1,7 +1,9 @@
 # ADR-0011 — Pintar todas as pessoas em campo, e o tempo do placar
 
 **Situação:** aceita (30/10/2026). Muda a pintura da [ADR-0010](0010-marcar-e-pintar-direto-na-imagem.md),
-que era só dos jogadores; os pontos, o descarte, o gabarito e a revisão seguem como lá.
+que era só dos jogadores; os pontos, o descarte, o gabarito e a revisão seguem como lá. A pintura das
+pessoas na imagem inteira foi trocada pela do que está na frente de cada placa, no recorte dela, na
+[ADR-0012](0012-pintar-a-oclusao-no-recorte-da-placa.md); o tempo do placar segue como aqui.
 
 ## Contexto
 

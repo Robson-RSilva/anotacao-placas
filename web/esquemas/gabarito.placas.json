@@ -1,0 +1,112 @@
+{
+  "additionalProperties": false,
+  "description": "Item do gabarito das placas: o recorte e a resposta — a máscara verdadeira (PNG ao lado), com um\nnúmero por coisa na frente da placa (de 1 a N) e 0 no resto, ou \"descartar\" (o recorte não está\nna placa, e não leva máscara).",
+  "properties": {
+    "altura": {
+      "exclusiveMinimum": 0,
+      "maximum": 8192,
+      "title": "Altura",
+      "type": "integer"
+    },
+    "formato": {
+      "const": "gabarito.placas/1",
+      "default": "gabarito.placas/1",
+      "title": "Formato",
+      "type": "string"
+    },
+    "id": {
+      "pattern": "^g\\d{4}$",
+      "title": "Id",
+      "type": "string"
+    },
+    "imagem": {
+      "title": "Imagem",
+      "type": "string"
+    },
+    "largura": {
+      "exclusiveMinimum": 0,
+      "maximum": 8192,
+      "title": "Largura",
+      "type": "integer"
+    },
+    "lote": {
+      "default": "",
+      "description": "o lote de ouro de onde o item veio",
+      "title": "Lote",
+      "type": "string"
+    },
+    "mascara": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "a máscara verdadeira, ao lado (null quando a resposta é descartar)",
+      "title": "Mascara"
+    },
+    "observacao": {
+      "default": "",
+      "title": "Observacao",
+      "type": "string"
+    },
+    "oclusores": {
+      "description": "quantas coisas na frente da placa: os números 1 a N da máscara",
+      "maximum": 255,
+      "minimum": 0,
+      "title": "Oclusores",
+      "type": "integer"
+    },
+    "origem": {
+      "enum": [
+        "simulador",
+        "arbitrado"
+      ],
+      "title": "Origem",
+      "type": "string"
+    },
+    "regiao": {
+      "description": "o que se pinta (polígono, px do recorte)",
+      "items": {
+        "maxItems": 2,
+        "minItems": 2,
+        "prefixItems": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "number"
+          }
+        ],
+        "type": "array"
+      },
+      "maxItems": 64,
+      "minItems": 3,
+      "title": "Regiao",
+      "type": "array"
+    },
+    "resposta": {
+      "default": "pintar",
+      "enum": [
+        "pintar",
+        "descartar"
+      ],
+      "title": "Resposta",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "imagem",
+    "mascara",
+    "largura",
+    "altura",
+    "regiao",
+    "oclusores",
+    "origem"
+  ],
+  "title": "GabaritoPlacas",
+  "type": "object"
+}

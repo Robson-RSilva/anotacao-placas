@@ -5,6 +5,60 @@ Formato de [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); versões
 
 ## [Não lançado]
 
+## [0.10.0] - 2026-10-30
+
+A pintura passa a ser no recorte de cada placa: a página recebe a placa pronta, endireitada, e só se
+pinta o que está na frente dela (ADR-0012).
+
+### Mudado
+
+- A tarefa "Pessoas em campo" vira **"Oclusão nas placas"** (`#/placas`, `#/revisao-placas`). Cada
+  item é o recorte de uma placa num quadro — o retângulo da placa com um pouco em volta, escurecido —
+  e pinta-se, só dentro do contorno dela (o pincel e o laço não pintam fora), tudo o que a esconde de
+  quem assiste: gente, bola, trave e travessão, outra placa mais perto, câmera, bandeira, o grafismo da
+  emissora. Não se pintam o anúncio, sombra, reflexo nem a rede. O contorno é considerado certo e não
+  se ajusta: se não está na placa, o recorte se descarta ("o recorte não está na placa"). Os endereços
+  da 0.8 e da 0.9 (`#/jogadores`, `#/pessoas` e as revisões) levam às páginas novas.
+- Formatos novos: `recortes.lote/1` (os recortes de uma partida, em `partidas/<partida>/recortes/`,
+  com as imagens ao lado; id `<quadro>_<placa>`), `rotulo.placas/1`, `revisao.placas/1` (motivos
+  `faltou_pintar`, `contorno_impreciso`, `pintou_o_que_nao_cobre`, `descarte_errado` e `outro`) e
+  `gabarito.placas/1` (o recorte, a região e a resposta: `pintar`, com a máscara verdadeira, ou
+  `descartar`). Motivos de descarte das placas: `placa_fora_do_lugar`, `transicao`, `borrao` e
+  `outro`. Manual `placas-0.1` e revisão `revisao-0.4`.
+- O gabarito das placas compara só dentro da região da placa; o item para descartar dá certo só
+  descartado como "o recorte não está na placa". A liberação nas placas pede **pelo menos 12 itens**
+  (o lote de treino inteiro) além de 4 certos dos últimos 5: só com os 4 de 5, quem começa era
+  liberado com 5 itens, quase sempre antes de ver a trave, o grafismo e o recorte fora do lugar.
+- `anotacao unificar`: `placas.parquet` (um recorte por linha, com a região, os cantos da placa no
+  recorte e no quadro, os pixels pintados e a cobertura) no lugar de `pessoas.parquet`; manifesto
+  `conjuntos/5` (com `sem_nada_na_frente`). `anotacao prever --tarefa pontos|placas` (a pré-pintura
+  das placas sai no recorte, só dentro da região). `anotacao validar` confere os lotes de recortes, as
+  imagens e que nenhuma máscara pinta fora da região.
+- Lotes de ouro novos, em ids novos: PL1-treino (g4001–g4012) e PL2-variado (g4101–g4116), com gente,
+  trave e grafismo na frente das placas, placas sem nada na frente e recortes fora do lugar; o índice
+  `indice-placas.csv` diz o que é cada coisa na máscara. `scripts/conferir_regras.py` ganha os perfis
+  de quem pinta só as pessoas e de quem nunca descarta, e a chance de liberação ao fim do treino.
+
+### Adicionado
+
+- `anotacao recortes LOTE.json --pasta P` traz um lote de recortes para a partida (confere as imagens,
+  recusa recorte repetido, nunca sobrescreve); o .zip da página também traz `recortes/`.
+- `scripts/lotes_de_ouro.py --demonstracao`: uma partida sintética com 21 recortes do simulador (3
+  fora do lugar), para experimentar a página das placas numa pasta de teste.
+- A região da placa em pixels (`nucleo/regiao.js` e `mascara.rasterizar`) com a mesma conta nas
+  páginas e no Python, conferida com os mesmos polígonos.
+
+### Removido
+
+- A tarefa "Pessoas em campo" da 0.9, os formatos `rotulo.pessoas/1`, `revisao.pessoas/1` e
+  `gabarito.pessoas/1` e os lotes PE1-treino e PE2-variado. Os arquivos da 0.9 ficam na pasta, mas não
+  entram em nada: pintavam as pessoas no quadro inteiro.
+
+### Corrigido
+
+- No resultado do teste, a legenda das cores (certo, faltou, a mais) só aparece na vista do resultado,
+  não na da resposta nem na da própria pintura.
+
 ## [0.9.0] - 2026-10-30
 
 A pintura passa a ser de todas as pessoas em campo — quem pode ficar na frente de uma placa —, e o

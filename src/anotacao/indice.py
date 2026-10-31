@@ -14,17 +14,33 @@ from typing import TypeVar
 
 from pydantic import BaseModel, ValidationError
 
-from .formatos import TAREFA, Fila, Manifesto, RevisaoPessoas, RevisaoPontos, RotuloPessoas, RotuloPontos, Tomadas
+from .formatos import (
+    TAREFA,
+    Fila,
+    ItemRecorte,
+    LoteRecortes,
+    Manifesto,
+    RevisaoPlacas,
+    RevisaoPontos,
+    RotuloPlacas,
+    RotuloPontos,
+    Tomadas,
+)
 from .pasta import Pasta, ler_json, mascara_de
 
-Rotulo = RotuloPontos | RotuloPessoas
-Revisao = RevisaoPontos | RevisaoPessoas
+Rotulo = RotuloPontos | RotuloPlacas
+Revisao = RevisaoPontos | RevisaoPlacas
+
+#: O campo do item em cada tarefa: o quadro nos pontos, o recorte nas placas.
+CAMPO_DO_ITEM = {"pontos": "quadro", "placas": "recorte"}
 
 M = TypeVar("M", bound=BaseModel)
 
 
 @dataclass(frozen=True)
 class Arquivo:
+    """Um rótulo ou uma revisão. `quadro` é o item: o quadro nos pontos, o recorte nas placas."""
+
     caminho: Path
     partida: str
     quadro: str
@@ -64,7 +80,7 @@ class IndicePartida:
     revisoes: list[Arquivo]
     revisoes_de: dict[str, list[Revisao]] = field(default_factory=dict)
     invalidos: list[tuple[Path, str]] = field(default_factory=list)
-    esperando: list[Path] = field(default_factory=list)  # pessoas: o rótulo chegou antes da máscara
+    esperando: list[Path] = field(default_factory=list)  # placas: o rótulo chegou antes da máscara
 
     def versoes(self, quadro: str, pessoa: str) -> list[Arquivo]:
         return sorted((a for a in self.rotulos if a.quadro == quadro and a.pessoa == pessoa), key=lambda a: a.versao)
@@ -89,6 +105,17 @@ class IndicePartida:
         return max(rs, key=lambda r: r.criado_em) if rs else None
 
 
+@dataclass
+class Recortes:
+    """Os recortes de uma partida, de todos os lotes: recorte -> (lote, item), na ordem dos lotes e,
+    em cada lote, na ordem dele. Um recorte que já veio num lote anterior fica de fora (`repetidos`)."""
+
+    itens: dict[str, tuple[str, ItemRecorte]] = field(default_factory=dict)
+    lotes: dict[str, LoteRecortes] = field(default_factory=dict)
+    invalidos: list[tuple[Path, str]] = field(default_factory=list)
+    repetidos: list[tuple[str, str]] = field(default_factory=list)  # (lote, recorte)
+
+
 class Indice:
     def __init__(self, pasta: Pasta, cache: LeitorCache | None = None):
         self.pasta = pasta
@@ -106,19 +133,40 @@ class Indice:
     def tomadas(self, partida: str) -> Tomadas:
         return self.cache.ler(self.pasta.tomadas(partida), Tomadas)
 
+    def recortes(self, partida: str) -> Recortes:
+        """Os lotes de recortes válidos da partida (os inválidos vão para `invalidos`)."""
+        out = Recortes()
+        for lote in self.pasta.listar_lotes(partida):
+            caminho = self.pasta.lote_recortes(partida, lote)
+            try:
+                lr = self.cache.ler(caminho, LoteRecortes)
+                if (lr.partida, lr.lote) != (partida, lote):
+                    raise ValueError("o conteúdo não bate com o nome do arquivo (partida e lote)")
+            except (ValidationError, ValueError, OSError) as e:
+                out.invalidos.append((caminho, str(e).splitlines()[0]))
+                continue
+            out.lotes[lote] = lr
+            for it in lr.itens:
+                if it.recorte in out.itens:
+                    out.repetidos.append((lote, it.recorte))
+                else:
+                    out.itens[it.recorte] = (lote, it)
+        return out
+
     def partida(self, partida: str, tarefa: str) -> IndicePartida:
         """Rótulos e revisões válidos da partida na tarefa; os inválidos ficam em `invalidos` e não entram
-        em nada. Nas pessoas, um rótulo cuja máscara ainda não chegou fica em `esperando`."""
+        em nada. Nas placas, um rótulo cuja máscara ainda não chegou fica em `esperando`."""
         modelo_rotulo, modelo_revisao, _ = TAREFA[tarefa]
+        campo = CAMPO_DO_ITEM[tarefa]
         invalidos: list[tuple[Path, str]] = []
         esperando: list[Path] = []
         rot = []
         for p, q, pe, v in self.pasta.listar(self.pasta.rotulos(partida, tarefa)):
             try:
                 r = self.cache.ler(p, modelo_rotulo)
-                if (r.partida, r.quadro, r.anotador, r.versao) != (partida, q, pe, v):
+                if (r.partida, getattr(r, campo), r.anotador, r.versao) != (partida, q, pe, v):
                     raise ValueError("o conteúdo não bate com o nome do arquivo")
-                if tarefa == "pessoas" and r.mascara is not None:
+                if tarefa == "placas" and r.mascara is not None:
                     if r.mascara != mascara_de(p.name):
                         raise ValueError("a máscara precisa ter o nome do rótulo")
                     if not (p.parent / r.mascara).is_file():
@@ -134,7 +182,7 @@ class Indice:
         for p, q, pe, v in self.pasta.listar(self.pasta.revisoes(partida, tarefa)):
             try:
                 r = self.cache.ler(p, modelo_revisao)
-                if (r.partida, r.quadro, r.revisor, r.versao) != (partida, q, pe, v):
+                if (r.partida, getattr(r, campo), r.revisor, r.versao) != (partida, q, pe, v):
                     raise ValueError("o conteúdo não bate com o nome do arquivo")
             except (ValidationError, ValueError, OSError) as e:
                 invalidos.append((p, str(e).splitlines()[0]))

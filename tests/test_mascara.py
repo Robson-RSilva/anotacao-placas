@@ -1,4 +1,5 @@
-"""A máscara PNG: ida e volta, o PNG em cinza do OpenCV e os PNGs fixos do fixture das páginas."""
+"""A máscara PNG: ida e volta, o PNG em cinza do OpenCV e os PNGs fixos do fixture das páginas; a região
+da placa (os pixels dentro de um polígono)."""
 
 from __future__ import annotations
 
@@ -8,8 +9,8 @@ import cv2
 import numpy as np
 import pytest
 
-from anotacao.mascara import eh_png, gravar_png, ler_png
-from anotacao.previsores import PALETA_PESSOAS
+from anotacao.mascara import eh_png, gravar_png, ler_png, rasterizar
+from anotacao.previsores import PALETA_PLACAS
 
 OITO_CORES = [
     (0, 0, 0),
@@ -37,10 +38,40 @@ def test_png_ida_e_volta_e_o_do_opencv():
         ler_png(b"nada")
 
 
-def test_mascara_das_pessoas():
+def test_mascara_das_placas():
     m = np.zeros((9, 16), np.uint8)
     m[2:6, 3:7] = 1
-    assert np.array_equal(ler_png(gravar_png(m, PALETA_PESSOAS)), m)
+    assert np.array_equal(ler_png(gravar_png(m, PALETA_PLACAS)), m)
+
+
+def test_regiao_da_placa():
+    """Vale o centro do pixel: um retângulo de cantos inteiros pega os pixels inteiros dele, e um triângulo
+    pega os pixels com o centro dentro dele."""
+    m = rasterizar([[4, 3], [33, 3], [33, 20], [4, 20]], 37, 23)
+    esperado = np.zeros((23, 37), bool)
+    esperado[3:20, 4:33] = True
+    assert np.array_equal(m, esperado)
+    assert not rasterizar([[1, 1], [5, 1]], 10, 10).any()  # sem área
+    tri = [[1.3, 21.7], [18.2, 0.4], [35.6, 21.9]]
+    m = rasterizar(tri, 37, 23)
+    yy, xx = np.mgrid[0:23, 0:37] + 0.5
+    (ax, ay), (bx, by), (cx, cy) = tri
+
+    def lado(px, py, qx, qy):
+        return (qx - px) * (yy - py) - (qy - py) * (xx - px)
+
+    dentro = (lado(ax, ay, bx, by) > 0) & (lado(bx, by, cx, cy) > 0) & (lado(cx, cy, ax, ay) > 0)
+    assert np.array_equal(m, dentro) and m.sum() > 300
+
+
+def test_regioes_do_fixture_das_paginas():
+    """O fixture que o `rasterizar` das páginas confere é o deste."""
+    from anotacao.geracao import regioes_para_teste
+
+    f = regioes_para_teste()
+    for caso in f["casos"]:
+        m = rasterizar(caso["poligono"], f["largura"], f["altura"])
+        assert ["".join("1" if v else "0" for v in linha) for linha in m] == caso["linhas"]
 
 
 def test_pngs_fixos_do_fixture_dizem_os_pixels_deles():

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { codificarPng, decodificarPng, ehPng } from "../../web/js/nucleo/png.js";
-import { PALETA_PESSOAS } from "../../web/js/nucleo/rotulos.js";
+import { PALETA_PLACAS } from "../../web/js/nucleo/rotulos.js";
 import { FIXTURES, lerJson } from "./apoio.js";
 
 const FIX = lerJson(new URL("png.json", FIXTURES));
@@ -28,9 +28,9 @@ test("PNG: grava e lê de volta, e lê o do Python e o do OpenCV (com filtros)",
   await assert.rejects(decodificarPng(Uint8Array.of(1, 2, 3)), /não é um PNG/);
 });
 
-test("a máscara das pessoas: 0 e 1, com a paleta de duas cores", async () => {
+test("a máscara das placas: 0 e 1, com a paleta de duas cores", async () => {
   const m = new Uint8Array(12 * 5);
   m.fill(1, 14, 20);
-  const lido = await decodificarPng(await codificarPng(m, 12, 5, PALETA_PESSOAS));
+  const lido = await decodificarPng(await codificarPng(m, 12, 5, PALETA_PLACAS));
   assert.deepEqual([...lido.dados], [...m]);
 });

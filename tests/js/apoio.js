@@ -176,9 +176,41 @@ export async function criarPartida(pasta, itens, { partida = PARTIDA, largura = 
       observacoes: "",
     },
     video: { nome_original: "jogo.mp4", sha256: "0".repeat(64), bytes: 1000, duracao_s: 4, fps: 25, largura, altura, n_quadros: 100 },
-    pre_processamento: { ferramenta: "0.9.0", criado_em: AGORA.toISOString(), segundos: 1, parametros: {}, previsor: null },
+    pre_processamento: { ferramenta: "0.10.0", criado_em: AGORA.toISOString(), segundos: 1, parametros: {}, previsor: null },
   });
   return fila;
+}
+
+/** O tamanho dos recortes de exemplo e a região da placa neles (a placa com 8 px em volta). */
+export const RW = 64;
+export const RH = 48;
+export const REGIAO = Object.freeze([[8, 8], [56, 8], [56, 40], [8, 40]]);
+
+/**
+ * Um lote de recortes na partida (sem as imagens): `itens` são {recorte, dupla, sem_previsao, ...}; o
+ * recorte k é `t<1000(k+1)>_p<k>` se não vier. Devolve o lote.
+ */
+export async function criarRecortes(pasta, itens, { partida = PARTIDA, lote = "r1" } = {}) {
+  const l = {
+    formato: "recortes.lote/1",
+    partida,
+    lote,
+    criado_em: AGORA.toISOString(),
+    origem: "simulador",
+    gerador: "testes",
+    itens: itens.map((it, k) => ({
+      recorte: it.recorte ?? `t${String(1000 * (k + 1)).padStart(10, "0")}_p${k}`,
+      largura: it.largura ?? RW,
+      altura: it.altura ?? RH,
+      regiao: it.regiao ?? REGIAO.map((p) => [...p]),
+      placa: REGIAO.map((p) => [...p]),
+      no_quadro: REGIAO.map(([x, y]) => [100 + 2 * x, 50 + 2 * y]),
+      dupla: it.dupla ?? false,
+      sem_previsao: it.sem_previsao ?? false,
+    })),
+  };
+  await pasta.gravar("lote_recortes", pasta.loteRecortes(partida, lote), l);
+  return l;
 }
 
 /** Os pontos verdadeiros de exemplo de um item: alguns pontos do campo em lugares diferentes. */
@@ -204,8 +236,8 @@ export async function criarGabaritoPontos(pasta, n = 12, { lote = "P1-treino", p
   return itens;
 }
 
-/** A máscara verdadeira de exemplo: três pessoas (1 e 2: jogadores; 3: o árbitro). */
-export function mascaraVerdadeira(w = 64, h = 48) {
+/** A máscara verdadeira de exemplo: três coisas na frente da placa (1 e 2: jogadores; 3: a trave), dentro da região. */
+export function mascaraVerdadeira(w = RW, h = RH) {
   const m = new Uint8Array(w * h);
   const ret = (x0, y0, x1, y1, v) => {
     for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) m[y * w + x] = v;
@@ -216,24 +248,41 @@ export function mascaraVerdadeira(w = 64, h = 48) {
   return m;
 }
 
-/** Itens do gabarito das pessoas com a máscara verdadeira: g3001, g3002… (64 x 48). */
-export async function criarGabaritoPessoas(pasta, n = 6, { lote = "PE1-treino", primeiro = 3001 } = {}) {
+/**
+ * Itens do gabarito das placas com a máscara verdadeira: g4001, g4002… (64 x 48, a região da placa com 8 px
+ * em volta). `descartar`: os índices dos itens cuja resposta é descartar (o recorte não está na placa).
+ */
+export async function criarGabaritoPlacas(pasta, n = 6, { lote = "PL1-treino", primeiro = 4001, descartar = [] } = {}) {
   const itens = {};
   for (let k = 0; k < n; k++) {
     const id = `g${primeiro + k}`;
-    itens[id] = { formato: "gabarito.pessoas/1", id, lote, imagem: `${id}.jpg`, mascara: `${id}.png`, largura: 64, altura: 48, pessoas: 3, origem: "simulador", observacao: "" };
-    await pasta.escrever(pasta.mascaraGabarito(id), await codificarPng(mascaraVerdadeira(), 64, 48, Array.from({ length: 256 }, (_, v) => [v, v, v])));
-    await pasta.gravar("gabarito_pessoas", pasta.itemGabarito(id), itens[id]);
+    const fora = descartar.includes(k);
+    itens[id] = {
+      formato: "gabarito.placas/1",
+      id,
+      lote,
+      imagem: `${id}.jpg`,
+      mascara: fora ? null : `${id}.png`,
+      largura: RW,
+      altura: RH,
+      regiao: REGIAO.map((p) => [...p]),
+      oclusores: fora ? 0 : 3,
+      resposta: fora ? "descartar" : "pintar",
+      origem: "simulador",
+      observacao: "",
+    };
+    if (!fora) await pasta.escrever(pasta.mascaraGabarito(id), await codificarPng(mascaraVerdadeira(), RW, RH, Array.from({ length: 256 }, (_, v) => [v, v, v])));
+    await pasta.gravar("gabarito_placas", pasta.itemGabarito(id), itens[id]);
   }
   return itens;
 }
 
-const COMUM = (partida, quadro, pessoa, versao, m, manual, largura, altura) => ({
+const COMUM = (partida, campo, quadro, pessoa, versao, m, manual, largura, altura) => ({
   partida,
-  quadro,
+  [campo]: quadro,
   anotador: pessoa,
   versao,
-  ferramenta: "0.9.0",
+  ferramenta: "0.10.0",
   manual,
   criado_em: minutos(m).toISOString(),
   segundos_ativos: 20,
@@ -246,7 +295,7 @@ const COMUM = (partida, quadro, pessoa, versao, m, manual, largura, altura) => (
 export async function gravarPontos(pasta, { partida = PARTIDA, quadro, pessoa, pontos = [], versao = 1, m = 0, largura = W, altura = H, ...extra }) {
   const r = {
     formato: "rotulo.pontos/1",
-    ...COMUM(partida, quadro, pessoa, versao, m, "pontos-0.1", largura, altura),
+    ...COMUM(partida, "quadro", quadro, pessoa, versao, m, "pontos-0.1", largura, altura),
     pontos: pontos ?? [],
     situacao: pontos ? "ok" : "descartada",
     motivo_descarte: pontos ? null : "transicao",
@@ -259,45 +308,48 @@ export async function gravarPontos(pasta, { partida = PARTIDA, quadro, pessoa, p
   return nome;
 }
 
-/** Grava um rótulo das pessoas (a máscara e o rótulo); `mascara` null é a imagem descartada. */
-export async function gravarPessoas(pasta, { partida = PARTIDA, quadro, pessoa, mascara = null, versao = 1, m = 0, largura = W, altura = H, ...extra }) {
+/**
+ * Grava um rótulo das placas (a máscara e o rótulo); `quadro` é o recorte; `mascara` null é o recorte
+ * descartado (com `motivo`).
+ */
+export async function gravarPlacas(pasta, { partida = PARTIDA, quadro, pessoa, mascara = null, versao = 1, m = 0, largura = RW, altura = RH, motivo = "borrao", ...extra }) {
   const nome = `${quadro}__${pessoa}__v${versao}.json`;
-  const dir = pasta.rotulos(partida, "pessoas");
+  const dir = pasta.rotulos(partida, "placas");
   let pixels = 0;
   if (mascara) {
     await pasta.escrever(`${dir}/${nome.replace(/\.json$/, ".png")}`, await codificarPng(mascara, largura, altura, [[0, 0, 0], [255, 64, 129]]));
     pixels = mascara.reduce((s, v) => s + (v ? 1 : 0), 0);
   }
   const r = {
-    formato: "rotulo.pessoas/1",
-    ...COMUM(partida, quadro, pessoa, versao, m, "pessoas-0.1", largura, altura),
+    formato: "rotulo.placas/1",
+    ...COMUM(partida, "recorte", quadro, pessoa, versao, m, "placas-0.1", largura, altura),
     mascara: mascara ? nome.replace(/\.json$/, ".png") : null,
     pixels,
     situacao: mascara ? "ok" : "descartada",
-    motivo_descarte: mascara ? null : "borrao",
+    motivo_descarte: mascara ? null : motivo,
     comentario: "",
     corrige: null,
     ...extra,
   };
-  await pasta.gravar("rotulo_pessoas", `${dir}/${nome}`, r);
+  await pasta.gravar("rotulo_placas", `${dir}/${nome}`, r);
   return nome;
 }
 
-/** Grava uma revisão direto na pasta. */
+/** Grava uma revisão direto na pasta (`quadro` é o item: nas placas, o recorte). */
 export async function gravarRevisao(pasta, { tarefa = "pontos", partida = PARTIDA, quadro, rotulo, revisor, decisao = "aprovar", versao = 1, m = 0, ...extra }) {
   const r = {
     formato: `revisao.${tarefa}/1`,
     partida,
-    quadro,
+    [tarefa === "pontos" ? "quadro" : "recorte"]: quadro,
     rotulo,
     revisor,
     versao,
     decisao,
-    motivo: decisao === "devolver" ? (tarefa === "pontos" ? "ponto_fora_do_lugar" : "faltou_pessoa") : null,
+    motivo: decisao === "devolver" ? (tarefa === "pontos" ? "ponto_fora_do_lugar" : "faltou_pintar") : null,
     comentario: "",
     nova_versao: null,
-    ferramenta: "0.9.0",
-    manual: "revisao-0.3",
+    ferramenta: "0.10.0",
+    manual: "revisao-0.4",
     criado_em: minutos(m).toISOString(),
     segundos_ativos: 4,
     ...extra,

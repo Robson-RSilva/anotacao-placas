@@ -1,15 +1,16 @@
 """Máscaras: PNG de índices, 8 bits por pixel, só com a biblioteca padrão (zlib).
 
-Cada pixel guarda um número — nos rótulos das pessoas, 1 onde há pessoa e 0 no resto; no gabarito, o
-número de cada pessoa. A paleta só serve para quem abre o arquivo num visualizador de imagens ver
-as cores. Lê também o PNG em tons de cinza que o OpenCV grava (a previsão de um modelo, por
-exemplo). Espelho de `web/js/nucleo/png.js`.
+Cada pixel guarda um número — nos rótulos das placas, 1 onde algo cobre a placa e 0 no resto; no
+gabarito, o número de cada coisa na frente da placa. A paleta só serve para quem abre o arquivo num
+visualizador de imagens ver as cores. Lê também o PNG em tons de cinza que o OpenCV grava (a previsão
+de um modelo, por exemplo). Espelho de `web/js/nucleo/png.js`.
 
 O OpenCV não serve para ler a máscara: ele troca a paleta pelas cores.
 """
 
 from __future__ import annotations
 
+import math
 import struct
 import zlib
 from pathlib import Path
@@ -119,3 +120,32 @@ def ler_png(dados: bytes | Path) -> np.ndarray:
 
 def eh_png(dados: bytes) -> bool:
     return dados[:8] == ASSINATURA
+
+
+def rasterizar(poligono, largura: int, altura: int) -> np.ndarray:
+    """Os pixels dentro de um polígono (px, origem no canto de cima à esquerda): vale o centro do
+    pixel, linha a linha, com a regra par-ímpar. As mesmas contas, na mesma ordem, do `rasterizar` das
+    páginas (`web/js/ui/pintor.js`): a região da placa dá os mesmos pixels nos dois lados."""
+    m = np.zeros((altura, largura), bool)
+    pol = [(float(x), float(y)) for x, y in poligono]
+    if len(pol) < 3:
+        return m
+    ys = [p[1] for p in pol]
+    y0 = max(0, math.ceil(min(ys) - 0.5))
+    y1 = min(altura - 1, math.ceil(max(ys) - 0.5) - 1)
+    for y in range(y0, y1 + 1):
+        yc = y + 0.5
+        xs = []
+        j = len(pol) - 1
+        for i in range(len(pol)):
+            ya, yb = pol[j][1], pol[i][1]
+            if (ya <= yc < yb) or (yb <= yc < ya):
+                xs.append(pol[j][0] + ((yc - ya) / (yb - ya)) * (pol[i][0] - pol[j][0]))
+            j = i
+        xs.sort()
+        for k in range(0, len(xs) - 1, 2):
+            xi = max(0, math.ceil(xs[k] - 0.5))
+            xf = min(largura, math.ceil(xs[k + 1] - 0.5))
+            if xf > xi:
+                m[y, xi:xf] = True
+    return m

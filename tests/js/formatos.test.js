@@ -10,10 +10,9 @@ await esquemas();
 
 const base = (extra = {}) => ({
   partida: "2026-11-02_arena-x_time-a-time-b",
-  quadro: "t0001234567",
   anotador: "A03",
   versao: 1,
-  ferramenta: "0.9.0",
+  ferramenta: "0.10.0",
   criado_em: "2026-11-03T14:05:11.123Z",
   segundos_ativos: 41,
   largura: 1280,
@@ -29,14 +28,17 @@ const base = (extra = {}) => ({
 const pontos = (extra = {}) => ({
   formato: "rotulo.pontos/1",
   manual: "pontos-0.1",
+  quadro: "t0001234567",
   pontos: [{ ponto: "ga_dir_frente_cab", x: 512.3, y: 288.1 }, { ponto: "centro", x: 640, y: 360 }],
   ...base(extra),
 });
 
-const pessoas = (extra = {}) => ({
-  formato: "rotulo.pessoas/1",
-  manual: "pessoas-0.1",
-  mascara: "t0001234567__A03__v1.png",
+const RECORTE = "t0001234567_opo-03";
+const placas = (extra = {}) => ({
+  formato: "rotulo.placas/1",
+  manual: "placas-0.1",
+  recorte: RECORTE,
+  mascara: `${RECORTE}__A03__v1.png`,
   pixels: 5000,
   ...base(extra),
 });
@@ -54,9 +56,10 @@ test("rótulos válidos e padrões preenchidos como no pydantic", () => {
   assert.deepEqual(conferir("rotulo_pontos", pontos({ pontos: [] })), []); // nenhum ponto à vista: vale
   assert.deepEqual(conferir("rotulo_pontos", pontos({ pontos: [], situacao: "descartada", motivo_descarte: "borrao" })), []);
   assert.deepEqual(conferir("rotulo_pontos", pontos({ partida: "gabarito", quadro: "g1001" })), []);
-  assert.deepEqual(conferir("rotulo_pessoas", pessoas()), []);
-  assert.deepEqual(conferir("rotulo_pessoas", pessoas({ pixels: 0 })), []);
-  assert.deepEqual(conferir("rotulo_pessoas", pessoas({ mascara: null, pixels: 0, situacao: "descartada", motivo_descarte: "transicao" })), []);
+  assert.deepEqual(conferir("rotulo_placas", placas()), []);
+  assert.deepEqual(conferir("rotulo_placas", placas({ pixels: 0 })), []);
+  assert.deepEqual(conferir("rotulo_placas", placas({ mascara: null, pixels: 0, situacao: "descartada", motivo_descarte: "placa_fora_do_lugar" })), []);
+  assert.deepEqual(conferir("rotulo_placas", placas({ partida: "gabarito", recorte: "g4001", mascara: "g4001__A03__v1.png" })), []);
 });
 
 test("regras entre campos do rótulo de pontos", () => {
@@ -78,17 +81,52 @@ test("regras entre campos do rótulo de pontos", () => {
   }
 });
 
-test("regras entre campos do rótulo das pessoas", () => {
+test("regras entre campos do rótulo das placas", () => {
   const casos = [
     [{ mascara: null, pixels: 0 }, "a máscara vem sempre"],
     [{ situacao: "descartada", motivo_descarte: "borrao" }, "a máscara vem sempre"],
     [{ mascara: null, pixels: 4, situacao: "descartada", motivo_descarte: "borrao" }, "pixels pintados só"],
     [{ mascara: "x.png" }, "nome da máscara"],
     [{ pixels: 1280 * 720 + 1 }, "mais pixels"],
+    [{ recorte: "t0001234567" }, "recorte inválido"], // um quadro, não um recorte
+    [{ recorte: "t0001234567_opo-03-muito-comprido-para-um-recorte-de-placa" }, "no máximo 48"],
+    [{ mascara: null, pixels: 0, situacao: "descartada", motivo_descarte: "grafismo" }, "fora de"], // nas placas, se pinta
+    [{ quadro: "t0001234567" }, "campo desconhecido"],
   ];
   for (const [extra, trecho] of casos) {
-    const erros = conferir("rotulo_pessoas", pessoas(extra));
+    const erros = conferir("rotulo_placas", placas(extra));
     assert.ok(erros.some((e) => e.includes(trecho)), `${JSON.stringify(extra)} -> ${erros}`);
+  }
+});
+
+test("lote de recortes: a região dentro do recorte e cada recorte uma vez", () => {
+  const item = {
+    recorte: RECORTE,
+    largura: 300,
+    altura: 70,
+    regiao: [[10, 8], [290, 8], [290, 62], [10, 62]],
+    placa: [[10, 8], [290, 8], [290, 62], [10, 62]],
+    no_quadro: [[512.2, 100.5], [903, 120.25], [902.5, 160], [511, 141]],
+  };
+  const lote = { formato: "recortes.lote/1", partida: "2026-11-02_arena-x_time-a-time-b", lote: "r1", criado_em: "2026-11-03T14:05:11Z", origem: "simulador", gerador: "teste", itens: [item] };
+  const ok = structuredClone(lote);
+  assert.deepEqual(conferir("lote_recortes", ok), []);
+  assert.deepEqual([ok.itens[0].dupla, ok.itens[0].sem_previsao], [false, false]); // os padrões
+  const com = (mudanca) => ({ ...structuredClone(lote), itens: [{ ...structuredClone(item), ...mudanca }] });
+  const casos = [
+    [com({ regiao: [[10, 8], [310, 8], [290, 62]] }), "sai do recorte"],
+    [com({ regiao: [[10, 8], [20, 8], [30, 8]] }), "não tem área"],
+    [com({ regiao: [[10, 8], [20, 8]] }), "no mínimo 3"],
+    [com({ placa: [[10, 8], [290, 8], [290, 62]] }), "no mínimo 4"],
+    [com({ no_quadro: [[1, 2], [3, 4], [5, 6], [7, "x"]] }), "esperado number"],
+    [com({ recorte: "t0001234567" }), "fora do padrão"],
+    [{ ...structuredClone(lote), itens: [item, item] }, "recorte repetido"],
+    [{ ...structuredClone(lote), lote: "R1" }, "fora do padrão"],
+    [{ ...structuredClone(lote), itens: [] }, "no mínimo 1"],
+  ];
+  for (const [obj, trecho] of casos) {
+    const erros = conferir("lote_recortes", obj);
+    assert.ok(erros.some((e) => e.includes(trecho)), `${trecho} -> ${erros}`);
   }
 });
 
@@ -113,11 +151,11 @@ test("estrutura: tipos, limites, padrões e campos desconhecidos", () => {
 });
 
 test("revisão: motivo da tarefa só ao devolver, nova versão só ao corrigir", () => {
-  for (const tarefa of ["pontos", "pessoas"]) {
+  for (const tarefa of ["pontos", "placas"]) {
     const rev = {
       formato: `revisao.${tarefa}/1`,
       partida: "2026-11-02_arena-x_time-a-time-b",
-      quadro: "t0001234567",
+      ...(tarefa === "pontos" ? { quadro: "t0001234567" } : { recorte: RECORTE }),
       rotulo: "t0001234567__A03__v1.json",
       revisor: "A05",
       versao: 1,
@@ -125,14 +163,14 @@ test("revisão: motivo da tarefa só ao devolver, nova versão só ao corrigir",
       motivo: null,
       comentario: "",
       nova_versao: null,
-      ferramenta: "0.9.0",
-      manual: "revisao-0.3",
+      ferramenta: "0.10.0",
+      manual: "revisao-0.4",
       criado_em: "2026-11-03T15:20:00Z",
       segundos_ativos: 9,
     };
     const tipo = `revisao_${tarefa}`;
     const motivo = Object.keys(MOTIVOS[tarefa])[0];
-    const alheio = Object.keys(MOTIVOS[tarefa === "pontos" ? "pessoas" : "pontos"])[0];
+    const alheio = Object.keys(MOTIVOS[tarefa === "pontos" ? "placas" : "pontos"])[0];
     assert.deepEqual(conferir(tipo, { ...rev }), []);
     assert.ok(conferir(tipo, { ...rev, decisao: "devolver" }).length);
     assert.deepEqual(conferir(tipo, { ...rev, decisao: "devolver", motivo }), []);
@@ -159,13 +197,21 @@ test("itens do gabarito: o formato diz a tarefa; os das versões anteriores fica
   assert.ok(conferir("gabarito_pontos", { ...g, pontos: [{ ponto: "centro", x: 1, y: 1 }] }).length); // falta "visivel"
   assert.ok(conferir("gabarito_pontos", { ...g, pontos: [g.pontos[0], g.pontos[0]] }).some((e) => e.includes("duas vezes")));
   assert.deepEqual(tipoDoItem(g), { tarefa: "pontos", tipo: "gabarito_pontos" });
-  assert.deepEqual(tipoDoItem({ formato: "gabarito.pessoas/1" }), { tarefa: "pessoas", tipo: "gabarito_pessoas" });
+  assert.deepEqual(tipoDoItem({ formato: "gabarito.placas/1" }), { tarefa: "placas", tipo: "gabarito_placas" });
   assert.equal(tipoDoItem({ formato: "gabarito.camera/1" }), null);
   assert.equal(tipoDoItem({ formato: "gabarito.jogadores/1" }), null); // da 0.8: só os jogadores
-  const j = { formato: "gabarito.pessoas/1", id: "g3001", imagem: "g3001.jpg", mascara: "g3001.png", largura: 1280, altura: 720, pessoas: 14, origem: "simulador" };
-  assert.deepEqual(conferir("gabarito_pessoas", { ...j }), []);
-  assert.ok(conferir("gabarito_pessoas", { ...j, pessoas: 256 }).length);
-  assert.ok(conferir("gabarito_pessoas", { ...j, outras_pessoas: 1 }).some((e) => e.includes("campo desconhecido")));
+  assert.equal(tipoDoItem({ formato: "gabarito.pessoas/1" }), null); // da 0.9: as pessoas no quadro inteiro
+  const regiao = [[10, 8], [290, 8], [290, 62], [10, 62]];
+  const j = { formato: "gabarito.placas/1", id: "g4001", imagem: "g4001.jpg", mascara: "g4001.png", largura: 300, altura: 70, regiao, oclusores: 3, origem: "simulador" };
+  const ok = structuredClone(j);
+  assert.deepEqual(conferir("gabarito_placas", ok), []);
+  assert.equal(ok.resposta, "pintar"); // o padrão
+  assert.deepEqual(conferir("gabarito_placas", { ...structuredClone(j), mascara: null, oclusores: 0, resposta: "descartar" }), []);
+  assert.ok(conferir("gabarito_placas", { ...structuredClone(j), oclusores: 256 }).length);
+  assert.ok(conferir("gabarito_placas", { ...structuredClone(j), resposta: "descartar" }).some((e) => e.includes("a máscara vem sempre")));
+  assert.ok(conferir("gabarito_placas", { ...structuredClone(j), mascara: null, resposta: "descartar" }).some((e) => e.includes("não tem o que pintar")));
+  assert.ok(conferir("gabarito_placas", { ...structuredClone(j), regiao: [[10, 8], [301, 8], [290, 62]] }).some((e) => e.includes("sai do recorte")));
+  assert.ok(conferir("gabarito_placas", { ...structuredClone(j), pessoas: 1 }).some((e) => e.includes("campo desconhecido")));
 });
 
 test("manifesto: o das partidas importadas até a 0.7 (com o pacote do estádio) ainda vale", () => {
@@ -183,7 +229,7 @@ test("manifesto: o das partidas importadas até a 0.7 (com o pacote do estádio)
       chuva: false,
     },
     video: { nome_original: "a.mp4", sha256: "0".repeat(64), bytes: 1, duracao_s: 1, fps: 25, largura: 640, altura: 360, n_quadros: 25 },
-    pre_processamento: { ferramenta: "0.9.0", criado_em: "2026-11-02T16:00:00Z", segundos: 1, parametros: {} },
+    pre_processamento: { ferramenta: "0.10.0", criado_em: "2026-11-02T16:00:00Z", segundos: 1, parametros: {} },
   };
   assert.deepEqual(conferir("manifesto", structuredClone(man)), []);
   assert.deepEqual(conferir("manifesto", { ...structuredClone(man), pacote: "generico/pacote-1.0" }), []);

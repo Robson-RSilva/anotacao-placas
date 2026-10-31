@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:; media-src 'self' blob:; worker-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'">
-  <meta name="description" content="Anotação de dados de treino: os pontos do campo e as pessoas em campo, marcados e pintados direto na imagem. Tudo roda no navegador e os arquivos ficam na pasta de cada pessoa.">
+  <meta name="description" content="Anotação de dados de treino: os pontos do campo, marcados direto no quadro, e o que está na frente de cada placa, pintado no recorte dela. Tudo roda no navegador e os arquivos ficam na pasta de cada pessoa.">
   <title>Anotação de dados para treino</title>
   <link rel="icon" href="icone.svg" type="image/svg+xml">
   <link rel="stylesheet" href="css/estilo.css">
@@ -85,10 +85,10 @@
             <a class="botao primario" href="#/pontos" id="ir-pontos">Marcar pontos</a>
           </article>
           <article class="cartao">
-            <h2>Pessoas em campo</h2>
-            <p class="sutil">Pinte todas as pessoas no gramado e em volta dele: jogadores, árbitros, gandulas, fotógrafos…</p>
-            <p id="st-pessoas">—</p>
-            <a class="botao primario" href="#/pessoas" id="ir-pessoas">Pintar pessoas</a>
+            <h2>Oclusão nas placas</h2>
+            <p class="sutil">Pinte o que está na frente da placa, no recorte dela: gente, bola, trave, grafismo…</p>
+            <p id="st-placas">—</p>
+            <a class="botao primario" href="#/placas" id="ir-placas">Pintar placas</a>
           </article>
           <article class="cartao">
             <h2>Revisão às cegas</h2>
@@ -96,7 +96,7 @@
             <p id="st-revisao">—</p>
             <div class="botoes">
               <a class="botao" href="#/revisao-pontos" id="ir-revisao-pontos">Revisar pontos</a>
-              <a class="botao" href="#/revisao-pessoas" id="ir-revisao-pessoas">Revisar pinturas</a>
+              <a class="botao" href="#/revisao-placas" id="ir-revisao-placas">Revisar placas</a>
             </div>
           </article>
           <article class="cartao">
@@ -114,7 +114,7 @@
           </div>
           <div class="rolavel">
             <table class="tabela" id="partidas">
-              <thead><tr><th>Partida</th><th>Emissora</th><th>Condições</th><th>Sorteados</th><th title="Quadros com os pontos aprovados na revisão e a parte dos sorteados; desc.: quantos deles foram descartados">Pontos aprovados</th><th title="Quadros com a pintura das pessoas aprovada na revisão e a parte dos sorteados; desc.: quantos deles foram descartados">Pinturas aprovadas</th><th>Revisão pendente</th></tr></thead>
+              <thead><tr><th>Partida</th><th>Emissora</th><th>Condições</th><th title="Quadros sorteados na importação do vídeo">Quadros</th><th title="Quadros com os pontos aprovados na revisão e a parte dos sorteados; desc.: quantos deles foram descartados">Pontos aprovados</th><th title="Recortes das placas que chegaram em lotes (do simulador ou da projeção das placas)">Recortes</th><th title="Recortes com a pintura aprovada na revisão e a parte dos recortes; desc.: quantos deles foram descartados">Placas aprovadas</th><th>Revisão pendente</th></tr></thead>
               <tbody></tbody>
             </table>
           </div>
@@ -125,7 +125,7 @@
             <h2>Placar</h2>
             <div class="botoes alternar" role="group" aria-label="Tarefa do placar">
               <button type="button" data-placar="pontos" aria-pressed="true">Pontos</button>
-              <button type="button" data-placar="pessoas" aria-pressed="false">Pintura</button>
+              <button type="button" data-placar="placas" aria-pressed="false">Placas</button>
             </div>
           </div>
           <p class="sutil">Ponto só conta depois de aprovado na revisão às cegas. Os tempos são medianas do tempo ativo (a página só conta enquanto há uso): por imagem, nos rótulos da própria pessoa, sem os descartes; por revisão, em tudo o que ela revisou.</p>
@@ -163,7 +163,7 @@
     <div id="caixa-descartar" class="modal" hidden>
       <form class="caixa" role="dialog" aria-modal="true" aria-labelledby="titulo-descartar" id="form-descartar">
         <h2 id="titulo-descartar">Descartar esta imagem?</h2>
-        <p class="sutil">Descarte só a imagem que não dá para anotar direito. Uma imagem normal em que não aparece nada para marcar você salva vazia — ela também serve para o treino.</p>
+        <p class="sutil" id="texto-descartar">Descarte só a imagem que não dá para anotar direito. Uma imagem normal em que não aparece nada para marcar você salva vazia — ela também serve para o treino.</p>
         <div class="situacoes" id="motivos-descarte"></div>
         <textarea id="comentario-descarte" rows="2" placeholder="Comentário (obrigatório em “outro motivo”)"></textarea>
         <p class="erro" id="erro-descartar" role="alert"></p>
@@ -256,29 +256,29 @@
     </main>
   </template>
 
-  <!-- ================================================================== pessoas em campo -->
-  <template id="tpl-pessoas">
+  <!-- ================================================================== oclusão nas placas -->
+  <template id="tpl-placas">
     <header class="barra">
       <a href="#/" class="voltar">← Central</a>
-      <h1>Pessoas em campo</h1>
+      <h1>Oclusão nas placas</h1>
       <span id="dica" class="dica"></span>
-      <span class="tempo" title="Tempo ativo nesta imagem">⏱ <span id="tempo">0:00</span></span>
+      <span class="tempo" title="Tempo ativo neste recorte">⏱ <span id="tempo">0:00</span></span>
     </header>
 
     <main class="editor">
-      <div class="tela" id="area"><canvas id="tela" aria-label="A imagem, com a pintura das pessoas"></canvas>
+      <div class="tela" id="area"><canvas id="tela" aria-label="O recorte da placa, com a pintura do que está na frente dela"></canvas>
         <div id="vazio" class="vazio" hidden></div>
       </div>
 
       <aside class="painel" id="painel" hidden>
-        <section id="treino" class="faixa treino" hidden>Teste do gabarito: esta imagem tem resposta. Ao salvar, você vê o resultado.</section>
+        <section id="treino" class="faixa treino" hidden>Teste do gabarito: este recorte tem resposta. Ao salvar (ou descartar), você vê o resultado.</section>
         <section id="devolvido" class="faixa devolvido" hidden></section>
         <section id="partiu" class="faixa" hidden></section>
 
         <section id="resultado" class="faixa resultado" hidden>
           <h2 id="resultado-titulo"></h2>
           <p id="resultado-texto"></p>
-          <p class="legenda"><span class="cor certo"></span> certo <span class="cor errado"></span> faltou <span class="cor longe"></span> a mais</p>
+          <p class="legenda" id="legenda-resultado"><span class="cor certo"></span> certo <span class="cor errado"></span> faltou <span class="cor longe"></span> a mais</p>
           <div class="botoes">
             <button id="ver-resposta" type="button">Ver a resposta <kbd>V</kbd></button>
             <button id="proximo" class="primario" type="button">Próximo <kbd>N</kbd></button>
@@ -289,7 +289,8 @@
         <div id="edicao" class="secoes">
           <section>
             <h2>O que pintar</h2>
-            <p class="sutil"><b>Toda pessoa no gramado e em volta dele, até as placas</b>: jogadores e goleiros, árbitros e assistentes, gandulas, fotógrafos e cinegrafistas, comissão técnica e reservas, seguranças, maqueiros — qualquer um que possa ficar na frente de uma placa. O corpo inteiro, do cabelo ao pé. <b>Não pinte</b> a torcida nem as sombras.</p>
+            <p class="sutil"><b>Tudo o que está na frente da placa e a esconde de quem assiste</b>: gente (jogador, árbitro, gandula, fotógrafo, quem for), bola, trave e travessão, outra placa, câmera, bandeira, o grafismo da emissora. Só dentro do contorno da placa (em azul): fora dele a página não pinta.</p>
+            <p class="sutil"><b>Não pinte</b> o próprio anúncio (mesmo uma pessoa desenhada nele), sombra, reflexo nem o que deixa ver a placa através — a rede do gol, fumaça rala.</p>
           </section>
           <section>
             <h2>Pintar</h2>
@@ -308,18 +309,18 @@
 
           <div class="botoes acoes">
             <button id="salvar" class="primario" type="button">Salvar <kbd>S</kbd></button>
-            <button id="descartar" type="button">Descartar imagem <kbd>D</kbd></button>
+            <button id="descartar" type="button">Descartar recorte <kbd>D</kbd></button>
           </div>
           <p id="erro" class="erro" role="alert"></p>
 
           <details class="ajuda" open>
             <summary>Como pintar</summary>
             <ul>
-              <li><b>Laço</b> (<kbd>L</kbd>) é o mais rápido: arraste em volta da pessoa e solte; ou clique ponto a ponto e feche no primeiro ponto, com dois cliques ou <kbd>Enter</kbd>.</li>
-              <li><b>Pincel</b> (<kbd>B</kbd>) para os detalhes: braços, pernas, a chuteira. <kbd>[</kbd> e <kbd>]</kbd> mudam o tamanho.</li>
-              <li><b>Borracha</b> (<kbd>E</kbd>): o pincel e o laço passam a apagar.</li>
-              <li>Pinte até a borda da pessoa: <b>1 px de folga</b> não conta. Pessoa atrás de outra (ou de uma placa): pinte o que aparece.</li>
-              <li>Ninguém na imagem? Salve sem pintar. <b>Descarte</b> só a imagem que não dá para anotar (transição, borrão, grafismo por cima).</li>
+              <li><b>O recorte vem pronto</b>: a placa endireitada, com um pouco em volta (escurecido) para você ver o que continua fora dela. O contorno é considerado certo: não se ajusta.</li>
+              <li><b>O contorno não está na placa?</b> Se ele pega outra coisa, ou erra a borda da placa por mais que um quarto da altura dela: <b>descarte</b> (“o recorte não está na placa”). Uns poucos pixels de folga não contam: pinte.</li>
+              <li><b>Laço</b> (<kbd>L</kbd>) é o mais rápido: arraste em volta do que está na frente e solte (pode passar do contorno: só a parte de dentro da placa é pintada); ou clique ponto a ponto e feche no primeiro ponto, com dois cliques ou <kbd>Enter</kbd>.</li>
+              <li><b>Pincel</b> (<kbd>B</kbd>) para os detalhes: braços, pernas, a chuteira. <kbd>[</kbd> e <kbd>]</kbd> mudam o tamanho. <b>Borracha</b> (<kbd>E</kbd>): o pincel e o laço passam a apagar.</li>
+              <li>Pinte até a borda do que está na frente: <b>1 px de folga</b> não conta. Nada na frente da placa? Salve sem pintar.</li>
               <li><b>Roda do mouse</b> aproxima; botão direito (ou espaço) e arrastar move a vista; <kbd>0</kbd> volta a vista; <kbd>H</kbd> esconde a pintura para comparar com a imagem.</li>
             </ul>
           </details>
@@ -412,18 +413,18 @@
     </main>
   </template>
 
-  <!-- ================================================================== revisão das pessoas em campo -->
-  <template id="tpl-revisao-pessoas">
+  <!-- ================================================================== revisão da oclusão nas placas -->
+  <template id="tpl-revisao-placas">
     <header class="barra">
       <a href="#/" class="voltar">← Central</a>
-      <h1>Revisão às cegas · Pessoas em campo</h1>
+      <h1>Revisão às cegas · Oclusão nas placas</h1>
       <span id="dica" class="dica"></span>
       <span class="contagem-barra" id="pendentes"></span>
       <span class="tempo" title="Tempo ativo nesta revisão">⏱ <span id="tempo">0:00</span></span>
     </header>
 
     <main class="editor">
-      <div class="tela" id="area"><canvas id="tela" aria-label="A imagem, com a pintura em revisão"></canvas>
+      <div class="tela" id="area"><canvas id="tela" aria-label="O recorte da placa, com a pintura em revisão"></canvas>
         <div id="vazio" class="vazio" hidden></div>
       </div>
 
@@ -432,9 +433,10 @@
           <summary><b>Como revisar</b> — você não sabe quem pintou, e quem pintou não sabe quem revisa.</summary>
           <ol>
             <li>Aproxime com a roda do mouse e esconda e mostre a pintura (<kbd>H</kbd>) para comparar com a imagem.</li>
-            <li>Confira: <b>toda pessoa no gramado e em volta dele pintada</b> (jogadores, árbitros, gandulas, fotógrafos, comissão…), <b>inteira</b> e até a borda (1 px de folga não conta)? Nada da torcida nem das sombras pintado?</li>
+            <li>Confira: <b>tudo o que está na frente da placa pintado</b> (gente, bola, trave, outra placa, grafismo…), até a borda (1 px de folga não conta)? Nada do anúncio, de sombra, reflexo ou da rede pintado?</li>
+            <li>O contorno da placa (em azul) <b>não está na placa</b>? O certo era descartar: devolva (“descarte errado”) ou corrija descartando.</li>
             <li>Decida. <b>Aprovar</b> (<kbd>A</kbd>): está certo. <b>Corrigir</b> (<kbd>C</kbd>): dá para consertar rápido — você pinta, e a correção vale com o seu nome. <b>Devolver</b> (<kbd>D</kbd>): precisa refazer — volta para quem pintou, com o motivo.</li>
-            <li>Imagem descartada: aprove se ela não dá mesmo para anotar; se dá, devolva (“descarte errado”) ou corrija pintando.</li>
+            <li>Recorte descartado: aprove se ele não está mesmo na placa (ou não dá para ver); se dá para pintar, devolva (“descarte errado”) ou corrija pintando.</li>
           </ol>
         </details>
 
@@ -456,7 +458,7 @@
             <button id="corrigir" type="button">Corrigir <kbd>C</kbd></button>
             <button id="devolver" type="button">Devolver <kbd>D</kbd></button>
           </div>
-          <p class="sutil">Borda a até 1 px da silhueta não se corrige: aprove.</p>
+          <p class="sutil">Borda a até 1 px do contorno do que está na frente não se corrige: aprove.</p>
         </section>
 
         <section id="secao-devolver" hidden>
@@ -471,7 +473,7 @@
 
         <section id="secao-corrigir" hidden>
           <h2>Corrigir</h2>
-          <p class="sutil">Como na página da pintura. A correção vira uma versão nova, com a sua autoria.</p>
+          <p class="sutil">Como na página das placas: só dentro do contorno da placa. A correção vira uma versão nova, com a sua autoria.</p>
           <div class="botoes alternar" role="group" aria-label="Ferramenta">
             <button type="button" data-ferramenta="pincel" aria-pressed="true">Pincel <kbd>B</kbd></button>
             <button type="button" data-ferramenta="laco" aria-pressed="false">Laço <kbd>L</kbd></button>
@@ -507,7 +509,7 @@
         <h2>Como funciona o teste</h2>
         <ol class="passos">
           <li><b>Faça o teste de cada tarefa.</b> São imagens com a resposta certa: você anota como sempre e, ao salvar, vê o resultado e pode ver a resposta.</li>
-          <li><b>Você é liberado para as imagens reais</b> quando acerta <span id="meta-pontos">8 das últimas 10</span> nos pontos, e <span id="meta-pessoas">4 das últimas 5</span> na pintura das pessoas. Até lá, a página da tarefa só mostra o teste.</li>
+          <li><b>Você é liberado para as imagens reais</b> quando acerta <span id="meta-pontos">8 das últimas 10</span> nos pontos, e <span id="meta-placas">4 das últimas 5 (depois de fazer pelo menos 12)</span> na pintura das placas. Até lá, a página da tarefa só mostra o teste.</li>
           <li><b>Depois, de vez em quando</b> (uma a cada 15 imagens), uma imagem do gabarito aparece no meio das reais, sem aviso e sem resultado: é assim que a qualidade é medida o tempo todo. Quem cai muito volta para o teste.</li>
         </ol>
       </section>
@@ -520,12 +522,12 @@
           <p class="sutil regra"></p>
           <div class="botoes"><a class="botao primario fazer" href="#/pontos?treino">Fazer o teste</a></div>
         </article>
-        <article class="cartao" data-tarefa="pessoas">
-          <h2>Pessoas em campo</h2>
+        <article class="cartao" data-tarefa="placas">
+          <h2>Oclusão nas placas</h2>
           <p class="st"></p>
           <div class="barra-progresso" aria-hidden="true"><div></div></div>
           <p class="sutil regra"></p>
-          <div class="botoes"><a class="botao primario fazer" href="#/pessoas?treino">Fazer o teste</a></div>
+          <div class="botoes"><a class="botao primario fazer" href="#/placas?treino">Fazer o teste</a></div>
         </article>
       </section>
 
@@ -534,7 +536,7 @@
           <h2>Seus resultados</h2>
           <div class="botoes alternar" role="group" aria-label="Tarefa">
             <button type="button" data-res="pontos" aria-pressed="true">Pontos</button>
-            <button type="button" data-res="pessoas" aria-pressed="false">Pintura</button>
+            <button type="button" data-res="placas" aria-pressed="false">Placas</button>
           </div>
         </div>
         <div class="rolavel">
@@ -571,6 +573,7 @@
     <main class="central estreito">
       <section class="cartao">
         <p class="sutil">O vídeo é lido e processado neste navegador; só os quadros sorteados vão para a pasta de trabalho. Funciona com MP4 ou MOV (H.264, H.265, VP9 ou AV1). Para MKV ou TS, converta antes para MP4 (no OBS: Arquivo → Remuxar gravações).</p>
+        <p class="sutil">Os recortes das placas (a pintura das placas) não saem daqui: vêm prontos, em lotes, para uma partida já importada — do simulador, por enquanto, e depois da projeção das placas. Traga o .zip do lote pela página central (“Trazer arquivos de um .zip”) ou rode <code>anotacao recortes</code>.</p>
         <form id="form-importar" class="grade-form">
           <label>Estádio <input name="estadio" required autocomplete="off" placeholder="ex.: Arena da Baixada"></label>
           <label>Emissora <input name="emissora" required autocomplete="off"></label>
@@ -637,7 +640,7 @@
         <h2>Gabarito</h2>
         <p id="st-gabarito" class="sutil"></p>
         <div class="botoes"><a class="botao" href="#/gabarito">Abrir a página do gabarito</a></div>
-        <p class="sutil">Os lotes de ouro em .zip entram pela página do gabarito. Para itens soltos (gNNNN.json com a imagem e, na pintura, a máscara .png):</p>
+        <p class="sutil">Os lotes de ouro em .zip entram pela página do gabarito. Para itens soltos (gNNNN.json com a imagem e, nas placas, a máscara .png, menos nos itens para descartar):</p>
         <label class="botao">Importar itens soltos<input type="file" id="arquivos-gabarito" accept=".json,.jpg,.jpeg,.png" multiple hidden></label>
         <p class="erro" id="erro-gabarito" role="alert"></p>
       </section>
@@ -655,7 +658,7 @@
 
       <section class="cartao">
         <h2>Conjunto de treino</h2>
-        <p class="sutil">O conjunto (Parquet com manifesto) é gerado em Python por quem treina: <code>anotacao unificar --pasta "&lt;pasta de trabalho&gt;"</code>. Para a imagem já abrir com os pontos (ou a pintura) de um modelo: <code>anotacao prever --tarefa pontos</code> (ou <code>pessoas</code>).</p>
+        <p class="sutil">O conjunto (Parquet com manifesto) é gerado em Python por quem treina: <code>anotacao unificar --pasta "&lt;pasta de trabalho&gt;"</code>. Para a imagem já abrir com os pontos (ou a pintura das placas) de um modelo: <code>anotacao prever --tarefa pontos</code> (ou <code>placas</code>). Os recortes das placas entram numa partida já importada com <code>anotacao recortes &lt;lote&gt;.json</code> (ou o .zip do lote, pela página central).</p>
       </section>
     </main>
   </template>

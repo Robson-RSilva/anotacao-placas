@@ -12,11 +12,11 @@ const ms = (iso) => Date.parse(iso);
 export class IndicePartida {
   constructor(partida) {
     this.partida = partida;
-    this.rotulos = []; // [{caminho, nome, partida, quadro, pessoa, versao, dados}]
+    this.rotulos = []; // [{caminho, nome, partida, quadro (o item: quadro ou recorte), pessoa, versao, dados}]
     this.revisoes = [];
     this.revisoesDe = new Map(); // nome do rótulo -> [revisão]
     this.invalidos = []; // [{caminho, erro}]
-    this.esperando = []; // rótulos das pessoas cuja máscara ainda não chegou (o Drive sincronizando)
+    this.esperando = []; // rótulos das placas cuja máscara ainda não chegou (o Drive sincronizando)
   }
 
   versoes(quadro, pessoa) {
@@ -126,9 +126,57 @@ export class Indice {
   }
 
   /**
-   * As partidas que dá para usar, com manifesto e fila lidos (e, com `tarefa`, os rótulos dela em
-   * `ip`). Uma partida incompleta (a fila ainda sincronizando) ou com arquivo inválido vai para
-   * `problemas` e não trava as outras.
+   * Os recortes da partida, de todos os lotes: {itens: Map(recorte -> {lote, item}), invalidos,
+   * repetidos}, na ordem dos lotes e, em cada lote, na ordem dele. Um lote inválido (ou ainda
+   * sincronizando) fica em `invalidos`; um recorte que já veio num lote anterior, em `repetidos`.
+   */
+  async recortes(partida) {
+    const out = { itens: new Map(), invalidos: [], repetidos: [] };
+    for (const l of await this.pasta.listarLotes(partida)) {
+      let lote;
+      try {
+        const f = await l.alca.getFile();
+        if (!f.size) continue; // ainda sincronizando (ou uma escrita interrompida)
+        lote = await this.ler("lote_recortes", l.caminho, f);
+        if (lote.partida !== partida || lote.lote !== l.lote) throw new Error("o conteúdo não bate com o nome do arquivo (partida e lote)");
+      } catch (e) {
+        out.invalidos.push({ caminho: l.caminho, erro: e.message });
+        continue;
+      }
+      for (const item of lote.itens) {
+        if (out.itens.has(item.recorte)) out.repetidos.push({ lote: l.lote, recorte: item.recorte });
+        else out.itens.set(item.recorte, { lote: l.lote, item });
+      }
+    }
+    return out;
+  }
+
+  /**
+   * A fila da tarefa na partida: nos pontos, a fila dos quadros sorteados (`fila.json`); nas placas, os
+   * recortes dos lotes, cada um com o tamanho e a região da placa ({quadro: o recorte, dupla,
+   * sem_previsao, atribuido_a, largura, altura, regiao, lote}).
+   */
+  async filaDaTarefa(partida, tarefa) {
+    const fila = await this.fila(partida);
+    if (tarefa !== "placas") return fila;
+    const rec = await this.recortes(partida);
+    const itens = [...rec.itens.values()].map(({ lote, item }) => ({
+      quadro: item.recorte,
+      dupla: item.dupla,
+      sem_previsao: item.sem_previsao,
+      atribuido_a: [],
+      largura: item.largura,
+      altura: item.altura,
+      regiao: item.regiao,
+      lote,
+    }));
+    return { formato: "recortes", partida, itens, invalidos: rec.invalidos, repetidos: rec.repetidos };
+  }
+
+  /**
+   * As partidas que dá para usar, com manifesto e fila lidos (e, com `tarefa`, a fila da tarefa — nas
+   * placas, os recortes — e os rótulos dela em `ip`). Uma partida incompleta (a fila ainda
+   * sincronizando) ou com arquivo inválido vai para `problemas` e não trava as outras.
    */
   async partidasProntas(tarefa = null) {
     const prontas = [];
@@ -136,7 +184,7 @@ export class Indice {
     for (const partida of await this.listarPartidas()) {
       try {
         const manifesto = await this.manifesto(partida);
-        const fila = await this.fila(partida);
+        const fila = tarefa ? await this.filaDaTarefa(partida, tarefa) : await this.fila(partida);
         prontas.push({ partida, manifesto, fila, ip: tarefa ? await this.partida(partida, tarefa) : null });
       } catch (e) {
         problemas.push({ partida, erro: e.message || String(e) });
@@ -145,7 +193,7 @@ export class Indice {
     return { prontas, problemas };
   }
 
-  /** Itens do gabarito válidos da tarefa ("pontos" ou "pessoas"), em ordem de ID. */
+  /** Itens do gabarito válidos da tarefa ("pontos" ou "placas"), em ordem de ID. */
   async itensGabarito(tarefa) {
     const tipos = TIPOS_DA_TAREFA[tarefa];
     if (!tipos) throw new Error(`tarefa desconhecida: ${tarefa}`);
@@ -189,7 +237,7 @@ export class Indice {
   }
 
   /**
-   * Rótulos e revisões válidos da partida (ou do gabarito) na tarefa. Nas pessoas, um rótulo cuja
+   * Rótulos e revisões válidos da partida (ou do gabarito) na tarefa. Nas placas, um rótulo cuja
    * máscara ainda não chegou (o Drive sincronizando) fica em `esperando`, e não entra em nada.
    */
   async partida(partida, tarefa) {
@@ -197,13 +245,13 @@ export class Indice {
     if (!tipos) throw new Error(`tarefa desconhecida: ${tarefa}`);
     const ip = new IndicePartida(partida);
     const dir = this.pasta.rotulos(partida, tarefa);
-    const mascaras = tarefa === "pessoas"
+    const mascaras = tarefa === "placas"
       ? new Set((await this.pasta.listar(dir)).filter((i) => i.tipo === "arquivo" && i.nome.endsWith(".png")).map((i) => i.nome))
       : null;
     for (const a of await this.pasta.listarArquivos(dir)) {
       try {
         const dados = await this.ler(tipos.rotulo, a.caminho, await a.alca.getFile());
-        if (dados.quadro !== a.quadro || dados.anotador !== a.pessoa || dados.versao !== a.versao || dados.partida !== partida) {
+        if (dados[tipos.campo] !== a.quadro || dados.anotador !== a.pessoa || dados.versao !== a.versao || dados.partida !== partida) {
           throw new Error("o conteúdo não bate com o nome do arquivo");
         }
         if (mascaras && dados.mascara !== null) {
@@ -222,7 +270,7 @@ export class Indice {
     for (const a of await this.pasta.listarArquivos(this.pasta.revisoes(partida, tarefa))) {
       try {
         const r = await this.ler(tipos.revisao, a.caminho, await a.alca.getFile());
-        if (r.quadro !== a.quadro || r.revisor !== a.pessoa || r.versao !== a.versao || r.partida !== partida) {
+        if (r[tipos.campo] !== a.quadro || r.revisor !== a.pessoa || r.versao !== a.versao || r.partida !== partida) {
           throw new Error("o conteúdo não bate com o nome do arquivo");
         }
         ip.revisoes.push({ caminho: a.caminho, nome: a.nome, partida, quadro: a.quadro, pessoa: a.pessoa, versao: a.versao, dados: r });

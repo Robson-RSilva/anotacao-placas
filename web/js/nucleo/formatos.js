@@ -2,7 +2,7 @@
 // gerados pelo Python (web/esquemas/); as regras entre campos (os `model_validator`) estão aqui.
 
 import { PONTOS_MARCAVEIS } from "./campo.js";
-import { RE_GABARITO, RE_MASCARA, RE_PARTIDA, RE_QUADRO } from "./convencoes.js";
+import { RE_GABARITO, RE_MASCARA, RE_PARTIDA, RE_QUADRO, RE_RECORTE } from "./convencoes.js";
 import { validarEsquema } from "./esquema.js";
 
 /** Tipo de arquivo -> nome do esquema. */
@@ -18,15 +18,19 @@ export const ESQUEMAS = Object.freeze({
   revisao_pontos: "revisao.pontos.json",
   gabarito_pontos: "gabarito.pontos.json",
   previsao_pontos: "previsao.pontos.json",
-  rotulo_pessoas: "rotulo.pessoas.json",
-  revisao_pessoas: "revisao.pessoas.json",
-  gabarito_pessoas: "gabarito.pessoas.json",
+  lote_recortes: "recortes.lote.json",
+  rotulo_placas: "rotulo.placas.json",
+  revisao_placas: "revisao.placas.json",
+  gabarito_placas: "gabarito.placas.json",
 });
 
-/** Tipos de arquivo de cada tarefa: o rótulo, a revisão e o item do gabarito (e o formato dele). */
+/**
+ * Tipos de arquivo de cada tarefa: o rótulo, a revisão e o item do gabarito (e o formato dele); `campo`
+ * é o campo do item no rótulo e na revisão (o quadro nos pontos, o recorte nas placas).
+ */
 export const TIPOS_DA_TAREFA = Object.freeze({
-  pontos: Object.freeze({ rotulo: "rotulo_pontos", revisao: "revisao_pontos", gabarito: "gabarito_pontos", formatoGabarito: "gabarito.pontos/1" }),
-  pessoas: Object.freeze({ rotulo: "rotulo_pessoas", revisao: "revisao_pessoas", gabarito: "gabarito_pessoas", formatoGabarito: "gabarito.pessoas/1" }),
+  pontos: Object.freeze({ rotulo: "rotulo_pontos", revisao: "revisao_pontos", gabarito: "gabarito_pontos", formatoGabarito: "gabarito.pontos/1", campo: "quadro" }),
+  placas: Object.freeze({ rotulo: "rotulo_placas", revisao: "revisao_placas", gabarito: "gabarito_placas", formatoGabarito: "gabarito.placas/1", campo: "recorte" }),
 });
 
 /** O tipo de um item do gabarito pelo formato dentro dele (null: de uma versão anterior). */
@@ -45,11 +49,11 @@ export const MOTIVOS = Object.freeze({
     descarte_errado: "Descarte errado (dava para anotar, ou devia descartar)",
     outro: "Outro (com comentário)",
   }),
-  pessoas: Object.freeze({
-    faltou_pessoa: "Faltou pintar alguém (jogador, árbitro, gandula, fotógrafo…)",
+  placas: Object.freeze({
+    faltou_pintar: "Faltou pintar algo na frente da placa (gente, bola, trave, grafismo…)",
     contorno_impreciso: "Contorno impreciso (mais de 1 px)",
-    pintou_o_que_nao_e_pessoa: "Pintou o que não é pessoa no campo (torcida, sombra, placa…)",
-    descarte_errado: "Descarte errado (dava para anotar, ou devia descartar)",
+    pintou_o_que_nao_cobre: "Pintou o que não cobre a placa (o anúncio, sombra, reflexo, a rede)",
+    descarte_errado: "Descarte errado (dava para pintar, ou o recorte não estava na placa)",
     outro: "Outro (com comentário)",
   }),
 });
@@ -87,9 +91,21 @@ function unicos(lista) {
   return new Set(lista).size === lista.length;
 }
 
-function partidaEQuadro(o, e) {
+function partidaEItem(o, e, campo, regex, oque) {
   if (!(RE_PARTIDA.test(o.partida) || o.partida === "gabarito")) e.push("partida inválida");
-  if (!(RE_QUADRO.test(o.quadro) || RE_GABARITO.test(o.quadro))) e.push("quadro inválido");
+  if (!(regex.test(o[campo]) || RE_GABARITO.test(o[campo]))) e.push(`${oque} inválido`);
+}
+
+/** A área de um polígono (fórmula do laço), em px². */
+export function areaPoligono(pol) {
+  let a = 0;
+  for (let i = 0, j = pol.length - 1; i < pol.length; j = i++) a += pol[j][0] * pol[i][1] - pol[i][0] * pol[j][1];
+  return Math.abs(a) / 2;
+}
+
+function regiaoCoerente(regiao, largura, altura, e, onde = "") {
+  if (regiao.some(([x, y]) => !(x >= 0 && x <= largura && y >= 0 && y <= altura))) e.push(`${onde}a região da placa sai do recorte`);
+  if (areaPoligono(regiao) < 1) e.push(`${onde}a região da placa não tem área`);
 }
 
 function situacao(o, e) {
@@ -127,7 +143,7 @@ const REGRAS = {
   },
   rotulo_pontos(o) {
     const e = [];
-    partidaEQuadro(o, e);
+    partidaEItem(o, e, "quadro", RE_QUADRO, "quadro");
     situacao(o, e);
     if (o.situacao === "descartada" && o.pontos.length) e.push("imagem descartada não leva pontos");
     pontosCoerentes(o.pontos, o.largura, o.altura, e);
@@ -145,17 +161,30 @@ const REGRAS = {
     if (!unicos(o.pontos.map((p) => p.ponto))) e.push("ponto previsto duas vezes");
     return e;
   },
-  rotulo_pessoas(o) {
+  lote_recortes(o) {
     const e = [];
-    partidaEQuadro(o, e);
-    situacao(o, e);
-    if (o.mascara !== null && !RE_MASCARA.test(o.mascara)) e.push("nome da máscara inválido");
-    if ((o.situacao === "ok") !== (o.mascara !== null)) e.push("a máscara vem sempre, e só, com a imagem anotada (não descartada)");
-    if (o.mascara === null && o.pixels) e.push("pixels pintados só com a máscara");
-    if (o.pixels > o.largura * o.altura) e.push("mais pixels pintados que a imagem tem");
+    o.itens.forEach((it, k) => regiaoCoerente(it.regiao, it.largura, it.altura, e, `itens.${k}: `));
+    if (!unicos(o.itens.map((it) => it.recorte))) e.push("recorte repetido no lote");
     return e;
   },
-  revisao_pessoas: revisao,
+  rotulo_placas(o) {
+    const e = [];
+    partidaEItem(o, e, "recorte", RE_RECORTE, "recorte");
+    situacao(o, e);
+    if (o.mascara !== null && !RE_MASCARA.test(o.mascara)) e.push("nome da máscara inválido");
+    if ((o.situacao === "ok") !== (o.mascara !== null)) e.push("a máscara vem sempre, e só, com o recorte pintado (não descartado)");
+    if (o.mascara === null && o.pixels) e.push("pixels pintados só com a máscara");
+    if (o.pixels > o.largura * o.altura) e.push("mais pixels pintados que o recorte tem");
+    return e;
+  },
+  revisao_placas: revisao,
+  gabarito_placas(o) {
+    const e = [];
+    regiaoCoerente(o.regiao, o.largura, o.altura, e);
+    if ((o.resposta === "descartar") !== (o.mascara === null)) e.push("a máscara vem sempre, e só, quando a resposta é pintar");
+    if (o.resposta === "descartar" && o.oclusores) e.push("um item para descartar não tem o que pintar");
+    return e;
+  },
 };
 
 /**

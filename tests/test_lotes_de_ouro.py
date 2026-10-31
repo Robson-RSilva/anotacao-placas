@@ -2,7 +2,8 @@
 
 A geração em si precisa do simulador do laboratório e não roda aqui; estes testes guardam a definição
 dos lotes (faixas de id, sementes, o que cada um pede) e as funções que montam a resposta de cada item
-— onde o ponto aparece, quando marcá-lo é opcional, quem é quem na máscara das pessoas.
+— onde o ponto aparece, quando marcá-lo é opcional; o recorte endireitado da placa, a região dela e o
+que está na frente, com uma câmera e uma "tela" de mentira.
 """
 
 import importlib.util
@@ -15,9 +16,9 @@ import numpy as np
 import pytest
 
 from anotacao.campo import Campo, pontos_marcaveis
-from anotacao.formatos import GabaritoPessoas
+from anotacao.formatos import GabaritoPlacas
 from anotacao.gabarito import conferir_mascara
-from anotacao.mascara import gravar_png, ler_png
+from anotacao.mascara import gravar_png, ler_png, rasterizar
 
 from sintetico import Camera
 
@@ -51,14 +52,14 @@ def _como_o_laboratorio(cam: Camera, k1: float = 0.0):
 
 
 def test_faixas_de_id_separadas(lotes):
-    """Nenhum id se repete entre os lotes, nem nome, nem semente; os pontos em g1xxx, as pessoas em
-    g3xxx (os g2xxx eram os jogadores da 0.8, que podem estar na pasta de quem já importou), longe dos
-    itens de demonstração (g19xx, g39xx) dos testes e das capturas."""
+    """Nenhum id se repete entre os lotes, nem nome, nem semente; os pontos em g1xxx, as placas em g4xxx
+    (os g2xxx e g3xxx eram os jogadores e as pessoas das 0.8 e 0.9, que podem estar na pasta de quem já
+    importou), longe dos itens de demonstração (g19xx, g49xx) dos testes e das capturas."""
     faixas = sorted((lt.primeiro, lt.primeiro + lt.n - 1, lt.tarefa) for lt in lotes.LOTES)
     for (_, fim, _), (inicio, _, _) in itertools.pairwise(faixas):
         assert fim < inicio
     for inicio, fim, tarefa in faixas:
-        milhar = 1000 if tarefa == "pontos" else 3000
+        milhar = 1000 if tarefa == "pontos" else 4000
         assert milhar <= inicio and fim < milhar + 900, (inicio, fim, tarefa)
     assert len({lt.nome for lt in lotes.LOTES}) == len(lotes.LOTES)
     assert len({lt.semente for lt in lotes.LOTES}) == len(lotes.LOTES)
@@ -66,10 +67,10 @@ def test_faixas_de_id_separadas(lotes):
 
 def test_cada_tarefa_tem_treino_e_controle(lotes):
     """O teste de quem começa usa os lotes com "treino" no nome; os itens escondidos, os outros."""
-    for tarefa in ("pontos", "pessoas"):
+    for tarefa in ("pontos", "placas"):
         nomes = [lt.nome for lt in lotes.LOTES if lt.tarefa == tarefa]
         assert any("treino" in n for n in nomes) and any("treino" not in n for n in nomes)
-    regra = {"pontos": 10, "pessoas": 5}  # os N últimos itens da liberação (REGRA em gabarito.js)
+    regra = {"pontos": 10, "placas": 5}  # os N últimos itens da liberação (REGRA em gabarito.js)
     for lt in lotes.LOTES:
         if "treino" in lt.nome:
             assert lt.n >= 2 * regra[lt.tarefa], f"{lt.nome}: pouco item para treinar e liberar"
@@ -86,12 +87,13 @@ def test_o_que_cada_lote_pede_cabe(lotes):
             assert 1 <= lt.pontos[0] <= lt.pontos[1] <= len(pontos_marcaveis())
             assert lt.sem_pontos < lt.n
         else:
-            assert 1 <= lt.pessoas[0] <= lt.pessoas[1]
-            assert lt.com_outras + lt.so_outras + lt.so_torcida <= lt.n
-            assert lt.inteiros <= lt.pessoas[0]
-            # a regra nova pinta quem não joga: todo lote de pessoas tem gente que não joga, uma imagem
-            # só com ela e uma só com a torcida (que não se pinta)
-            assert lt.com_outras >= 4 and lt.so_outras >= 1 and lt.so_torcida >= 1
+            assert set(lt.tipos) <= set(lotes.TIPOS_PLACAS)
+            assert lt.n == sum(lt.tipos.values())
+            # todo lote de placas tem gente e trave na frente, placa sem nada na frente (salvar sem
+            # pintar) e recorte fora do lugar (descartar); o que pintar é a maior parte
+            assert lt.tipos["pessoas"] >= 4 and lt.tipos["trave"] >= 1
+            assert lt.tipos["nada"] >= 1 and lt.tipos["fora"] >= 1
+            assert lt.tipos["nada"] + lt.tipos["fora"] <= lt.n // 3
 
 
 def test_medidas_sorteadas(lotes):
@@ -184,56 +186,136 @@ def test_quando_marcar_e_opcional(lotes):
     assert lotes.espalhamento(pontos, w) == pytest.approx(np.hypot(901 - 100.5, 150 - 100.5) / w, abs=1e-3)
 
 
-def test_moda_por_bloco(lotes):
-    """Como o renderizador reduz a máscara dele: gente onde mais da metade do bloco é gente; o número,
-    o de quem mais aparece no bloco."""
-    tela = np.array(
-        [
-            [1, 1, 0, 2, 0, 0],
-            [1, 2, 2, 2, 0, 3],
-            [0, 0, 4, 4, 0, 0],
-            [0, 0, 4, 0, 0, 0],
-        ],
-        np.uint16,
+def _placa(lado: str = "opo", x: float = 0.0, y: float = 38.0, largura: float = 8.0, altura: float = 1.0):
+    """Uma placa como as do laboratório (os cantos BL, BR, TR, TL, de frente para o campo)."""
+    n = np.array([0.0, -1.0 if y > 0 else 1.0, 0.0])
+    direita = np.cross(-n, [0.0, 0.0, 1.0])
+    b = np.array([x, y, 0.0])
+    V = np.array([b - largura / 2 * direita, b + largura / 2 * direita])
+    V = np.array([V[0], V[1], V[1] + [0, 0, altura], V[0] + [0, 0, altura]])
+    return SimpleNamespace(
+        V=V,
+        n=n,
+        width=largura,
+        height=altura,
+        side=lado,
+        e_u=(V[1] - V[0]) / largura,
+        e_v=(V[3] - V[0]) / altura,
+        center=V.mean(0),
     )
-    assert lotes.moda_por_bloco(tela, 2).tolist() == [[1, 2, 0], [0, 4, 0]]
 
 
-def test_numerar_pessoas(lotes):
-    """Todo mundo (jogadores, goleiros, árbitro, gandulas e fotógrafos) de 1 a N, da esquerda para a
-    direita; a máscara passa na conferência da importação."""
-    w, h = 640, 360
-    inst = np.zeros((h, w), np.uint16)
-    inst[100:160, 300:320] = 1  # jogador no meio
-    inst[100:160, 20:40] = 2  # goleiro à esquerda
-    inst[50:110, 500:520] = 3  # árbitro
-    inst[0:20, 600:640] = 4  # gandula, cortado pela borda
-    inst[200:204, 100:104] = 5  # jogador pequeno, mas exigido (16 px; 36 na referência de 960)
-    inst[300:302, 200:202] = 6  # fotógrafo pequeno demais (4 px; 9 na referência): a página não exige
-    tipos = ["jogador", "goleiro", "arbitro", "staff", "jogador", "staff", "jogador"]  # o 7 não aparece
-    m, pessoas = lotes.numerar_pessoas(inst, tipos, w)
-    assert [p["j"] for p in pessoas] == [1, 4, 5, 0, 2, 3]  # da esquerda para a direita
-    assert [p["numero"] for p in pessoas] == [1, 2, 3, 4, 5, 6]
-    assert [p["tipo"] for p in pessoas] == ["goleiro", "jogador", "staff", "jogador", "arbitro", "staff"]
-    assert [p["pequeno"] for p in pessoas] == [False, False, True, False, False, False]
-    assert [p["borda"] for p in pessoas] == [False, False, False, False, False, True]
-    assert m[130, 30] == 1 and m[130, 310] == 4 and m[80, 510] == 5 and m[5, 630] == 6 and m[0, 0] == 0
-    item = GabaritoPessoas(
-        id="g3001",
-        imagem="g3001.jpg",
-        mascara="g3001.png",
+def _cena_de_placas(alvo=(0.0, 38.0, 0.5), hfov=12.0, placas=None):
+    cam = _como_o_laboratorio(Camera.look_at((0.0, -45.0, 12.0), alvo, hfov, 960, 540))
+    estadio = SimpleNamespace(boards=placas or [_placa(), _placa(x=8.0), _placa("dir", 30.0, 30.0)])
+    gente = [SimpleNamespace(kind="jogador"), SimpleNamespace(kind="staff")]
+    return SimpleNamespace(cam=cam, stadium=estadio, people=gente)
+
+
+def test_recortar_poligono(lotes):
+    quadrado = [(0, 0), (10, 0), (10, 10), (0, 10)]
+    assert lotes.recortar_poligono(quadrado, 0, 0, 10, 10) == [(0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 10.0)]
+    cortado = lotes.recortar_poligono(quadrado, 2, -1, 6, 20)
+    assert sorted(cortado) == [(2.0, 0.0), (2.0, 10.0), (6.0, 0.0), (6.0, 10.0)]
+    assert lotes.recortar_poligono(quadrado, 20, 20, 30, 30) == []
+
+
+def test_recorte_da_placa_inteira(lotes):
+    """A placa inteira no quadro: o recorte é o retângulo dela com a margem em volta, e a região é esse
+    retângulo, de cantos inteiros; os cantos no quadro são onde o renderizador desenha a placa."""
+    cena = _cena_de_placas()
+    img = np.full((540, 960, 3), 90, np.uint8)
+    r = lotes.recortar(cena, img, 0)
+    assert r is not None and r.a_vista == 1.0
+    h, w = r.imagem.shape[:2]
+    m = round(lotes.MARGEM * r.altura_placa)
+    assert h == r.altura_placa + 2 * m
+    assert r.regiao == [[m, m], [w - m, m], [w - m, h - m], [m, h - m]]
+    assert r.placa == [[m, m], [w - m, m], [w - m, h - m], [m, h - m]]
+    b = cena.stadium.boards[0]
+    cantos = lotes.projetar_como_o_desenho(cena.cam, np.array([b.V[3], b.V[2], b.V[1], b.V[0]]))
+    assert np.allclose(r.no_quadro, cantos, atol=0.01)
+    assert rasterizar(r.regiao, w, h).sum() == (w - 2 * m) * (h - 2 * m)
+    # longe e baixa demais (um grande angular): não vira recorte
+    assert lotes.recortar(_cena_de_placas(hfov=60.0), img, 0) is None
+
+
+def test_recorte_da_placa_cortada_pelo_lado(lotes):
+    """A placa que sai pelo lado do quadro: só a parte de dentro entra, e a região acaba onde o quadro
+    acaba; cortada pela borda de cima ou de baixo, não vira recorte."""
+    img = np.full((540, 960, 3), 90, np.uint8)
+    cena = _cena_de_placas(alvo=(-7.0, 38.0, 0.5), hfov=10.0)  # a placa de x = 0 sai pela direita
+    r = lotes.recortar(cena, img, 0)
+    assert r is not None and 0.2 < r.a_vista < 1.0
+    w = r.imagem.shape[1]
+    m = round(lotes.MARGEM * r.altura_placa)
+    xs = [x for x, _ in r.regiao]
+    assert min(xs) == m and max(xs) < w  # a região começa na placa e para antes do fim do recorte
+    assert (r.imagem[:, -2:] == lotes.FUNDO_FORA).all()  # depois do quadro, o cinza
+    # mais fechado, a placa sai pelos dois lados: as duas pontas da região acabam no quadro
+    r2 = lotes.recortar(_cena_de_placas(alvo=(0.0, 38.0, 0.5), hfov=4.0), img, 0)
+    assert r2 is not None and r2.a_vista < 0.8
+    m2 = round(lotes.MARGEM * r2.altura_placa)
+    xs = [x for x, _ in r2.regiao]
+    assert min(xs) == m2 and max(xs) == r2.imagem.shape[1] - m2
+    assert (r2.imagem[:, :2] == lotes.FUNDO_FORA).all() and (r2.imagem[:, -2:] == lotes.FUNDO_FORA).all()
+    # a placa cortada pela borda de baixo do quadro
+    assert lotes.recortar(_cena_de_placas(alvo=(0.0, 38.0, 1.6), hfov=2.0), img, 0) is None
+
+
+def test_o_que_esta_na_frente_da_placa(lotes):
+    """A verdade do recorte: a pessoa e o grafismo na frente, numerados da esquerda para a direita; a
+    placa vizinha do mesmo lado não está na frente, a de outro lado, sim; e o recorte fora do lugar."""
+    cena = _cena_de_placas()
+    img = np.full((540, 960, 3), 90, np.uint8)
+    r = lotes.recortar(cena, img, 0)
+    b = cena.stadium.boards[0]
+    cantos = lotes.projetar_como_o_desenho(cena.cam, np.array([b.V[3], b.V[2], b.V[1], b.V[0]]))
+    (x0, y0), (x1, _), (_, y1) = cantos[0], cantos[1], cantos[2]
+    xm = (x0 + x1) / 2
+    ids = np.zeros((540, 960), np.int32)
+    ids[int(y0) - 5 : int(y1) + 5, int(x0) : int(xm)] = lotes.PLACA + 0  # a própria placa
+    ids[int(y0) - 5 : int(y1) + 5, int(xm) : int(x1) + 30] = lotes.PLACA + 1  # a vizinha do mesmo lado
+    ids[int(y0) : int(y1) + 9, int(xm) - 40 : int(xm) - 20] = lotes.PESSOA + 1  # o fotógrafo
+    ids[int(y0) - 9 : int(y0) + 4, int(x1) - 30 : int(x1) - 10] = lotes.PLACA + 2  # a placa do fundo
+    grafismos = np.zeros((540, 960), np.int32)
+    grafismos[: int(y0) + 3, int(x0) - 50 : int(x0) + 20] = 1  # o placar da emissora, em cima à esquerda
+    gt = {"quem_aparece": ids, "tela": cena.cam, "grafismos": grafismos}
+    lotes.verdade_do_recorte(cena, gt, r)
+    assert r.quem == ["grafismo", "pessoa:staff", "placa"]
+    h, w = r.imagem.shape[:2]
+    dentro = rasterizar(r.regiao, w, h)
+    assert not r.verdade[~dentro].any()
+    areas = np.bincount(r.verdade.ravel(), minlength=4)
+    assert areas[2] > 3 * areas[3] > 0  # o fotógrafo cobre mais que a pontinha da placa do fundo
+    assert lotes.tipo_do_recorte(r) == "grafismo"
+    # sem nada na frente: "nada"; só com uma coisa pequena: não serve
+    gt["quem_aparece"] = np.where(ids >= lotes.PESSOA, 0, ids)
+    gt["grafismos"] = np.zeros_like(grafismos)
+    lotes.verdade_do_recorte(cena, gt, r)
+    assert r.quem == ["placa"] and lotes.tipo_do_recorte(r) in ("placa", None)
+    gt["quem_aparece"] = np.where(ids == lotes.PLACA + 2, 0, gt["quem_aparece"])
+    lotes.verdade_do_recorte(cena, gt, r)
+    assert r.quem == [] and lotes.tipo_do_recorte(r) == "nada"
+    # o recorte fora do lugar: o retângulo uma altura acima da placa
+    fora = lotes.recortar(cena, img, 0, deslocar=(0.0, 1.0))
+    assert fora is not None and fora.deslocado == (0.0, 1.0)
+    assert fora.no_quadro[3][1] == pytest.approx(cantos[0][1], abs=0.5)  # embaixo dele, o alto da placa
+    # a resposta passa na conferência da importação
+    lotes.verdade_do_recorte(cena, {"quem_aparece": ids, "tela": cena.cam, "grafismos": grafismos}, r)
+    item = GabaritoPlacas(
+        id="g4001",
+        imagem="g4001.jpg",
+        mascara="g4001.png",
         largura=w,
         altura=h,
-        pessoas=len(pessoas),
+        regiao=r.regiao,
+        oclusores=len(r.quem),
         origem="simulador",
     )
-    png = gravar_png(m, lotes.paleta_da_verdade(item.pessoas))
+    png = gravar_png(r.verdade, lotes.paleta_da_verdade(item.oclusores))
     conferir_mascara(png, item)
-    assert np.array_equal(ler_png(png), m)
-    with pytest.raises(ValueError, match="além das 5 pessoas"):
-        conferir_mascara(png, item.model_copy(update={"pessoas": 5}))
-    vazio, ninguem = lotes.numerar_pessoas(np.zeros((h, w), np.uint16), tipos, w)  # só a torcida
-    assert ninguem == [] and not vazio.any()
+    assert np.array_equal(ler_png(png), r.verdade)
 
 
 def test_paleta_da_verdade(lotes):

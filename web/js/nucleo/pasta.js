@@ -2,7 +2,7 @@
 // sobre a File System Access API (a pasta que a pessoa escolhe, sincronizada com o Drive, ou o
 // armazenamento do próprio navegador). Regras que evitam conflito na sincronização (ADR-0002):
 //
-// * um arquivo por pessoa e por versão (`<quadro>__<pessoa>__v<n>.json`);
+// * um arquivo por pessoa e por versão (`<quadro>__<pessoa>__v<n>.json`; nas placas, `<recorte>__…`);
 // * escrita atômica: `createWritable` grava num temporário e só troca o arquivo ao fechar;
 // * um arquivo que já existe nunca é sobrescrito, a não ser quando quem chama pede.
 //
@@ -11,25 +11,29 @@
 //     partidas/<partida>/
 //       manifesto.json, tomadas.json, fila.json
 //       quadros/<quadro>.jpg
+//       recortes/<lote>.json, recortes/<recorte>.jpg   as placas recortadas (vêm prontas de fora)
 //       previsoes/pontos/<quadro>.json      pontos de um modelo (opcional)
-//       previsoes/pessoas/<quadro>.png      pré-pintura de um modelo (opcional)
-//       rotulos/<tarefa>/<quadro>__<anotador>__v<n>.json   nas pessoas, com o .png da máscara ao lado
-//       revisoes/<tarefa>/<quadro>__<revisor>__v<n>.json
-//     gabarito/itens/<g1001>.json|.jpg (|.png nas pessoas), gabarito/rotulos/<tarefa>/...
+//       previsoes/placas/<recorte>.png      pré-pintura de um modelo (opcional)
+//       rotulos/pontos/<quadro>__<anotador>__v<n>.json
+//       rotulos/placas/<recorte>__<anotador>__v<n>.json   com o .png da máscara ao lado
+//       revisoes/<tarefa>/<item>__<revisor>__v<n>.json
+//     gabarito/itens/<g1001>.json|.jpg (|.png nas placas), gabarito/rotulos/<tarefa>/...
 //     pessoas/<codigo>/<dispositivo>.json   em que computadores cada código é usado
 //     conjuntos/<data-hora>/            saída do unificar (Python)
 //
-// As tarefas são `pontos` e `pessoas`. As pastas das versões anteriores (rotulos/camera,
-// rotulos/oclusao e estadios/, até a 0.7; rotulos/jogadores, da 0.8) ficam onde estão e não entram
-// em nada.
+// As tarefas são `pontos` e `placas`. As pastas das versões anteriores (rotulos/camera,
+// rotulos/oclusao e estadios/, até a 0.7; rotulos/jogadores, da 0.8; rotulos/pessoas, da 0.9) ficam
+// onde estão e não entram em nada.
 
 import {
   PARTIDA_GABARITO,
   RE_DISPOSITIVO,
   RE_GABARITO,
+  RE_LOTE,
   RE_PARTIDA,
   RE_PESSOA,
   RE_QUADRO,
+  RE_RECORTE,
   TAREFAS,
   lerNome,
   lerNomeMascara,
@@ -124,12 +128,32 @@ export class Pasta {
     return `${this.partida(partida)}/previsoes/pontos/${checar(RE_QUADRO, quadro, "quadro")}.json`;
   }
 
-  /** A pré-pintura de um modelo para as pessoas (PNG: 1 onde há pessoa), quando há. */
-  previsaoPessoas(partida, quadro) {
-    return `${this.partida(partida)}/previsoes/pessoas/${checar(RE_QUADRO, quadro, "quadro")}.png`;
+  /** Os lotes de recortes da partida (`<lote>.json`) e as imagens deles (`<recorte>.jpg`). */
+  recortes(partida) {
+    return `${this.partida(partida)}/recortes`;
   }
 
-  /** A máscara verdadeira de um item do gabarito das pessoas. */
+  loteRecortes(partida, lote) {
+    return `${this.recortes(partida)}/${checar(RE_LOTE, lote, "lote")}.json`;
+  }
+
+  /** A imagem de um recorte (ou, no gabarito, a do item). */
+  recorte(partida, recorte) {
+    if (partida === PARTIDA_GABARITO) return `gabarito/itens/${checar(RE_GABARITO, recorte, "item do gabarito")}.jpg`;
+    return `${this.recortes(partida)}/${checar(RE_RECORTE, recorte, "recorte")}.jpg`;
+  }
+
+  /** A imagem que se anota na tarefa: o quadro (pontos) ou o recorte (placas). */
+  imagem(partida, tarefa, item) {
+    return tarefa === "pontos" ? this.quadro(partida, item) : this.recorte(partida, item);
+  }
+
+  /** A pré-pintura de um modelo para um recorte (PNG: diferente de 0 onde algo cobre a placa), quando há. */
+  previsaoPlacas(partida, recorte) {
+    return `${this.partida(partida)}/previsoes/placas/${checar(RE_RECORTE, recorte, "recorte")}.png`;
+  }
+
+  /** A máscara verdadeira de um item do gabarito das placas. */
   mascaraGabarito(id) {
     return `gabarito/itens/${checar(RE_GABARITO, id, "item do gabarito")}.png`;
   }
@@ -297,7 +321,18 @@ export class Pasta {
     return out.sort();
   }
 
-  /** Arquivos de rótulo ou revisão de uma pasta: [{caminho, nome, quadro, pessoa, versao, alca}]. */
+  /** Os lotes de recortes da partida (pelo nome do arquivo), em ordem: [{lote, caminho, alca}]. */
+  async listarLotes(partida) {
+    const dir = this.recortes(partida);
+    const out = [];
+    for (const item of await this.listar(dir)) {
+      if (item.tipo !== "arquivo" || !item.nome.endsWith(".json") || !RE_LOTE.test(item.nome.slice(0, -5))) continue;
+      out.push({ lote: item.nome.slice(0, -5), caminho: `${dir}/${item.nome}`, alca: item.alca });
+    }
+    return out;
+  }
+
+  /** Arquivos de rótulo ou revisão de uma pasta: [{caminho, nome, quadro (o item), pessoa, versao, alca}]. */
   async listarArquivos(diretorio) {
     const out = [];
     for (const item of await this.listar(diretorio)) {
@@ -309,8 +344,8 @@ export class Pasta {
   }
 
   /**
-   * A versão seguinte à maior da pessoa no quadro. Conta também as máscaras das pessoas sem rótulo
-   * (uma gravação interrompida entre a máscara e o rótulo): o nome nunca se repete.
+   * A versão seguinte à maior da pessoa no item. Conta também as máscaras das placas sem rótulo (uma
+   * gravação interrompida entre a máscara e o rótulo): o nome nunca se repete.
    */
   async proximaVersao(diretorio, quadro, pessoa) {
     let maior = 0;

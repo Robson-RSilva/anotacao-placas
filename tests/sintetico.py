@@ -189,3 +189,41 @@ def marcar_chaves_falsas(origem: Path, destino: Path) -> tuple[list[int], list[i
     dados[ini + 8 : ini + 8 + 4 * n] = struct.pack(f">{n}I", *depois)
     destino.write_bytes(bytes(dados))
     return antes, depois
+
+
+# ---------------------------------------------------------------------------- recortes das placas
+def recorte_sintetico(semente: int, w: int = 240, h: int = 72, margem: int = 14, oclusores: int | None = None):
+    """Um recorte de placa sintético: a placa (um anúncio listrado) no meio, um pouco da arquibancada em
+    cima e do gramado embaixo, e "pessoas" (elipses) e às vezes uma trave na frente dela.
+
+    Devolve (imagem BGR, região da placa [[x, y], ...], máscara verdadeira (h, w) com cada coisa na
+    frente da placa numerada de 1 a N, só dentro da região). Com `oclusores=0`, nada na frente."""
+    rng = np.random.default_rng(semente)
+    img = np.empty((h, w, 3), np.uint8)
+    img[: h // 2] = (90, 70, 60)  # a arquibancada
+    img[h // 2 :] = (45, 125, 50)  # o gramado
+    img = np.clip(img.astype(np.int16) + rng.normal(0, 7, img.shape).astype(np.int16), 0, 255).astype(np.uint8)
+    x0, y0, x1, y1 = margem, margem, w - margem, h - margem
+    cor = tuple(int(c) for c in rng.integers(30, 230, 3))
+    img[y0:y1, x0:x1] = cor
+    for k in range(x0, x1, 18):  # o anúncio: listras e "letras"
+        cv2.rectangle(img, (k, y0 + 4), (k + 8, y1 - 5), (240, 240, 240), -1)
+    regiao = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]]
+    dentro = np.zeros((h, w), bool)
+    dentro[y0:y1, x0:x1] = True
+    n = int(rng.integers(1, 4)) if oclusores is None else oclusores
+    verdade = np.zeros((h, w), np.uint8)
+    for k in range(n):
+        m = np.zeros((h, w), np.uint8)
+        if k == 2:  # uma trave
+            cx = int(rng.integers(x0 + 10, x1 - 10))
+            cv2.rectangle(img, (cx, 0), (cx + 4, h), (245, 245, 245), -1)
+            cv2.rectangle(m, (cx, 0), (cx + 4, h), 1, -1)
+        else:
+            cx = int(x0 + (k + 0.5) * (x1 - x0) / max(n, 2))
+            eixos = (int(rng.integers(8, 14)), int(rng.integers(22, 30)))
+            roupa = (40, 40, 220) if k == 0 else (220, 220, 220)
+            cv2.ellipse(img, (cx, h // 2 + 6), eixos, 0, 0, 360, roupa, -1)
+            cv2.ellipse(m, (cx, h // 2 + 6), eixos, 0, 0, 360, 1, -1)
+        verdade[(m > 0) & dentro] = k + 1
+    return img, regiao, verdade

@@ -4,7 +4,9 @@
 * `tests/fixtures/convencoes.json` — as convenções, os pontos que se marcam e os nomes sob a rotação
   de 180 graus, para os testes dos espelhos em JavaScript;
 * `tests/fixtures/png.json` — dois PNGs (do Python e do OpenCV, com os bytes fixos), para o leitor de
-  PNG das páginas.
+  PNG das páginas;
+* `tests/fixtures/regioes.json` — polígonos e os pixels dentro de cada um, para a região da placa dar os
+  mesmos pixels nas páginas e no Python.
 
 `python scripts/gerar_arquivos_web.py` grava todos; `tests/test_arquivos_gerados.py` falha quando
 algum fica desatualizado.
@@ -22,14 +24,17 @@ from .campo import PONTOS_SEM_MARCA, perm180_dos_nomes, pontos_marcaveis
 from .convencoes import (
     MANUAL,
     PARTIDA_GABARITO,
+    RE_ARQUIVO,
     RE_DISPOSITIVO,
     RE_ESTADIO,
     RE_GABARITO,
+    RE_LOTE,
     RE_MASCARA,
     RE_PACOTE_REF,
     RE_PARTIDA,
     RE_PESSOA,
     RE_QUADRO,
+    RE_RECORTE,
     RE_VERSAO_PACOTE,
     REF_H,
     REF_W,
@@ -39,6 +44,7 @@ from .convencoes import (
     slug,
 )
 from .formatos import ESQUEMAS, MOTIVOS_DESCARTE, esquema_json
+from .mascara import rasterizar
 
 RAIZ = Path(__file__).resolve().parents[2]
 
@@ -61,7 +67,7 @@ def convencoes_para_teste() -> dict:
         "tarefas": list(TAREFAS),
         "manual": MANUAL,
         "partida_gabarito": PARTIDA_GABARITO,
-        "motivos_descarte": list(MOTIVOS_DESCARTE),
+        "motivos_descarte": {t: list(m) for t, m in MOTIVOS_DESCARTE.items()},
         "pontos_marcaveis": pontos_marcaveis(),
         "pontos_sem_marca": list(PONTOS_SEM_MARCA),
         "perm180": perm180_dos_nomes(),
@@ -70,11 +76,14 @@ def convencoes_para_teste() -> dict:
             "RE_VERSAO_PACOTE": RE_VERSAO_PACOTE.pattern,
             "RE_PARTIDA": RE_PARTIDA.pattern,
             "RE_QUADRO": RE_QUADRO.pattern,
+            "RE_RECORTE": RE_RECORTE.pattern,
+            "RE_LOTE": RE_LOTE.pattern,
             "RE_GABARITO": RE_GABARITO.pattern,
             "RE_PESSOA": RE_PESSOA.pattern,
             "RE_PACOTE_REF": RE_PACOTE_REF.pattern,
             "RE_DISPOSITIVO": RE_DISPOSITIVO.pattern,
             "RE_MASCARA": RE_MASCARA.pattern,
+            "RE_ARQUIVO": RE_ARQUIVO.pattern,
         },
         "slug": [[t, slug(t)] for t in textos],
         "id_quadro": [[p, id_quadro(p)] for p in pts],
@@ -119,11 +128,41 @@ def png_para_teste() -> dict:
     }
 
 
+#: Polígonos de teste num recorte de 37 x 23 px: o retângulo de um recorte (cantos inteiros e
+#: quebrados), a placa cortada pela borda do quadro, um triângulo, um polígono que sai do recorte e
+#: um côncavo.
+REGIOES_DE_TESTE = [
+    [[4, 3], [33, 3], [33, 20], [4, 20]],
+    [[4.5, 2.5], [32.5, 2.49], [32.51, 19.5], [4.49, 19.51]],
+    [[0, 3], [20.3, 3], [26.7, 20], [0, 20]],
+    [[1.2, 22.4], [18.5, 0.6], [35.9, 22.4]],
+    [[-3, -2], [40, 5.5], [30, 30], [2, 25]],
+    [[3, 3], [34, 3], [34, 20], [18.5, 9.5], [3, 20]],
+]
+
+
+def regioes_para_teste() -> dict:
+    """Polígonos e os pixels dentro de cada um (uma linha de "0" e "1" por linha de pixels), para o
+    `rasterizar` das páginas (`tests/js/regiao.test.js`) dar o mesmo que o do Python."""
+    w, h = 37, 23
+    casos = []
+    for pol in REGIOES_DE_TESTE:
+        m = rasterizar(pol, w, h)
+        casos.append({"poligono": pol, "linhas": ["".join("1" if v else "0" for v in linha) for linha in m]})
+    return {
+        "descricao": "Gerado por scripts/gerar_arquivos_web.py a partir de src/anotacao/geracao.py; não editar à mão.",
+        "largura": w,
+        "altura": h,
+        "casos": casos,
+    }
+
+
 def arquivos_gerados() -> dict[str, str]:
     """Caminho (relativo à raiz do repositório) -> conteúdo esperado."""
     out = {f"web/esquemas/{nome}": esquema_json(modelo) for nome, modelo in ESQUEMAS.items()}
     out["tests/fixtures/convencoes.json"] = _json(convencoes_para_teste())
     out["tests/fixtures/png.json"] = _json(png_para_teste())
+    out["tests/fixtures/regioes.json"] = _json(regioes_para_teste())
     return out
 
 

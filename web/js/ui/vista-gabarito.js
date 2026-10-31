@@ -3,14 +3,14 @@
 // pasta (e importar um lote em .zip).
 
 import { situacao } from "../nucleo/filas.js";
-import { REGRA, motivoPessoas, motivoPontos, resumo } from "../nucleo/gabarito.js";
+import { REGRA, minimoDoTreino, motivoPlacas, motivoPontos, resumo } from "../nucleo/gabarito.js";
 import { importarZip } from "../nucleo/transferencia.js";
 import { celula, el, linhaVazia, local, mensagemDeErro } from "./util.js";
 import { vigiar } from "./vigia.js";
 
-/** O nome de cada tarefa nas tabelas e frases ("o gabarito dos pontos", "o gabarito da pintura"). */
-const NOME = { pontos: "pontos", pessoas: "pintura" };
-const DO = { pontos: "dos pontos", pessoas: "da pintura" };
+/** O nome de cada tarefa nas tabelas e frases ("o gabarito dos pontos", "o gabarito das placas"). */
+const NOME = { pontos: "pontos", placas: "placas" };
+const DO = { pontos: "dos pontos", placas: "das placas" };
 
 function quando(iso) {
   const d = new Date(iso);
@@ -22,11 +22,11 @@ export async function montar(raiz, ctx) {
   const { indice } = ctx;
   const pessoa = ctx.pessoa();
   let vivo = true;
-  let tarefaRes = local.ler("gabarito-tarefa", "pontos") === "pessoas" ? "pessoas" : "pontos";
+  let tarefaRes = local.ler("gabarito-tarefa", "pontos") === "placas" ? "placas" : "pontos";
   const sits = {};
   $("quem-gabarito").textContent = pessoa ? `Resultados de ${pessoa}` : "Digite o seu código na página central.";
   $("meta-pontos").textContent = `${REGRA.pontos.k} das últimas ${REGRA.pontos.n}`;
-  $("meta-pessoas").textContent = `${REGRA.pessoas.k} das últimas ${REGRA.pessoas.n}`;
+  $("meta-placas").textContent = `${REGRA.placas.k} das últimas ${REGRA.placas.n} (depois de fazer pelo menos ${minimoDoTreino(REGRA.placas)})`;
 
   function cartao(tarefa, sit) {
     const c = raiz.querySelector(`[data-tarefa=${tarefa}]`);
@@ -36,7 +36,7 @@ export async function montar(raiz, ctx) {
     const barra = c.querySelector(".barra-progresso div");
     c.querySelector(".regra").textContent = tarefa === "pontos"
       ? `Um item dá certo sem nenhum ponto trocado, com ${Math.round(100 * regra.cobertura)}% dos pontos que aparecem achados e o erro mediano até ${String(regra.erro_px).replace(".", ",")} px.`
-      : `Um item dá certo com cada pessoa pintada (pelo menos ${Math.round(100 * regra.cobertura_pessoa)}% dela) e ${Math.round(100 * regra.iou)}% de sobreposição com a resposta (1 px de folga na borda).`;
+      : `Um item dá certo com tudo o que está na frente da placa pintado (pelo menos ${Math.round(100 * regra.cobertura_oclusor)}% de cada coisa) e ${Math.round(100 * regra.iou)}% de sobreposição com a resposta (1 px de folga na borda); o recorte que não está na placa dá certo descartado.`;
     botao.classList.toggle("desligado", !pessoa || !sit?.gabarito_faltam);
     if (!sit) {
       st.textContent = pessoa ? "—" : "Digite o seu código na página central.";
@@ -48,12 +48,14 @@ export async function montar(raiz, ctx) {
       return;
     }
     const nItens = Math.min(regra.n, sit.ultimos);
-    barra.style.width = `${Math.round((100 * (sit.liberado ? regra.k : Math.min(sit.acertos, regra.k))) / regra.k)}%`;
+    const minimo = minimoDoTreino(regra);
+    const progresso = sit.liberado ? 1 : Math.min(Math.min(sit.acertos, regra.k) / regra.k, minimo > regra.n ? sit.n / minimo : 1);
+    barra.style.width = `${Math.round(100 * progresso)}%`;
     if (sit.liberado) {
       st.replaceChildren(Object.assign(document.createElement("b"), { className: "res bom", textContent: "Liberado" }), ` — ${sit.acertos} certos nos últimos ${nItens}. ${sit.gabarito_faltam} item(ns) do gabarito ainda não feitos: eles aparecem escondidos no meio das imagens reais.`);
       botao.textContent = "Treinar mais";
     } else {
-      st.replaceChildren(Object.assign(document.createElement("b"), { className: "res medio", textContent: "Em teste" }), ` — ${sit.acertos} certo(s) em ${sit.ultimos} feito(s); a meta é ${regra.meta}. ${sit.gabarito_faltam ? `${sit.gabarito_faltam} item(ns) para fazer.` : "O gabarito acabou: fale com quem coordena."}`);
+      st.replaceChildren(Object.assign(document.createElement("b"), { className: "res medio", textContent: "Em teste" }), ` — ${sit.n} feito(s), ${sit.acertos} certo(s) nos últimos ${sit.ultimos}; a meta é ${regra.meta}. ${sit.gabarito_faltam ? `${sit.gabarito_faltam} item(ns) para fazer.` : "O gabarito acabou: fale com quem coordena."}`);
       botao.textContent = sit.n ? "Continuar o teste" : "Fazer o teste";
     }
   }
@@ -71,7 +73,7 @@ export async function montar(raiz, ctx) {
     // o mais novo primeiro; os do teste e os escondidos juntos (os escondidos aparecem depois de feitos)
     for (const r of [...sit.resultados].reverse()) {
       const tr = document.createElement("tr");
-      const motivo = tarefaRes === "pontos" ? motivoPontos(r.resultado) : motivoPessoas(r.resultado);
+      const motivo = tarefaRes === "pontos" ? motivoPontos(r.resultado) : motivoPlacas(r.resultado);
       const ok = celula(r.acerto ? "certo" : "errado", `res ${r.acerto ? "bom" : "ruim"}`);
       if (!r.acerto && motivo) ok.title = motivo;
       const ver = document.createElement("td");
@@ -84,7 +86,7 @@ export async function montar(raiz, ctx) {
   async function lotes() {
     const tbody = $("lotes").querySelector("tbody");
     const linhas = [];
-    for (const tarefa of ["pontos", "pessoas"]) {
+    for (const tarefa of ["pontos", "placas"]) {
       const porLote = new Map();
       for (const g of await indice.itensGabarito(tarefa)) {
         const nome = g.lote || "(sem lote)";
@@ -105,7 +107,7 @@ export async function montar(raiz, ctx) {
 
   async function atualizar() {
     await lotes();
-    for (const tarefa of ["pontos", "pessoas"]) {
+    for (const tarefa of ["pontos", "placas"]) {
       if (!pessoa) {
         cartao(tarefa, null);
         continue;

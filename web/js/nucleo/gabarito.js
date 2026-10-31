@@ -1,5 +1,6 @@
 // Gabarito: imagens com a resposta verdadeira (do simulador ou de rótulos já arbitrados) — onde está
-// cada ponto do campo, na tarefa de pontos; a máscara de cada pessoa, na de pessoas.
+// cada ponto do campo, na tarefa de pontos; o que está na frente da placa (ou que o recorte não está na
+// placa e se descarta), na de placas.
 //
 // Serve para treinar e liberar quem começa (com o resultado na hora), medir cada anotador o tempo
 // todo (itens escondidos na fila, sem resultado) e testar a ferramenta antes do primeiro vídeo real.
@@ -10,13 +11,18 @@
 import { Molde } from "./campo.js";
 import { PARTIDA_GABARITO, REF_W } from "./convencoes.js";
 import { mediana } from "./estatistica.js";
+import { mascaraDaRegiao } from "./regiao.js";
 
 /**
  * Regras de cada tarefa. Pontos: um ponto conta como achado a até `perto_px` do lugar certo; o item
  * dá certo sem nenhum ponto errado, com `cobertura` dos pontos que aparecem achados e o erro mediano
- * até `erro_px` (px na referência 960). Pessoas: com 1 px de tolerância na borda, cada pessoa
- * pintada em pelo menos `cobertura_pessoa` da área (as menores que `pequeno_px` não contam) e a
- * sobreposição (IoU) de pelo menos `iou`.
+ * até `erro_px` (px na referência 960). Placas: dentro da região da placa e com 1 px de tolerância
+ * na borda do que está na frente dela, cada coisa pintada em pelo menos `cobertura_oclusor` da área
+ * (as menores que `pequeno_px`, px do recorte, não contam) e a sobreposição (IoU) de pelo menos `iou`;
+ * o recorte que não está na placa dá certo descartado (como "o recorte não está na placa"). A
+ * liberação: acertar `k` dos últimos `n` itens, depois de fazer pelo menos `minimo` (nas placas, o lote
+ * de treino inteiro: os casos raros — a trave, o grafismo, o recorte fora do lugar — passam todos com
+ * o resultado na hora antes de a pessoa ir para as imagens reais).
  */
 export const REGRA = Object.freeze({
   pontos: Object.freeze({
@@ -28,13 +34,14 @@ export const REGRA = Object.freeze({
     cobertura: 0.8,
     meta: "acertar 8 dos últimos 10",
   }),
-  pessoas: Object.freeze({
+  placas: Object.freeze({
     n: 5,
     k: 4,
+    minimo: 12,
     iou: 0.8,
-    cobertura_pessoa: 0.5,
+    cobertura_oclusor: 0.5,
     pequeno_px: 30,
-    meta: "acertar 4 dos últimos 5",
+    meta: "fazer pelo menos 12 e acertar 4 dos últimos 5",
   }),
 });
 
@@ -105,12 +112,12 @@ export function motivoPontos(r, regra = REGRA.pontos) {
   return partes.join("; ");
 }
 
-// ------------------------------------------------------------------------------ pessoas
+// ------------------------------------------------------------------------------ placas
 /**
- * A borda de 1 px das pessoas, que não conta: os pixels com um vizinho (dos 8) do outro lado da
- * silhueta. Na máscara verdadeira, as pessoas são os números de 1 a `n`.
+ * A borda de 1 px do que está na frente da placa, que não conta: os pixels com um vizinho (dos 8) do
+ * outro lado do contorno. Na máscara verdadeira, as coisas na frente são os números de 1 a `n`.
  */
-export function bordaDasPessoas(verdade, w, h, n) {
+export function bordaDosOclusores(verdade, w, h, n) {
   const borda = new Uint8Array(w * h);
   const eh = (v) => v >= 1 && v <= n;
   for (let y = 0; y < h; y++) {
@@ -137,13 +144,14 @@ export function bordaDasPessoas(verdade, w, h, n) {
 }
 
 /**
- * Compara uma pintura (1 onde há pessoa) com a máscara verdadeira do item (1 a N: cada pessoa; 0: o
- * resto), com 1 px de tolerância na borda das pessoas. Devolve {acerto, iou, pessoas: [{id, area,
- * cobertura, pequeno}], faltaram, a_mais, sem_pintar, borda}: `a_mais` é o que se pintou fora das
- * pessoas e `sem_pintar` o que ficou sem pintar nelas, as duas como fração da área das pessoas.
+ * Compara uma pintura (1 onde algo cobre a placa) com a máscara verdadeira do item (1 a N: cada coisa
+ * na frente da placa; 0: o resto), só dentro da região da placa (`regiao`: 1 dentro, 0 fora) e com 1 px
+ * de tolerância na borda do que está na frente. Devolve {acerto, iou, oclusores: [{id, area,
+ * cobertura, pequeno}], faltaram, a_mais, sem_pintar, borda}: `a_mais` é o que se pintou fora do que
+ * está na frente e `sem_pintar` o que ficou sem pintar nele, as duas como fração da área dele.
  */
-export function compararPessoas(pintura, verdade, w, h, n, regra = REGRA.pessoas) {
-  const borda = bordaDasPessoas(verdade, w, h, n);
+export function compararPlacas(pintura, verdade, w, h, n, regiao, regra = REGRA.placas) {
+  const borda = bordaDosOclusores(verdade, w, h, n);
   const area = new Float64Array(256);
   const nucleo = new Float64Array(256);
   const pintadoNucleo = new Float64Array(256);
@@ -152,6 +160,7 @@ export function compararPessoas(pintura, verdade, w, h, n, regra = REGRA.pessoas
   let fn = 0;
   let fp = 0;
   for (let i = 0; i < w * h; i++) {
+    if (!regiao[i]) continue;
     const v = verdade[i];
     const p = pintura[i] ? 1 : 0;
     area[v] += 1;
@@ -159,26 +168,25 @@ export function compararPessoas(pintura, verdade, w, h, n, regra = REGRA.pessoas
     if (borda[i]) continue;
     nucleo[v] += 1;
     if (p) pintadoNucleo[v] += 1;
-    const pessoa = v >= 1 && v <= n;
-    if (pessoa && p) tp += 1;
-    else if (pessoa) fn += 1;
+    const oclusor = v >= 1 && v <= n;
+    if (oclusor && p) tp += 1;
+    else if (oclusor) fn += 1;
     else if (p) fp += 1;
   }
-  const escala2 = (REF_W / w) ** 2;
-  const pessoas = [];
+  const oclusores = [];
   for (let j = 1; j <= n; j++) {
     if (!area[j]) continue;
     const cobertura = nucleo[j] ? pintadoNucleo[j] / nucleo[j] : pintadoTodo[j] / area[j];
-    pessoas.push({ id: j, area: area[j], cobertura, pequeno: area[j] * escala2 < regra.pequeno_px });
+    oclusores.push({ id: j, area: area[j], cobertura, pequeno: area[j] < regra.pequeno_px });
   }
-  const faltaram = pessoas.filter((j) => !j.pequeno && j.cobertura < regra.cobertura_pessoa).map((j) => j.id);
+  const faltaram = oclusores.filter((j) => !j.pequeno && j.cobertura < regra.cobertura_oclusor).map((j) => j.id);
   const uniao = tp + fn + fp;
   const iou = uniao ? tp / uniao : 1;
   const verdadeiro = tp + fn;
   return {
     acerto: !faltaram.length && iou >= regra.iou,
     iou,
-    pessoas,
+    oclusores,
     faltaram,
     a_mais: verdadeiro ? fp / verdadeiro : fp ? 1 : 0,
     sem_pintar: verdadeiro ? fn / verdadeiro : 0,
@@ -186,17 +194,23 @@ export function compararPessoas(pintura, verdade, w, h, n, regra = REGRA.pessoas
   };
 }
 
-/** Por que um item das pessoas deu errado, em português (vazio quando deu certo). */
-export function motivoPessoas(r, regra = REGRA.pessoas) {
-  if (r.descartada) return "a imagem tinha resposta: descartar conta como erro";
+/** Por que um item das placas deu errado, em português (vazio quando deu certo). */
+export function motivoPlacas(r, regra = REGRA.placas) {
+  if (r.resposta === "descartar") {
+    if (r.acerto) return "";
+    return r.descartada
+      ? "o recorte não estava na placa: o motivo do descarte é “o recorte não está na placa”"
+      : "o recorte não estava na placa: era para descartar, não para pintar";
+  }
+  if (r.descartada) return "o recorte estava na placa: descartar conta como erro";
   const partes = [];
-  if (r.faltaram.length) partes.push(`faltou pintar ${r.faltaram.length === 1 ? "1 pessoa" : `${r.faltaram.length} pessoas`}`);
-  if (r.iou < regra.iou && !r.pessoas.length) partes.push("não havia ninguém para pintar, e algo foi pintado");
+  if (r.faltaram.length) partes.push(`faltou pintar ${r.faltaram.length === 1 ? "1 coisa" : `${r.faltaram.length} coisas`} na frente da placa`);
+  if (r.iou < regra.iou && !r.oclusores.length) partes.push("não havia nada na frente da placa, e algo foi pintado");
   else if (r.iou < regra.iou) {
     const pct = (x) => `${Math.round(100 * x)}%`;
     const qual = r.a_mais >= r.sem_pintar
-      ? `pintou ${pct(r.a_mais)} além das pessoas (torcida, sombra ou contorno largo)`
-      : `ficou ${pct(r.sem_pintar)} das pessoas sem pintar`;
+      ? `pintou ${pct(r.a_mais)} além do que está na frente (o anúncio, uma sombra, um contorno largo)`
+      : `ficou ${pct(r.sem_pintar)} do que está na frente sem pintar`;
     partes.push(`sobreposição de ${pct(r.iou)} (a meta é ${pct(regra.iou)}): ${qual}`);
   }
   return partes.join("; ");
@@ -206,8 +220,8 @@ export function motivoPessoas(r, regra = REGRA.pessoas) {
 const _verdades = new WeakMap(); // item (o objeto que o índice guarda) -> a máscara verdadeira
 const _comparacoes = new WeakMap(); // máscara de uma pintura -> {verdade, resultado}
 
-/** A máscara verdadeira de um item das pessoas ({largura, altura, dados}), conferida uma vez. */
-export async function verdadePessoas(indice, item) {
+/** A máscara verdadeira de um item das placas ({largura, altura, dados}), conferida uma vez. */
+export async function verdadePlacas(indice, item) {
   const m = await indice.mascara(indice.pasta.mascaraGabarito(item.id));
   if (_verdades.get(item) === m) return m;
   if (m.largura !== item.largura || m.altura !== item.altura) throw new Error(`${item.id}: a máscara não tem o tamanho da imagem`);
@@ -216,33 +230,40 @@ export async function verdadePessoas(indice, item) {
 }
 
 /**
- * O resultado de um rótulo do gabarito: {acerto, descartada, ...a comparação}. A conta das pessoas
- * só se refaz quando a pintura ou a verdade mudam (o placar e a página central perguntam de novo a
- * cada atualização).
+ * O resultado de um rótulo do gabarito: {acerto, descartada, ...a comparação}. A conta das placas só
+ * se refaz quando a pintura ou a verdade mudam (o placar e a página central perguntam de novo a cada
+ * atualização). Nas placas, um item para descartar dá certo só com o recorte descartado como "o
+ * recorte não está na placa".
  */
 export async function compararComGabarito(indice, tarefa, arquivo, item) {
   const r = arquivo.dados;
-  if (r.situacao === "descartada") return { acerto: false, descartada: true };
+  const descartada = r.situacao === "descartada";
+  if (tarefa === "placas" && item.resposta === "descartar") {
+    return { acerto: descartada && r.motivo_descarte === "placa_fora_do_lugar", descartada, resposta: "descartar" };
+  }
+  if (descartada) return { acerto: false, descartada: true, resposta: "pintar" };
   if (tarefa === "pontos") return { ...compararPontos(r.pontos, item), descartada: false };
-  const verdade = await verdadePessoas(indice, item);
-  const m = await indice.mascara(`${indice.pasta.rotulos(PARTIDA_GABARITO, "pessoas")}/${r.mascara}`);
+  const verdade = await verdadePlacas(indice, item);
+  const m = await indice.mascara(`${indice.pasta.rotulos(PARTIDA_GABARITO, "placas")}/${r.mascara}`);
   const hit = _comparacoes.get(m);
   if (hit && hit.verdade === verdade) return hit.resultado;
   if (m.largura !== item.largura || m.altura !== item.altura) throw new Error(`${r.mascara}: a máscara não tem o tamanho da imagem`);
-  const resultado = { ...compararPessoas(m.dados, verdade.dados, item.largura, item.altura, item.pessoas), descartada: false };
+  const regiao = mascaraDaRegiao(item.regiao, item.largura, item.altura);
+  const resultado = { ...compararPlacas(m.dados, verdade.dados, item.largura, item.altura, item.oclusores, regiao), descartada: false, resposta: "pintar" };
   _comparacoes.set(m, { verdade, resultado });
   return resultado;
 }
 
-/** Um número curto do resultado, para tabelas: o erro mediano (pontos) ou a sobreposição (pessoas). */
+/** Um número curto do resultado, para tabelas: o erro mediano (pontos) ou a sobreposição (placas). */
 export function resumo(tarefa, r) {
+  if (r.resposta === "descartar") return r.descartada ? "descartou" : "pintou";
   if (r.descartada) return "descartou";
   if (tarefa === "pontos") {
     const erro = r.erro_mediano_px === null ? "" : ` · ${r.erro_mediano_px.toFixed(1).replace(".", ",")} px`;
     return `${r.achados} de ${r.visiveis} pontos${erro}${r.errados.length ? ` · ${r.errados.length} errado(s)` : ""}`;
   }
-  const n = r.pessoas.filter((j) => !j.pequeno).length;
-  return `${n - r.faltaram.length} de ${n} pessoas · ${Math.round(100 * r.iou)}%`;
+  const n = r.oclusores.filter((j) => !j.pequeno).length;
+  return n ? `${n - r.faltaram.length} de ${n} na frente · ${Math.round(100 * r.iou)}%` : `nada na frente · ${Math.round(100 * r.iou)}%`;
 }
 
 /**
@@ -266,16 +287,23 @@ export async function resultados(indice, tarefa, pessoa, itens = null) {
   return out.sort((x, y) => Date.parse(x.criado_em) - Date.parse(y.criado_em));
 }
 
+/** Quantos itens a pessoa faz, no mínimo, antes de poder ser liberada. */
+export const minimoDoTreino = (regra) => Math.max(regra.n, regra.minimo ?? 0);
+
 /**
- * Liberado para as imagens reais: acertou K dos últimos N itens da tarefa. Sem gabarito da tarefa,
- * não há bloqueio.
+ * Liberado para as imagens reais: fez pelo menos `minimo` itens da tarefa e acertou K dos últimos N.
+ * Sem gabarito da tarefa, não há bloqueio.
  */
 export function liberacao(res, temGabarito, regra) {
   if (!temGabarito) return { liberado: true, n: 0, acertos: 0, motivo: "sem gabarito importado" };
   const ultimos = res.slice(-regra.n);
   const acertos = ultimos.filter((r) => r.acerto).length;
-  const liberado = ultimos.length >= regra.n && acertos >= regra.k;
-  const falta = ultimos.length < regra.n ? `${ultimos.length} de ${regra.n} feitos, ${acertos} certo(s)` : `${acertos} certos nos últimos ${regra.n}`;
+  const minimo = minimoDoTreino(regra);
+  const liberado = res.length >= minimo && acertos >= regra.k;
+  let falta;
+  if (res.length < minimo && minimo > regra.n) falta = `${res.length} de ${minimo} feitos, ${acertos} certo(s) nos últimos ${ultimos.length}`;
+  else if (ultimos.length < regra.n) falta = `${ultimos.length} de ${regra.n} feitos, ${acertos} certo(s)`;
+  else falta = `${acertos} certos nos últimos ${regra.n}`;
   return {
     liberado,
     n: res.length,
@@ -287,7 +315,7 @@ export function liberacao(res, temGabarito, regra) {
 
 /** Quantos resultados vieram antes da liberação (o treino); -1 se ainda não foi liberado. */
 export function nTreino(res, regra) {
-  for (let k = regra.n; k <= res.length; k++) {
+  for (let k = minimoDoTreino(regra); k <= res.length; k++) {
     if (res.slice(k - regra.n, k).filter((r) => r.acerto).length >= regra.k) return k;
   }
   return -1;

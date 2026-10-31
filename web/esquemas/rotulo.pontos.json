@@ -188,7 +188,6 @@
   },
   "required": [
     "partida",
-    "quadro",
     "anotador",
     "versao",
     "ferramenta",
@@ -198,7 +197,8 @@
     "largura",
     "altura",
     "partiu_de",
-    "situacao"
+    "situacao",
+    "quadro"
   ],
   "title": "RotuloPontos",
   "type": "object"

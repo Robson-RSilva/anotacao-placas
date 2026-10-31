@@ -16,25 +16,31 @@ import unicodedata
 
 REF_W, REF_H = 960, 540
 
-#: As tarefas: marcar os pontos do campo e pintar as pessoas (todas as que estão no gramado e em volta
-#: dele, do lado de dentro das placas), cada uma direto na imagem.
-TAREFAS = ("pontos", "pessoas")
+#: As tarefas: marcar os pontos do campo, direto no quadro, e pintar o que está na frente de cada
+#: placa, no recorte dela (a placa já endireitada, que vem pronta de fora das páginas).
+TAREFAS = ("pontos", "placas")
 
 #: Versão do Manual de anotação que esta versão da ferramenta segue, por tarefa.
-MANUAL = {"pontos": "pontos-0.1", "pessoas": "pessoas-0.1", "revisao": "revisao-0.3"}
+MANUAL = {"pontos": "pontos-0.1", "placas": "placas-0.1", "revisao": "revisao-0.4"}
 #: As pastas das tarefas das versões anteriores ficam onde estão e não entram em nada: a câmera e a
-#: oclusão (até a 0.7) e os jogadores (0.8, que pintava só os jogadores).
+#: oclusão (até a 0.7), os jogadores (0.8) e as pessoas (0.9), que pintavam o quadro inteiro.
 
 RE_ESTADIO = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 RE_VERSAO_PACOTE = re.compile(r"^\d+\.\d+$")
 RE_PARTIDA = re.compile(r"^\d{4}-\d{2}-\d{2}_[a-z0-9]+(?:-[a-z0-9]+)*_[a-z0-9]+(?:-[a-z0-9]+)*$")
 RE_QUADRO = re.compile(r"^t\d{10}$")
+#: Uma placa num quadro: o quadro e a placa, que o gerador dos recortes nomeia (t0001234567_opo-03).
+RE_RECORTE = re.compile(r"^t\d{10}_[a-z0-9]+(?:-[a-z0-9]+)*$")
+#: Um lote de recortes de uma partida (o arquivo `recortes/<lote>.json`).
+RE_LOTE = re.compile(r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$")
 RE_GABARITO = re.compile(r"^g\d{4}$")
 RE_PESSOA = re.compile(r"^[A-Z][A-Z0-9]{1,9}$")
 #: Pacote do estádio dos manifestos das versões até a 0.7 (hoje ignorado).
 RE_PACOTE_REF = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*/pacote-\d+\.\d+$")
-#: A máscara das pessoas, ao lado do rótulo: o mesmo nome, com .png.
-RE_MASCARA = re.compile(r"^(t\d{10}|g\d{4})__([A-Z][A-Z0-9]{1,9})__v(\d+)\.png$")
+#: O rótulo ou a revisão de um item (quadro, recorte ou item do gabarito): um por pessoa e por versão.
+RE_ARQUIVO = re.compile(r"^(t\d{10}(?:_[a-z0-9]+(?:-[a-z0-9]+)*)?|g\d{4})__([A-Z][A-Z0-9]{1,9})__v(\d+)\.json$")
+#: A máscara da pintura das placas, ao lado do rótulo: o mesmo nome, com .png.
+RE_MASCARA = re.compile(r"^(t\d{10}_[a-z0-9]+(?:-[a-z0-9]+)*|g\d{4})__([A-Z][A-Z0-9]{1,9})__v(\d+)\.png$")
 #: Navegador de um computador (um identificador aleatório, guardado no próprio navegador).
 RE_DISPOSITIVO = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 

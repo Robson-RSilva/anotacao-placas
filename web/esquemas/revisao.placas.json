@@ -25,8 +25,8 @@
       "type": "string"
     },
     "formato": {
-      "const": "revisao.pessoas/1",
-      "default": "revisao.pessoas/1",
+      "const": "revisao.placas/1",
+      "default": "revisao.placas/1",
       "title": "Formato",
       "type": "string"
     },
@@ -38,9 +38,9 @@
       "anyOf": [
         {
           "enum": [
-            "faltou_pessoa",
+            "faltou_pintar",
             "contorno_impreciso",
-            "pintou_o_que_nao_e_pessoa",
+            "pintou_o_que_nao_cobre",
             "descarte_errado",
             "outro"
           ],
@@ -71,9 +71,10 @@
       "title": "Partida",
       "type": "string"
     },
-    "quadro": {
-      "pattern": "^t\\d{10}$",
-      "title": "Quadro",
+    "recorte": {
+      "maxLength": 48,
+      "pattern": "^t\\d{10}_[a-z0-9]+(?:-[a-z0-9]+)*$",
+      "title": "Recorte",
       "type": "string"
     },
     "revisor": {
@@ -99,7 +100,6 @@
   },
   "required": [
     "partida",
-    "quadro",
     "rotulo",
     "revisor",
     "versao",
@@ -107,8 +107,9 @@
     "ferramenta",
     "manual",
     "criado_em",
-    "segundos_ativos"
+    "segundos_ativos",
+    "recorte"
   ],
-  "title": "RevisaoPessoas",
+  "title": "RevisaoPlacas",
   "type": "object"
 }

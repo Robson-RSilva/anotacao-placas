@@ -9,8 +9,9 @@ import {
   PARTIDA,
   PastaMemoria,
   criarPartida,
+  criarRecortes,
   esquemas,
-  gravarPessoas,
+  gravarPlacas,
   gravarPontos,
   gravarRevisao,
   pastaExemplo,
@@ -23,12 +24,21 @@ test("caminhos validados e com o layout do Python", () => {
   assert.equal(p.quadro(PARTIDA, "t0000001000"), `partidas/${PARTIDA}/quadros/t0000001000.jpg`);
   assert.equal(p.quadro("gabarito", "g1001"), "gabarito/itens/g1001.jpg");
   assert.equal(p.rotulos("gabarito", "pontos"), "gabarito/rotulos/pontos");
-  assert.equal(p.revisoes(PARTIDA, "pessoas"), `partidas/${PARTIDA}/revisoes/pessoas`);
+  assert.equal(p.revisoes(PARTIDA, "placas"), `partidas/${PARTIDA}/revisoes/placas`);
   assert.throws(() => p.rotulos(PARTIDA, "jogadores"), /tarefa/); // a tarefa da 0.8 (só os jogadores)
+  assert.throws(() => p.rotulos(PARTIDA, "pessoas"), /tarefa/); // a da 0.9 (as pessoas no quadro inteiro)
   assert.equal(p.previsaoPontos(PARTIDA, "t0000001000"), `partidas/${PARTIDA}/previsoes/pontos/t0000001000.json`);
-  assert.equal(p.previsaoPessoas(PARTIDA, "t0000001000"), `partidas/${PARTIDA}/previsoes/pessoas/t0000001000.png`);
-  assert.equal(p.mascaraGabarito("g3001"), "gabarito/itens/g3001.png");
-  assert.equal(p.itemGabarito("g3001"), "gabarito/itens/g3001.json");
+  const r = "t0000001000_opo-3";
+  assert.equal(p.previsaoPlacas(PARTIDA, r), `partidas/${PARTIDA}/previsoes/placas/${r}.png`);
+  assert.equal(p.recorte(PARTIDA, r), `partidas/${PARTIDA}/recortes/${r}.jpg`);
+  assert.equal(p.recorte("gabarito", "g4001"), "gabarito/itens/g4001.jpg");
+  assert.equal(p.loteRecortes(PARTIDA, "r1"), `partidas/${PARTIDA}/recortes/r1.json`);
+  assert.equal(p.imagem(PARTIDA, "placas", r), p.recorte(PARTIDA, r));
+  assert.equal(p.imagem(PARTIDA, "pontos", "t0000001000"), p.quadro(PARTIDA, "t0000001000"));
+  for (const ruim of ["../x", "t0000001000", "t0000001000_A"]) assert.throws(() => p.recorte(PARTIDA, ruim));
+  for (const ruim of ["R1", "r_1", "1r"]) assert.throws(() => p.loteRecortes(PARTIDA, ruim));
+  assert.equal(p.mascaraGabarito("g4001"), "gabarito/itens/g4001.png");
+  assert.equal(p.itemGabarito("g4001"), "gabarito/itens/g4001.json");
   assert.throws(() => p.partida("../fora"));
   assert.throws(() => p.quadro(PARTIDA, "g0001"));
   assert.throws(() => p.rotulos(PARTIDA, "camera")); // as tarefas das versões até a 0.7
@@ -73,22 +83,25 @@ test("criar, listar partidas, próxima versão", async () => {
   assert.equal(ip.ultimos().get("t0000001000|A01").versao, 2);
   assert.deepEqual(ip.versoes("t0000001000", "A01").map((a) => a.versao), [1, 2]);
   // a máscara de uma gravação interrompida (sem o rótulo) conta: o nome nunca se repete
-  const dirJ = pasta.rotulos(PARTIDA, "pessoas");
-  await pasta.escrever(`${dirJ}/t0000001000__A01__v4.png`, Uint8Array.of(137, 80, 78, 71));
-  assert.equal(await pasta.proximaVersao(dirJ, "t0000001000", "A01"), 5);
+  const dirJ = pasta.rotulos(PARTIDA, "placas");
+  await pasta.escrever(`${dirJ}/t0000001000_p0__A01__v4.png`, Uint8Array.of(137, 80, 78, 71));
+  assert.equal(await pasta.proximaVersao(dirJ, "t0000001000_p0", "A01"), 5);
+  assert.equal(await pasta.proximaVersao(dirJ, "t0000001000_p1", "A01"), 1); // outra placa do mesmo quadro
 });
 
-test("pessoas: o rótulo cuja máscara ainda não chegou espera, e não entra em nada", async () => {
+test("placas: o rótulo cuja máscara ainda não chegou espera, e não entra em nada", async () => {
   const { pasta, indice } = await pastaExemplo();
   await criarPartida(pasta, [{}]);
-  const m = new Uint8Array(640 * 360);
-  m.fill(1, 1000, 1200);
-  const nome = await gravarPessoas(pasta, { quadro: "t0000001000", pessoa: "A01", mascara: m });
-  let ip = await indice.partida(PARTIDA, "pessoas");
+  await criarRecortes(pasta, [{}]);
+  const m = new Uint8Array(64 * 48);
+  m.fill(1, 500, 520);
+  const nome = await gravarPlacas(pasta, { quadro: "t0000001000_p0", pessoa: "A01", mascara: m });
+  let ip = await indice.partida(PARTIDA, "placas");
   assert.deepEqual(ip.rotulos.map((a) => a.nome), [nome]);
-  assert.equal(ip.rotulos[0].dados.pixels, 200);
-  await pasta.apagar(`${pasta.rotulos(PARTIDA, "pessoas")}/${nome.replace(".json", ".png")}`);
-  ip = await indice.partida(PARTIDA, "pessoas");
+  assert.equal(ip.rotulos[0].dados.pixels, 20);
+  assert.equal(ip.rotulos[0].quadro, "t0000001000_p0");
+  await pasta.apagar(`${pasta.rotulos(PARTIDA, "placas")}/${nome.replace(".json", ".png")}`);
+  ip = await indice.partida(PARTIDA, "placas");
   assert.equal(ip.rotulos.length, 0);
   assert.equal(ip.esperando.length, 1);
 });

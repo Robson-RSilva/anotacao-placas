@@ -1,4 +1,4 @@
-// Vistas "Revisão às cegas" (pontos e pessoas): o próximo rótulo de outra pessoa, sem dizer de quem
+// Vistas "Revisão às cegas" (pontos e placas): o próximo rótulo de outra pessoa, sem dizer de quem
 // é. Quem revisa aprova, corrige (a correção vira uma versão nova, com a autoria de quem revisou) ou
 // devolve com um motivo (o rótulo volta para quem anotou).
 
@@ -13,7 +13,7 @@ import { abrirImagem, caixas, escrevendo, textoSituacao } from "./tarefa.js";
 import { TempoAtivo } from "./tempo.js";
 import { el, formatarTempo, local, mensagemDeErro, numero } from "./util.js";
 import { vigiar } from "./vigia.js";
-import { ligarFerramentas } from "./vista-pessoas.js";
+import { ligarFerramentas } from "./vista-placas.js";
 
 const PARTIU = { nenhuma: "do zero", modelo: "de um modelo", rotulo_anterior: "da versão anterior (devolvida)", rotulo_revisado: "de uma revisão" };
 
@@ -21,9 +21,9 @@ async function montarRevisao(raiz, ctx, tarefa) {
   const $ = (id) => el(id, raiz);
   const { pasta, indice } = ctx;
   const pontos = tarefa === "pontos";
-  const cx = caixas(raiz);
-  let tela = null; // o Marcador (pontos) ou o Pintor (pessoas)
-  let atual = null; // {arquivo, rotulo, pessoa}
+  const cx = caixas(raiz, tarefa);
+  let tela = null; // o Marcador (pontos) ou o Pintor (placas)
+  let atual = null; // {arquivo, rotulo, mascara, regiao, pessoa}
   let urlImagem = null;
   let enviando = false;
   let vivo = true;
@@ -122,10 +122,11 @@ async function montarRevisao(raiz, ctx, tarefa) {
     if (!vivo) return;
     $("pendentes").textContent = pend.length ? `${pend.length} esperando revisão` : "";
     if (!pend.length) {
-      return mostrarVazio(pontos ? "Nenhum rótulo de pontos de outra pessoa esperando revisão." : "Nenhuma pintura de outra pessoa esperando revisão.");
+      return mostrarVazio(pontos ? "Nenhum rótulo de pontos de outra pessoa esperando revisão." : "Nenhuma pintura de placa de outra pessoa esperando revisão.");
     }
-    const { arquivo, rotulo } = pend[0];
-    const item = { partida: arquivo.partida, quadro: arquivo.quadro, largura: rotulo.largura, altura: rotulo.altura };
+    const { arquivo, rotulo, item: daFila } = pend[0];
+    const regiao = pontos ? null : daFila?.regiao ?? null;
+    const item = { tarefa, partida: arquivo.partida, quadro: arquivo.quadro, largura: rotulo.largura, altura: rotulo.altura };
     const { img, url } = await abrirImagem(pasta, item);
     let mascara = null;
     if (!pontos && rotulo.mascara) mascara = (await indice.mascara(`${pasta.rotulos(arquivo.partida, tarefa)}/${rotulo.mascara}`)).dados;
@@ -149,17 +150,17 @@ async function montarRevisao(raiz, ctx, tarefa) {
         aoPendente: atualizarPontos,
       });
     } else {
-      tela = new Pintor($("tela"), { imagem: img, mascara, somenteLeitura: true, aoMudar: ferramentas.mostrar });
-      $("r-pixels").textContent = rotulo.mascara ? (rotulo.pixels ? `${numero(rotulo.pixels, 0)} pixels` : "nada (ninguém na imagem)") : "—";
+      tela = new Pintor($("tela"), { imagem: img, mascara, regiao, somenteLeitura: true, aoMudar: ferramentas.mostrar });
+      $("r-pixels").textContent = rotulo.mascara ? (rotulo.pixels ? `${numero(rotulo.pixels, 0)} pixels` : "nada (nada na frente da placa)") : "—";
     }
     window.revisando = tela; // ajuda a depurar e a testar
-    $("r-situacao").textContent = textoSituacao(rotulo);
+    $("r-situacao").textContent = textoSituacao(rotulo, tarefa);
     $("r-partiu").textContent = PARTIU[rotulo.partiu_de.fonte] || rotulo.partiu_de.fonte;
     $("r-comentario").textContent = rotulo.comentario || "—";
     $("comentario-dev").value = "";
     $("painel").hidden = false;
     $("vazio").hidden = true;
-    atual = { arquivo, rotulo, mascara, pessoa };
+    atual = { arquivo, rotulo, mascara, regiao, pessoa };
     window.itemRevisao = { partida: arquivo.partida, quadro: arquivo.quadro, rotulo: arquivo.nome };
     modo("ver");
     tempo.zerar();
@@ -209,8 +210,8 @@ async function montarRevisao(raiz, ctx, tarefa) {
       $("erro").textContent = "Feche o laço (no primeiro ponto, com dois cliques ou Enter) ou cancele com Esc.";
       return;
     }
-    if (!tela.pixels() && !(await cx.confirmar("Salvar a correção sem ninguém pintado?", "Só quando não há nenhuma pessoa no gramado nem em volta dele."))) return;
-    await enviar({ decisao: "corrigir", correcao: { mascara: tela.mascara(), situacao: "ok", motivo_descarte: null, comentario, segundos_ativos: tempo.segundos() } });
+    if (!tela.pixels() && !(await cx.confirmar("Salvar a correção sem nada pintado?", "Só quando nada cobre a placa."))) return;
+    await enviar({ decisao: "corrigir", correcao: { mascara: tela.mascara(), regiao: atual.regiao, situacao: "ok", motivo_descarte: null, comentario, segundos_ativos: tempo.segundos() } });
   }
 
   async function corrigirComDescarte() {
@@ -321,4 +322,4 @@ async function montarRevisao(raiz, ctx, tarefa) {
 }
 
 export const revisaoPontos = { CLASSE: "pagina-editor", montar: (raiz, ctx) => montarRevisao(raiz, ctx, "pontos") };
-export const revisaoPessoas = { CLASSE: "pagina-editor", montar: (raiz, ctx) => montarRevisao(raiz, ctx, "pessoas") };
+export const revisaoPlacas = { CLASSE: "pagina-editor", montar: (raiz, ctx) => montarRevisao(raiz, ctx, "placas") };

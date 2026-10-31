@@ -1,12 +1,13 @@
 """Previsor: um modelo que já deixa a imagem começada, para quem anota só corrigir.
 
-As páginas não dependem de nenhum modelo. Com um previsor, `anotacao prever` grava, para os quadros
-sorteados (menos os "sem previsão", que medem o viés de ancoragem):
+As páginas não dependem de nenhum modelo. Com um previsor, `anotacao prever` grava, para os itens da
+fila (menos os "sem previsão", que medem o viés de ancoragem):
 
 * pontos (`--tarefa pontos`): `previsoes/pontos/<quadro>.json` (formato previsao.pontos/1). O
-  previsor recebe a imagem e devolve os pontos que achou, {nome: (x, y)} em px da imagem;
-* pessoas (`--tarefa pessoas`): `previsoes/pessoas/<quadro>.png`. O previsor recebe a imagem e
-  devolve a máscara (h, w), diferente de zero onde há pessoa, ou None.
+  previsor recebe o quadro e devolve os pontos que achou, {nome: (x, y)} em px da imagem;
+* placas (`--tarefa placas`): `previsoes/placas/<recorte>.png`. O previsor recebe o recorte da placa
+  e devolve a máscara (h, w), diferente de zero onde algo cobre a placa, ou None. O que ele pintar
+  fora da região da placa não entra.
 
 Um previsor é qualquer objeto chamável com `nome` e `versao`:
 
@@ -28,11 +29,12 @@ import cv2
 import numpy as np
 
 from .formatos import NOMES_PONTOS, PrevisaoPontos
-from .mascara import gravar_png
+from .indice import Indice
+from .mascara import gravar_png, rasterizar
 from .pasta import Pasta, escrever_bytes, escrever_json
 
-#: As cores da máscara das pessoas: 0 fundo, 1 pessoa (a mesma paleta das páginas).
-PALETA_PESSOAS = [(0, 0, 0), (255, 64, 129)]
+#: As cores da máscara das placas: 0 nada na frente, 1 algo cobre a placa (a mesma paleta das páginas).
+PALETA_PLACAS = [(0, 0, 0), (255, 64, 129)]
 
 
 def carregar_previsor(especificacao: str | None):
@@ -70,43 +72,56 @@ def prever(
     refazer: bool = False,
     progresso: Callable[[str, int, int], None] | None = None,
 ) -> int:
-    """Grava a previsão de cada quadro da fila na tarefa. Devolve quantas gravou.
+    """Grava a previsão de cada item da fila na tarefa. Devolve quantas gravou.
 
-    Rodar de novo só faz as que faltam (quadros que ainda não chegaram pela sincronização ficam para
-    a próxima vez), a não ser com `refazer`.
+    Rodar de novo só faz as que faltam (imagens que ainda não chegaram pela sincronização ficam para a
+    próxima vez), a não ser com `refazer`.
     """
-    if tarefa not in ("pontos", "pessoas"):
+    if tarefa not in ("pontos", "placas"):
         raise ValueError(f"tarefa desconhecida: {tarefa}")
+    indice = Indice(pasta)
     n = 0
     for pid in partidas or pasta.listar_partidas():
-        man = pasta.ler_manifesto(pid)
-        w, h = man.video.largura, man.video.altura
-        itens = [it for it in pasta.ler_fila(pid).itens if not it.sem_previsao]
-        for k, item in enumerate(itens):
-            destino = (pasta.previsao_pontos if tarefa == "pontos" else pasta.previsao_pessoas)(pid, item.quadro)
-            if destino.exists() and not refazer:
-                continue
-            img = cv2.imread(str(pasta.quadro(pid, item.quadro)))
-            if img is None:
-                continue
-            saida = previsor(img)
-            if tarefa == "pontos":
+        if tarefa == "pontos":
+            man = pasta.ler_manifesto(pid)
+            w, h = man.video.largura, man.video.altura
+            itens = [it for it in pasta.ler_fila(pid).itens if not it.sem_previsao]
+            for k, item in enumerate(itens):
+                destino = pasta.previsao_pontos(pid, item.quadro)
+                if destino.exists() and not refazer:
+                    continue
+                img = cv2.imread(str(pasta.quadro(pid, item.quadro)))
+                if img is None:
+                    continue
                 prev = PrevisaoPontos(
                     partida=pid,
                     quadro=item.quadro,
                     fonte=previsor.nome,
                     versao=previsor.versao,
-                    pontos=_pontos(saida, w, h),
+                    pontos=_pontos(previsor(img), w, h),
                 )
                 escrever_json(destino, prev, sobrescrever=True)
-            else:
-                if saida is None:
-                    continue
-                m = np.asarray(saida)
-                if m.shape != (h, w):
-                    raise ValueError(f"{previsor.nome}: a máscara precisa ter o tamanho do quadro ({m.shape})")
-                escrever_bytes(destino, gravar_png((m != 0).astype(np.uint8), PALETA_PESSOAS), sobrescrever=True)
+                n += 1
+                if progresso:
+                    progresso(pid, k + 1, len(itens))
+            continue
+        recortes = [it for _, it in indice.recortes(pid).itens.values() if not it.sem_previsao]
+        for k, it in enumerate(recortes):
+            destino = pasta.previsao_placas(pid, it.recorte)
+            if destino.exists() and not refazer:
+                continue
+            img = cv2.imread(str(pasta.recorte(pid, it.recorte)))
+            if img is None:
+                continue
+            saida = previsor(img)
+            if saida is None:
+                continue
+            m = np.asarray(saida)
+            if m.shape != (it.altura, it.largura):
+                raise ValueError(f"{previsor.nome}: a máscara precisa ter o tamanho do recorte ({m.shape})")
+            m = ((m != 0) & rasterizar(it.regiao, it.largura, it.altura)).astype(np.uint8)
+            escrever_bytes(destino, gravar_png(m, PALETA_PLACAS), sobrescrever=True)
             n += 1
             if progresso:
-                progresso(pid, k + 1, len(itens))
+                progresso(pid, k + 1, len(recortes))
     return n

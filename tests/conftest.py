@@ -17,12 +17,14 @@ from anotacao.formatos import (
     Equipe,
     Fila,
     ItemFila,
+    ItemRecorte,
+    LoteRecortes,
     Manifesto,
     Membro,
     PreProcessamento,
-    RevisaoPessoas,
+    RevisaoPlacas,
     RevisaoPontos,
-    RotuloPessoas,
+    RotuloPlacas,
     RotuloPontos,
     Tomada,
     Tomadas,
@@ -30,9 +32,9 @@ from anotacao.formatos import (
 )
 from anotacao.mascara import gravar_png
 from anotacao.pasta import Pasta, escrever_bytes, escrever_json, mascara_de, nome_arquivo
-from anotacao.previsores import PALETA_PESSOAS
+from anotacao.previsores import PALETA_PLACAS
 
-from sintetico import PLANOS, Camera, renderizar
+from sintetico import PLANOS, Camera, recorte_sintetico, renderizar
 
 FIXTURES = Path(__file__).parent / "fixtures"
 W, H = 640, 360
@@ -145,24 +147,64 @@ def criar_partida(pasta: Pasta, itens: list[dict], partida: str = PARTIDA, image
                 altura=H,
                 n_quadros=100,
             ),
-            pre_processamento=PreProcessamento(ferramenta="0.9.0", criado_em=AGORA, segundos=1, parametros={}),
+            pre_processamento=PreProcessamento(ferramenta="0.10.0", criado_em=AGORA, segundos=1, parametros={}),
         ),
     )
     return fila
 
 
-def _comum(partida, quadro, pessoa, versao, minutos, manual):
+def criar_recortes(
+    pasta: Pasta,
+    n: int,
+    partida: str = PARTIDA,
+    lote: str = "r1",
+    duplas: tuple[int, ...] = (),
+    sem_previsao: tuple[int, ...] = (),
+    oclusores: dict[int, int] | None = None,
+    imagens: bool = True,
+) -> dict[str, dict]:
+    """Um lote de recortes das placas na partida (como `anotacao recortes` traz): os recortes k = 0..n-1
+    (`t<1000(k+1)>_p<k>`), com as imagens sintéticas. Devolve recorte -> {item, verdade (a máscara
+    verdadeira, com cada coisa na frente da placa numerada), imagem}."""
+    out = {}
+    itens = []
+    for k in range(n):
+        img, regiao, verdade = recorte_sintetico(100 + k, oclusores=(oclusores or {}).get(k))
+        h, w = verdade.shape
+        recorte = f"t{1000 * (k + 1):010d}_p{k}"
+        it = ItemRecorte(
+            recorte=recorte,
+            largura=w,
+            altura=h,
+            regiao=regiao,
+            placa=regiao,
+            no_quadro=[[100 + 2 * x, 50 + 2 * y] for x, y in regiao],
+            dupla=k in duplas,
+            sem_previsao=k in sem_previsao,
+        )
+        itens.append(it)
+        out[recorte] = {"item": it, "verdade": verdade, "imagem": img}
+        if imagens:
+            pasta.recortes(partida).mkdir(parents=True, exist_ok=True)
+            cv2.imwrite(str(pasta.recorte(partida, recorte)), img, [cv2.IMWRITE_JPEG_QUALITY, 95])
+    escrever_json(
+        pasta.lote_recortes(partida, lote),
+        LoteRecortes(partida=partida, lote=lote, criado_em=AGORA, origem="simulador", gerador="testes", itens=itens),
+    )
+    return out
+
+
+def _comum(partida, pessoa, versao, minutos, manual, largura=W, altura=H):
     return {
         "partida": partida,
-        "quadro": quadro,
         "anotador": pessoa,
         "versao": versao,
-        "ferramenta": "0.9.0",
+        "ferramenta": "0.10.0",
         "manual": manual,
         "criado_em": AGORA + timedelta(minutes=minutos),
         "segundos_ativos": 20,
-        "largura": W,
-        "altura": H,
+        "largura": largura,
+        "altura": altura,
         "partiu_de": {"fonte": "nenhuma"},
     }
 
@@ -172,7 +214,8 @@ def gravar_pontos(
 ) -> str:
     """Um rótulo de pontos ({nome: (x, y)}); None é a imagem descartada (por transição)."""
     r = RotuloPontos(
-        **_comum(partida, quadro, pessoa, versao, minutos, "pontos-0.1"),
+        **_comum(partida, pessoa, versao, minutos, "pontos-0.1"),
+        quadro=quadro,
         pontos=[{"ponto": n, "x": x, "y": y} for n, (x, y) in (pontos or {}).items()],
         situacao="ok" if pontos is not None else "descartada",
         motivo_descarte=None if pontos is not None else "transicao",
@@ -183,42 +226,54 @@ def gravar_pontos(
     return nome
 
 
-def gravar_pessoas(
-    pasta: Pasta, quadro: str, pessoa: str, mascara: np.ndarray | None, versao=1, minutos=0, partida=PARTIDA, **kw
+def gravar_placas(
+    pasta: Pasta,
+    recorte: str,
+    pessoa: str,
+    mascara: np.ndarray | None,
+    versao=1,
+    minutos=0,
+    partida=PARTIDA,
+    motivo="borrao",
+    **kw,
 ) -> str:
-    """Um rótulo das pessoas como a página grava: a máscara (0/1) e o rótulo; None é a imagem descartada."""
-    nome = nome_arquivo(quadro, pessoa, versao)
+    """Um rótulo das placas como a página grava: a máscara (0/1, do tamanho do recorte) e o rótulo; None
+    é o recorte descartado (com `motivo`)."""
+    nome = nome_arquivo(recorte, pessoa, versao)
+    h, w = mascara.shape if mascara is not None else kw.pop("tamanho", (72, 240))
     if mascara is not None:
-        escrever_bytes(pasta.rotulos(partida, "pessoas") / mascara_de(nome), gravar_png(mascara, PALETA_PESSOAS))
-    r = RotuloPessoas(
-        **_comum(partida, quadro, pessoa, versao, minutos, "pessoas-0.1"),
+        escrever_bytes(pasta.rotulos(partida, "placas") / mascara_de(nome), gravar_png(mascara, PALETA_PLACAS))
+    r = RotuloPlacas(
+        **_comum(partida, pessoa, versao, minutos, "placas-0.1", largura=w, altura=h),
+        recorte=recorte,
         mascara=None if mascara is None else mascara_de(nome),
         pixels=0 if mascara is None else int(np.count_nonzero(mascara)),
         situacao="ok" if mascara is not None else "descartada",
-        motivo_descarte=None if mascara is not None else "borrao",
+        motivo_descarte=None if mascara is not None else motivo,
         **kw,
     )
-    escrever_json(pasta.rotulos(partida, "pessoas") / nome, r)
+    escrever_json(pasta.rotulos(partida, "placas") / nome, r)
     return nome
 
 
 def gravar_revisao(
     pasta: Pasta, tarefa: str, quadro: str, rotulo: str, revisor: str, decisao="aprovar", minutos=0, versao=1, **kw
 ) -> None:
-    modelo = RevisaoPontos if tarefa == "pontos" else RevisaoPessoas
-    motivo = ("ponto_fora_do_lugar" if tarefa == "pontos" else "faltou_pessoa") if decisao == "devolver" else None
+    """Uma revisão; `quadro` é o item (o quadro nos pontos, o recorte nas placas)."""
+    modelo = RevisaoPontos if tarefa == "pontos" else RevisaoPlacas
+    motivo = ("ponto_fora_do_lugar" if tarefa == "pontos" else "faltou_pintar") if decisao == "devolver" else None
     escrever_json(
         pasta.revisoes(PARTIDA, tarefa) / nome_arquivo(quadro, revisor, versao),
         modelo(
             partida=PARTIDA,
-            quadro=quadro,
+            **{"quadro" if tarefa == "pontos" else "recorte": quadro},
             rotulo=rotulo,
             revisor=revisor,
             versao=versao,
             decisao=decisao,
             motivo=kw.pop("motivo", motivo),
-            ferramenta="0.9.0",
-            manual="revisao-0.3",
+            ferramenta="0.10.0",
+            manual="revisao-0.4",
             criado_em=AGORA + timedelta(minutes=minutos),
             segundos_ativos=4,
             **kw,

@@ -90,6 +90,7 @@ export function validarEsquema(esquema, valor) {
     }
     if (typeof v === "string") {
       if (s.minLength !== undefined && v.length < s.minLength) saida.push(`${caminhoTexto(caminho)}: não pode ser vazio`);
+      if (s.maxLength !== undefined && v.length > s.maxLength) saida.push(`${caminhoTexto(caminho)}: no máximo ${s.maxLength} caracteres`);
       if (s.pattern && !new RegExp(s.pattern, "u").test(v)) {
         saida.push(`${caminhoTexto(caminho)}: ${JSON.stringify(v)} fora do padrão`);
       }

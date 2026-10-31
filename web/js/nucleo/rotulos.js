@@ -1,6 +1,6 @@
-// Montar, validar e gravar os rótulos das duas tarefas (pontos e pessoas) e as revisões cruzadas.
+// Montar, validar e gravar os rótulos das duas tarefas (pontos e placas) e as revisões cruzadas.
 //
-// Nas pessoas, a máscara (PNG) é gravada antes do rótulo: o índice só lê um rótulo depois que a
+// Nas placas, a máscara (PNG) é gravada antes do rótulo: o índice só lê um rótulo depois que a
 // máscara dele existe, e, no outro computador, um rótulo que chegou antes da máscara espera por ela.
 
 import { MANUAL, VERSAO, mascaraDe, nomeArquivo } from "./convencoes.js";
@@ -8,9 +8,10 @@ import { arredondar } from "./estatistica.js";
 import { pendentesRevisao } from "./filas.js";
 import { TIPOS_DA_TAREFA, validar } from "./formatos.js";
 import { codificarPng } from "./png.js";
+import { foraDaRegiao, mascaraDaRegiao } from "./regiao.js";
 
-/** As cores da máscara das pessoas: 0 fundo, 1 pessoa (só para quem abre o PNG num visualizador). */
-export const PALETA_PESSOAS = Object.freeze([[0, 0, 0], [255, 64, 129]]);
+/** As cores da máscara das placas: 0 nada na frente, 1 algo cobre a placa (só para quem abre o PNG num visualizador). */
+export const PALETA_PLACAS = Object.freeze([[0, 0, 0], [255, 64, 129]]);
 
 /** O rótulo saiu da fila de revisão da pessoa (outra pessoa revisou, ou a fila mudou). */
 export class ForaDaFila extends Error {
@@ -30,18 +31,19 @@ export function contarPintados(mascara) {
 }
 
 /**
- * Monta e valida um rótulo (sem gravar). `dados` traz partida, quadro, largura, altura, partiu_de,
- * situacao ("ok" ou "descartada"), motivo_descarte, comentario e segundos_ativos; nos pontos, `pontos`
- * ([{ponto, x, y}], px da imagem); nas pessoas, `mascara` (Uint8Array, 1 onde há pessoa; null na
- * imagem descartada). `corrige` é opcional. Devolve {nome, rotulo, mascara}.
+ * Monta e valida um rótulo (sem gravar). `dados` traz partida, quadro (o item: nas placas, o recorte),
+ * largura, altura, partiu_de, situacao ("ok" ou "descartada"), motivo_descarte, comentario e
+ * segundos_ativos; nos pontos, `pontos` ([{ponto, x, y}], px da imagem); nas placas, `mascara`
+ * (Uint8Array, 1 onde algo cobre a placa; null no recorte descartado) e `regiao` (o polígono da placa:
+ * a máscara não pode ter nada fora dele). `corrige` é opcional. Devolve {nome, rotulo, mascara}.
  */
 export function montarRotulo(tarefa, pessoa, dados, { versao, agora = new Date() }) {
   const nome = nomeArquivo(dados.quadro, pessoa, versao);
   const descartada = dados.situacao === "descartada";
   const r = {
-    formato: tarefa === "pontos" ? "rotulo.pontos/1" : "rotulo.pessoas/1",
+    formato: tarefa === "pontos" ? "rotulo.pontos/1" : "rotulo.placas/1",
     partida: dados.partida,
-    quadro: dados.quadro,
+    [TIPOS_DA_TAREFA[tarefa].campo]: dados.quadro,
     anotador: pessoa,
     versao,
     ferramenta: VERSAO,
@@ -61,7 +63,10 @@ export function montarRotulo(tarefa, pessoa, dados, { versao, agora = new Date()
     r.pontos = descartada ? [] : (dados.pontos || []).map((p) => ({ ponto: p.ponto, x: arredondar(p.x, 2), y: arredondar(p.y, 2) }));
   } else {
     mascara = descartada ? null : Uint8Array.from(dados.mascara, (v) => (v ? 1 : 0));
-    if (mascara && mascara.length !== dados.largura * dados.altura) throw new Error("a máscara não tem o tamanho da imagem");
+    if (mascara && mascara.length !== dados.largura * dados.altura) throw new Error("a máscara não tem o tamanho do recorte");
+    if (mascara && dados.regiao && foraDaRegiao(mascara, mascaraDaRegiao(dados.regiao, dados.largura, dados.altura))) {
+      throw new Error("a pintura saiu da região da placa");
+    }
     r.mascara = mascara ? mascaraDe(nome) : null;
     r.pixels = mascara ? contarPintados(mascara) : 0;
   }
@@ -74,16 +79,16 @@ export async function salvarRotulo(indice, tarefa, pessoa, dados, { agora = new 
   const dir = pasta.rotulos(dados.partida, tarefa);
   const versao = await pasta.proximaVersao(dir, dados.quadro, pessoa);
   const { nome, rotulo, mascara } = montarRotulo(tarefa, pessoa, dados, { versao, agora });
-  if (mascara) await pasta.escrever(`${dir}/${rotulo.mascara}`, await codificarPng(mascara, rotulo.largura, rotulo.altura, PALETA_PESSOAS));
+  if (mascara) await pasta.escrever(`${dir}/${rotulo.mascara}`, await codificarPng(mascara, rotulo.largura, rotulo.altura, PALETA_PLACAS));
   await pasta.escreverJson(`${dir}/${nome}`, rotulo);
   return { nome, caminho: `${dir}/${nome}`, rotulo, mascara };
 }
 
 function montarRevisao(tarefa, arquivo, pessoa, versao, { decisao, motivo, comentario, segundos_ativos }, nova, agora) {
   return {
-    formato: tarefa === "pontos" ? "revisao.pontos/1" : "revisao.pessoas/1",
+    formato: tarefa === "pontos" ? "revisao.pontos/1" : "revisao.placas/1",
     partida: arquivo.partida,
-    quadro: arquivo.quadro,
+    [TIPOS_DA_TAREFA[tarefa].campo]: arquivo.quadro,
     rotulo: arquivo.nome,
     revisor: pessoa,
     versao,
@@ -101,7 +106,8 @@ function montarRevisao(tarefa, arquivo, pessoa, versao, { decisao, motivo, comen
 /**
  * Grava a decisão da revisão cruzada sobre `arquivo` (o rótulo revisado). Ao corrigir, grava antes a
  * correção como rótulo novo de quem revisa, apontando o corrigido em `corrige`; `decisao.correcao`
- * traz o que muda (os pontos ou a máscara, a situação, o motivo do descarte e o comentário).
+ * traz o que muda (os pontos ou a máscara — com a região da placa —, a situação, o motivo do
+ * descarte e o comentário).
  */
 export async function salvarRevisao(indice, tarefa, pessoa, arquivo, decisao, { agora = new Date() } = {}) {
   const pasta = indice.pasta;
@@ -124,7 +130,7 @@ export async function salvarRevisao(indice, tarefa, pessoa, arquivo, decisao, { 
       {
         ...c,
         partida: r.partida,
-        quadro: r.quadro,
+        quadro: arquivo.quadro,
         largura: r.largura,
         altura: r.altura,
         partiu_de: { fonte: "rotulo_revisado", referencia: arquivo.nome },
