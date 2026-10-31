@@ -55,7 +55,7 @@ export async function montar(raiz, ctx) {
       st.replaceChildren(Object.assign(document.createElement("b"), { className: "res bom", textContent: "Liberado" }), ` — ${sit.acertos} certos nos últimos ${nItens}. ${sit.gabarito_faltam} item(ns) do gabarito ainda não feitos: eles aparecem escondidos no meio das imagens reais.`);
       botao.textContent = "Treinar mais";
     } else {
-      st.replaceChildren(Object.assign(document.createElement("b"), { className: "res medio", textContent: "Em teste" }), ` — ${sit.n} feito(s), ${sit.acertos} certo(s) nos últimos ${sit.ultimos}; a meta é ${regra.meta}. ${sit.gabarito_faltam ? `${sit.gabarito_faltam} item(ns) para fazer.` : "O gabarito acabou: fale com quem coordena."}`);
+      st.replaceChildren(Object.assign(document.createElement("b"), { className: "res medio", textContent: "Em teste" }), ` — ${sit.n ? `${sit.n} feito(s), ${sit.acertos} certo(s) nos últimos ${sit.ultimos}` : "nenhum item feito ainda"}; a meta é ${regra.meta}. ${sit.gabarito_faltam ? `${sit.gabarito_faltam} item(ns) para fazer.` : "O gabarito acabou: fale com quem coordena."}`);
       botao.textContent = sit.n ? "Continuar o teste" : "Fazer o teste";
     }
   }

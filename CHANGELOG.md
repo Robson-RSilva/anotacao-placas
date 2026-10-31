@@ -58,6 +58,8 @@ pinta o que está na frente dela (ADR-0012).
 
 - No resultado do teste, a legenda das cores (certo, faltou, a mais) só aparece na vista do resultado,
   não na da resposta nem na da própria pintura.
+- Na página do gabarito, quem ainda não fez nenhum item do teste vê “nenhum item feito ainda”, e não
+  “0 feito(s), 0 certo(s) nos últimos 0”.
 
 ## [0.9.0] - 2026-10-30
 
