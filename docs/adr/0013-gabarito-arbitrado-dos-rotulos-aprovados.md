@@ -17,8 +17,9 @@ que continuam valendo.
 
 ## Decisão
 
-- **`anotacao ouro --pasta P`** monta um .zip de lote de ouro, no formato dos do simulador, com os
-  itens aprovados (a regra do `unificar`) que já não vão mudar: todo rótulo do item revisado e, na
+- **O botão "Gerar lote de ouro (.zip)", na central** (desde a 0.12; na 0.11, só o
+  `anotacao ouro --pasta P`, que continua montando os mesmos itens) monta um .zip de lote de ouro, no
+  formato dos do simulador, e o baixa, com os itens aprovados (a regra do `unificar`) que já não vão mudar: todo rótulo do item revisado e, na
   dupla às cegas, as duas pessoas já anotaram. Nos pontos, a resposta são os pontos do rótulo aprovado
   — os rentes à borda (a menos de 3 px, ref. 960) ficam opcionais, como no simulador. Nas placas, a
   máscara aprovada, com cada pedaço pintado (vizinhos em 8 direções) como uma coisa na frente da placa;
@@ -30,12 +31,15 @@ que continuam valendo.
 - **Rodadas, sem repetir.** O registro `conjuntos/ouro-reais.json` guarda o que já foi para algum lote
   e o id de cada item. Cada rodada leva só o que é novo, em lotes novos (`PR<n>` nos pontos, `PLR<n>`
   nas placas), com ids sequenciais em faixas próprias (g5001–g5999 e g6001–g6999), na ordem da
-  aprovação. Um id nunca é reusado, então importar os .zip em qualquer ordem, ou duas vezes, não cria
-  conflito. Sem nada novo, a rodada não grava nada.
+  aprovação. Um id nunca é reusado — os do gabarito da pasta também contam —, então importar os .zip em
+  qualquer ordem, ou duas vezes, não cria conflito. Sem nada novo, a rodada não grava nada.
 - **Treino e escondidos por sorteio fixo:** um em cada três itens vai para o lote de treino
   (`…-treino`), os outros para o de controle, pelo hash do item — o mesmo item sempre no mesmo lado.
-- **O .zip não entra sozinho no gabarito:** fica em `conjuntos/`, e quem coordena importa pela página
-  do gabarito quando quiser usá-lo.
+- **O .zip não entra sozinho no gabarito:** é baixado e fica também em `conjuntos/`, e quem coordena
+  importa pela página do gabarito quando quiser usá-lo.
+- **Duas implementações, os mesmos itens.** A página (`web/js/nucleo/ouro.js`) e o Python
+  (`src/anotacao/ouro.py`) seguem as mesmas regras e o mesmo registro; o e2e gera o lote pelo botão e
+  pelo Python na mesma pasta e compara item a item.
 
 ## Consequências
 
@@ -47,5 +51,7 @@ que continuam valendo.
   necessários para isso e para os casos raros.
 - Numa equipe pequena, quase toda imagem tem as mesmas pessoas em `fora_de`: o gabarito arbitrado
   mede sobretudo quem chega depois.
+- O registro é um arquivo só, que cada rodada reescreve: duas pessoas gerando ao mesmo tempo, em
+  computadores diferentes, criariam a mesma rodada. Gerar é coisa de quem coordena, uma pessoa por vez.
 - Fica para depois: só aceitar itens em que as duas pessoas da dupla concordam, com uma terceira para
   decidir quando divergem.

@@ -233,14 +233,16 @@ partida é recusado, e nada é sobrescrito.
 ## O gabarito
 
 Itens com a resposta verdadeira — do simulador (`origem: "simulador"`, os lotes de ouro) ou de
-rótulos reais já aprovados na revisão (`"arbitrado"`, os lotes de `anotacao ouro`). `lote` diz de que
+rótulos reais já aprovados na revisão (`"arbitrado"`, os lotes do botão "Gerar lote de ouro" da
+central, ou de `anotacao ouro`). `lote` diz de que
 lote o item veio: o teste de quem começa usa primeiro os lotes com "treino" no nome, e os itens
 escondidos na fila, primeiro os outros. `fora_de` (opcional, vazio por padrão) lista quem não recebe
 o item — num item arbitrado, quem anotou, revisou ou corrigiu a imagem de onde ele veio; para essa
 pessoa, é como se o item não existisse. Os rótulos do gabarito ficam em `gabarito/rotulos/<tarefa>/` e
 nunca entram no treino.
 
-**O gabarito arbitrado** (`anotacao ouro`, ADR-0013): cada item aprovado na revisão (a regra do
+**O gabarito arbitrado** (o botão da central ou `anotacao ouro`, que montam os mesmos itens;
+ADR-0013): cada item aprovado na revisão (a regra do
 `unificar`) e assentado — todo rótulo dele já revisado e, na dupla às cegas, as duas pessoas já
 anotaram — vira um item. Nos pontos, os pontos do rótulo aprovado, os rentes à borda (a menos de 3 px,
 ref. 960) como opcionais; nas placas, a máscara aprovada com cada pedaço pintado como uma coisa na
@@ -250,7 +252,8 @@ vêm de faixas próprias — pontos em g5001 a g5999, placas em g6001 a g6999 �
 `conjuntos/ouro-reais.json` guarda o que já foi para algum lote (`<partida>/<item>` → id) e cada
 rodada: uma rodada nova leva só o que é novo, em lotes novos (`PR<n>-treino` e `PR<n>-controle`;
 `PLR<n>-treino` e `PLR<n>-controle`), um em cada três itens no treino por um sorteio fixo pelo item.
-Não apague o registro: sem ele, os ids recomeçam e os itens novos colidem com os já importados.
+Os ids continuam do maior já usado, no registro ou no gabarito da pasta. Não apague o registro: sem
+ele, as imagens que já viraram itens viram itens de novo, com outros ids.
 
 ### `gabarito.pontos/1`
 

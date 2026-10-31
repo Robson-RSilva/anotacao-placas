@@ -279,3 +279,45 @@ def gravar_revisao(
             **kw,
         ),
     )
+
+
+def cenario_ouro(pasta: Pasta):
+    """O cenário dos lotes de ouro das imagens aprovadas (tests/test_ouro.py e, no e2e, o botão da
+    central; tests/js/ouro.test.js monta o mesmo). Pontos: aprovado (com um ponto rente à borda), dupla
+    com a segunda pessoa ainda sem revisão, devolvido, descartado e aprovado, corrigido na revisão e sem
+    revisão. Placas: pintado com duas coisas na frente, sem nada na frente, descartado como fora do
+    lugar e descartado por borrão. Devolve (quadros, recortes, recorte -> {item, verdade, imagem}, os
+    nomes dos rótulos que ainda esperam revisão)."""
+    fila = criar_partida(pasta, [{}, {"dupla": True}, {}, {}, {}, {}])
+    q = [it.quadro for it in fila.itens]
+    n0 = gravar_pontos(pasta, q[0], "A01", {"centro": (320.0, 180.0), "canto_esq_cab": (1.0, 200.0)})
+    gravar_revisao(pasta, "pontos", q[0], n0, "A02", minutos=10)
+    n1 = gravar_pontos(pasta, q[1], "A01", {"centro": (321.0, 181.0)})
+    gravar_revisao(pasta, "pontos", q[1], n1, "A03", minutos=20)
+    n1b = gravar_pontos(pasta, q[1], "A02", {"centro": (320.5, 180.5)}, minutos=5)
+    n2 = gravar_pontos(pasta, q[2], "A01", {"centro": (300.0, 100.0)})
+    gravar_revisao(pasta, "pontos", q[2], n2, "A02", decisao="devolver")
+    n3 = gravar_pontos(pasta, q[3], "A01", None)
+    gravar_revisao(pasta, "pontos", q[3], n3, "A02")
+    n4 = gravar_pontos(pasta, q[4], "A01", {"centro": (310.0, 170.0)})
+    gravar_pontos(pasta, q[4], "A02", {"centro": (312.0, 171.0)}, minutos=25, corrige=n4)
+    gravar_revisao(
+        pasta, "pontos", q[4], n4, "A02", decisao="corrigir", nova_versao=nome_arquivo(q[4], "A02", 1), minutos=25
+    )
+    n5 = gravar_pontos(pasta, q[5], "A01", {"centro": (330.0, 190.0)})
+
+    rec = criar_recortes(pasta, 4)
+    r = list(rec)
+    h, w = rec[r[0]]["verdade"].shape
+    m = np.zeros((h, w), np.uint8)
+    m[30:40, 150:170] = 1  # a da direita
+    m[30:40, 40:60] = 1  # a da esquerda
+    p0 = gravar_placas(pasta, r[0], "A01", m)
+    gravar_revisao(pasta, "placas", r[0], p0, "A02", minutos=1)
+    p1 = gravar_placas(pasta, r[1], "A01", np.zeros((h, w), np.uint8))
+    gravar_revisao(pasta, "placas", r[1], p1, "A02", minutos=2)
+    p2 = gravar_placas(pasta, r[2], "A01", None, motivo="placa_fora_do_lugar", tamanho=(h, w))
+    gravar_revisao(pasta, "placas", r[2], p2, "A02", minutos=3)
+    p3 = gravar_placas(pasta, r[3], "A01", None, motivo="borrao", tamanho=(h, w))
+    gravar_revisao(pasta, "placas", r[3], p3, "A02", minutos=4)
+    return q, r, rec, {"n1b": n1b, "n5": n5}

@@ -162,13 +162,15 @@ e [ADR-0012](docs/adr/0012-pintar-a-oclusao-no-recorte-da-placa.md)). Os lotes d
 da 0.9 (J1, J2, PE1 e PE2: g2xxx e g3xxx) não valem mais: a página não os usa, mesmo que estejam na
 pasta.
 
-**Lotes de ouro das imagens reais.** `anotacao ouro --pasta P` monta um lote com o que a equipe já
-anotou e foi aprovado na revisão — o gabarito arbitrado ([ADR-0013](docs/adr/0013-gabarito-arbitrado-dos-rotulos-aprovados.md)):
-cada rodada grava `conjuntos/ouro-reais-<n>.zip` só com os itens que ainda não foram para nenhum lote,
-um em cada três no treino (`PR<n>-treino` nos pontos, `PLR<n>-treino` nas placas) e os outros nos
-escondidos (`PR<n>-controle`, `PLR<n>-controle`). Ele entra pela página do gabarito como os do
-simulador, quando você quiser. Cada item nunca vai para quem trabalhou nele (quem anotou, revisou ou
-corrigiu a imagem), então ele serve sobretudo para medir quem chega depois.
+**Lotes de ouro das imagens reais.** O botão **Gerar lote de ouro (.zip)**, no cartão do gabarito da
+central, monta um lote com o que a equipe já anotou e foi aprovado na revisão — o gabarito arbitrado
+([ADR-0013](docs/adr/0013-gabarito-arbitrado-dos-rotulos-aprovados.md)) — e baixa o .zip, que fica
+também na pasta, em `conjuntos/ouro-reais-<n>.zip`. Cada clique leva só os itens que ainda não foram
+para nenhum lote, um em cada três no treino (`PR<n>-treino` nos pontos, `PLR<n>-treino` nas placas) e
+os outros nos escondidos (`PR<n>-controle`, `PLR<n>-controle`); sem nada novo, a página avisa e não
+grava nada. O lote entra pela página do gabarito como os do simulador, quando você quiser. Cada item
+nunca vai para quem trabalhou nele (quem anotou, revisou ou corrigiu a imagem), então ele serve
+sobretudo para medir quem chega depois. No Python, `anotacao ouro --pasta P` faz o mesmo.
 
 ## O placar
 
@@ -219,7 +221,7 @@ anotacao prever --tarefa pontos --pasta P --previsor pacote.modulo:objeto      #
 anotacao prever --tarefa placas --pasta P --previsor pacote.modulo:objeto      # pré-pintura das placas
 anotacao validar --pasta P                  # confere todos os arquivos
 anotacao unificar --pasta P                 # gera os conjuntos de treino
-anotacao ouro --pasta P                     # um lote de ouro com os itens aprovados (gabarito arbitrado)
+anotacao ouro --pasta P                     # um lote de ouro com os itens aprovados (o botão da central)
 anotacao esquemas DESTINO                   # exporta os JSON Schemas
 ```
 

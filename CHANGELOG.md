@@ -5,6 +5,26 @@ Formato de [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); versões
 
 ## [Não lançado]
 
+## [0.12.0] - 2026-10-31
+
+O lote de ouro das imagens reais sai de um botão da página, sem comando.
+
+### Adicionado
+
+- **Gerar lote de ouro (.zip)**, no cartão do gabarito da central: monta o lote de ouro com as imagens
+  aprovadas que ainda não foram para nenhum lote — os mesmos itens do `anotacao ouro` —, guarda em
+  `conjuntos/ouro-reais-<n>.zip` com o registro e baixa o .zip; diz quantos itens entraram, de cada
+  tarefa, e quantos ficaram de fora (esperando revisão, descartados…). Sem nada novo, avisa e não
+  grava nada.
+
+### Mudado
+
+- Os ids de uma rodada continuam também dos que já estão no gabarito da pasta, e não só dos do
+  registro: com o registro perdido, as imagens podem virar itens de novo, mas os ids nunca colidem.
+- Um `ouro-reais-<n>.zip` que sobrou de uma gravação interrompida (sem a rodada no registro) é trocado,
+  em vez de travar as rodadas seguintes; um item que não passasse na validação fica de fora em vez de
+  parar a rodada.
+
 ## [0.11.0] - 2026-10-31
 
 Lotes de ouro tirados das imagens reais: o que a equipe anota e aprova vira gabarito (ADR-0013).

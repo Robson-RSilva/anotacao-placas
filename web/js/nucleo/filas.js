@@ -46,26 +46,35 @@ export function quemAnotou(ip, quadro) {
 export const precisam = (item) => (item.dupla ? 2 : 1);
 
 /**
- * O rótulo aprovado do quadro (o aprovado primeiro na revisão, ou a correção de quem revisou), ou
- * null — a regra do `unificar`.
+ * O rótulo aprovado primeiro do quadro, com quando (ms), quem aprovou e como: {quando, a, revisor,
+ * decisao: "aprovar" | "corrigir"}, ou null — a regra do `unificar` (`aprovado` em
+ * src/anotacao/unificar.py). A correção de quem revisou conta como aprovada quando foi gravada; um
+ * rótulo aprovado, quando a revisão foi gravada. Empate: o primeiro por (pessoa, versão).
  */
-export function rotuloAprovado(ip, quadro) {
+export function aprovado(ip, quadro) {
   const candidatos = ip.rotulos
     .filter((a) => a.quadro === quadro)
     .sort((x, y) => (x.pessoa < y.pessoa ? -1 : x.pessoa > y.pessoa ? 1 : x.versao - y.versao));
   let melhor = null;
   for (const a of candidatos) {
     let quando;
+    let revisor;
+    let decisao;
     if (a.dados.corrige !== null) {
-      quando = ms(a.dados.criado_em);
+      [quando, revisor, decisao] = [ms(a.dados.criado_em), a.pessoa, "corrigir"];
     } else {
       const rev = ip.ultimaRevisao(a.nome);
       if (rev?.decisao !== "aprovar") continue;
-      quando = ms(rev.criado_em);
+      [quando, revisor, decisao] = [ms(rev.criado_em), rev.revisor, "aprovar"];
     }
-    if (!melhor || quando < melhor.quando) melhor = { quando, a };
+    if (!melhor || quando < melhor.quando) melhor = { quando, a, revisor, decisao };
   }
-  return melhor ? melhor.a : null;
+  return melhor;
+}
+
+/** O rótulo aprovado do quadro (o aprovado primeiro na revisão, ou a correção de quem revisou), ou null. */
+export function rotuloAprovado(ip, quadro) {
+  return aprovado(ip, quadro)?.a ?? null;
 }
 
 /** Liberação da pessoa para as imagens reais da tarefa, e o resultado dela no gabarito. */

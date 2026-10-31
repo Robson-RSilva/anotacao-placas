@@ -62,7 +62,8 @@ passa.
   gabarito. Lotes novos saem de `scripts/lotes_de_ouro.py`, com faixas de id que não se sobrepõem às
   dos lotes já entregues (nem às de lotes que não valem mais, como os g2xxx e g3xxx da pintura da 0.8 e
   da 0.9: um item com o id de outro que já está na pasta não é importado). As faixas g5xxx e g6xxx são
-  do gabarito arbitrado (`anotacao ouro`).
+  do gabarito arbitrado: o botão da central (`web/js/nucleo/ouro.js`) e o `anotacao ouro`
+  (`src/anotacao/ouro.py`) montam os mesmos itens — mudou um, mude o outro (o e2e compara os dois).
 - **Nunca dados no Git.** Vídeos, quadros, rótulos e conjuntos ficam na pasta de trabalho do Drive.
   Os únicos vídeos do repositório são os de teste, de poucos KB, em `tests/fixtures/video/`.
 - **Manual junto.** Regra de anotação nova vai primeiro para o Manual de anotação, com versão; a

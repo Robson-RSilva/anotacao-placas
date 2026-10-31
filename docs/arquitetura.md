@@ -98,7 +98,7 @@ GitHub Pages (site estático)          navegador de cada pessoa                 
 | `gabarito.py`, `previsores.py` | importar o gabarito (conferindo a máscara verdadeira); os pontos e a pré-pintura de um modelo |
 | `mascara.py` | o PNG de índices e o polígono em pixels, os mesmos das páginas |
 | `unificar.py` | conjuntos de treino em Parquet (pontos e placas) |
-| `ouro.py` | o gabarito arbitrado: lotes de ouro tirados dos rótulos aprovados, rodada a rodada |
+| `ouro.py` | o gabarito arbitrado: lotes de ouro tirados dos rótulos aprovados, rodada a rodada (o mesmo que `web/js/nucleo/ouro.js`, o botão da central) |
 | `geracao.py` | arquivos que as páginas leem e saem do Python (esquemas, convenções, PNGs de teste) |
 | `cli.py` | linha de comando |
 

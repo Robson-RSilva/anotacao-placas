@@ -6,55 +6,14 @@ from __future__ import annotations
 import shutil
 import zipfile
 
-import numpy as np
-
 from anotacao.cli import main
 from anotacao.formatos import GabaritoPlacas, GabaritoPontos
 from anotacao.gabarito import importar
 from anotacao.mascara import ler_png
 from anotacao.ouro import gerar_lote_real, ler_registro
-from anotacao.pasta import Pasta, nome_arquivo
+from anotacao.pasta import Pasta
 
-from conftest import AGORA, PARTIDA, criar_partida, criar_recortes, gravar_placas, gravar_pontos, gravar_revisao
-
-
-def _cenario(pasta):
-    """Pontos: aprovado (com um ponto rente à borda), dupla com a segunda pessoa ainda sem revisão,
-    devolvido, descartado e aprovado, corrigido na revisão e sem revisão. Placas: pintado com duas
-    coisas na frente, sem nada na frente, descartado como fora do lugar e descartado por borrão."""
-    fila = criar_partida(pasta, [{}, {"dupla": True}, {}, {}, {}, {}])
-    q = [it.quadro for it in fila.itens]
-    n0 = gravar_pontos(pasta, q[0], "A01", {"centro": (320.0, 180.0), "canto_esq_cab": (1.0, 200.0)})
-    gravar_revisao(pasta, "pontos", q[0], n0, "A02", minutos=10)
-    n1 = gravar_pontos(pasta, q[1], "A01", {"centro": (321.0, 181.0)})
-    gravar_revisao(pasta, "pontos", q[1], n1, "A03", minutos=20)
-    n1b = gravar_pontos(pasta, q[1], "A02", {"centro": (320.5, 180.5)}, minutos=5)
-    n2 = gravar_pontos(pasta, q[2], "A01", {"centro": (300.0, 100.0)})
-    gravar_revisao(pasta, "pontos", q[2], n2, "A02", decisao="devolver")
-    n3 = gravar_pontos(pasta, q[3], "A01", None)
-    gravar_revisao(pasta, "pontos", q[3], n3, "A02")
-    n4 = gravar_pontos(pasta, q[4], "A01", {"centro": (310.0, 170.0)})
-    gravar_pontos(pasta, q[4], "A02", {"centro": (312.0, 171.0)}, minutos=25, corrige=n4)
-    gravar_revisao(
-        pasta, "pontos", q[4], n4, "A02", decisao="corrigir", nova_versao=nome_arquivo(q[4], "A02", 1), minutos=25
-    )
-    n5 = gravar_pontos(pasta, q[5], "A01", {"centro": (330.0, 190.0)})
-
-    rec = criar_recortes(pasta, 4)
-    r = list(rec)
-    h, w = rec[r[0]]["verdade"].shape
-    m = np.zeros((h, w), np.uint8)
-    m[30:40, 150:170] = 1  # a da direita
-    m[30:40, 40:60] = 1  # a da esquerda
-    p0 = gravar_placas(pasta, r[0], "A01", m)
-    gravar_revisao(pasta, "placas", r[0], p0, "A02", minutos=1)
-    p1 = gravar_placas(pasta, r[1], "A01", np.zeros((h, w), np.uint8))
-    gravar_revisao(pasta, "placas", r[1], p1, "A02", minutos=2)
-    p2 = gravar_placas(pasta, r[2], "A01", None, motivo="placa_fora_do_lugar", tamanho=(h, w))
-    gravar_revisao(pasta, "placas", r[2], p2, "A02", minutos=3)
-    p3 = gravar_placas(pasta, r[3], "A01", None, motivo="borrao", tamanho=(h, w))
-    gravar_revisao(pasta, "placas", r[3], p3, "A02", minutos=4)
-    return q, r, rec, {"n1b": n1b, "n5": n5}
+from conftest import AGORA, PARTIDA, cenario_ouro, gravar_revisao
 
 
 def _itens(arquivo):
@@ -65,7 +24,7 @@ def _itens(arquivo):
 
 
 def test_os_aprovados_viram_lotes_de_ouro(pasta):
-    q, r, rec, _ = _cenario(pasta)
+    q, r, rec, _ = cenario_ouro(pasta)
     rodada = gerar_lote_real(pasta, agora=AGORA)
     assert rodada.arquivo == pasta.conjuntos / "ouro-reais-1.zip"
     _, jsons, binarios = _itens(rodada.arquivo)
@@ -108,7 +67,7 @@ def test_os_aprovados_viram_lotes_de_ouro(pasta):
 
 
 def test_cada_rodada_leva_so_o_que_e_novo(pasta):
-    q, _, _, nomes = _cenario(pasta)
+    q, _, _, nomes = cenario_ouro(pasta)
     gerar_lote_real(pasta, agora=AGORA)
     # sem nada novo, nada se grava
     nada = gerar_lote_real(pasta, agora=AGORA)
@@ -127,15 +86,29 @@ def test_cada_rodada_leva_so_o_que_e_novo(pasta):
 
 
 def test_o_mesmo_conteudo_da_os_mesmos_bytes(pasta, tmp_path):
-    _cenario(pasta)
+    cenario_ouro(pasta)
     copia = Pasta(shutil.copytree(pasta.raiz, tmp_path / "copia"))
     a = gerar_lote_real(pasta, agora=AGORA)
     b = gerar_lote_real(copia, agora=AGORA)
     assert a.arquivo.read_bytes() == b.arquivo.read_bytes()
 
 
+def test_os_ids_nunca_repetem_os_do_gabarito_da_pasta(pasta, tmp_path):
+    cenario_ouro(pasta)
+    rodada = gerar_lote_real(pasta, agora=AGORA)
+    destino = tmp_path / "extraido"
+    with zipfile.ZipFile(rodada.arquivo) as z:
+        z.extractall(destino)
+    importar(pasta, destino / "gabarito" / "itens")
+    (pasta.conjuntos / "ouro-reais.json").unlink()  # o registro se perdeu
+    de_novo = gerar_lote_real(pasta, agora=AGORA)
+    assert de_novo.arquivo == pasta.conjuntos / "ouro-reais-1.zip"  # o .zip que sobrou é trocado
+    _, jsons, _ = _itens(de_novo.arquivo)
+    assert sorted(jsons) == ["g5003", "g5004", "g6004", "g6005", "g6006"]  # repete as imagens, nunca os ids
+
+
 def test_o_lote_entra_no_gabarito_e_passa_no_validar(pasta, tmp_path, capsys):
-    _cenario(pasta)
+    cenario_ouro(pasta)
     assert main(["ouro", "--pasta", str(pasta.raiz)]) == 0
     saida = capsys.readouterr().out
     assert "rodada 1, 5 itens" in saida and "fora desta vez: 1 descartados" in saida

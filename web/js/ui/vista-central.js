@@ -3,6 +3,7 @@
 import { codigoPessoa } from "../nucleo/convencoes.js";
 import { pendentesRevisao, situacao } from "../nucleo/filas.js";
 import { REGRA } from "../nucleo/gabarito.js";
+import { FORA, gerarLoteReal } from "../nucleo/ouro.js";
 import { calcularPlacar } from "../nucleo/placar.js";
 import { exportarZip, importarZip, soDaPessoa } from "../nucleo/transferencia.js";
 import { espaco } from "./armazenamento.js";
@@ -10,6 +11,24 @@ import { baixar, carimbo, celula, el, formatarDuracao, linhaVazia, local, mensag
 import { vigiar } from "./vigia.js";
 
 const porcento = (a, b) => (b ? `${a} (${Math.round((100 * a) / b)}%)` : String(a));
+
+/** O que ficou fora do lote de ouro, em poucas palavras ("Ficaram de fora: 1 esperando revisão, 2 descartados."). */
+const MOTIVO_CURTO = new Map([
+  [FORA.esperando, "esperando revisão"],
+  [FORA.descartados, "descartados"],
+  [FORA.outroDescarte, "descartados"],
+  [FORA.semImagem, "sem a imagem"],
+  [FORA.mascara, "com a máscara estragada"],
+  [FORA.demais, "com coisas demais na frente da placa"],
+]);
+function textoDeFora(fora) {
+  const soma = new Map();
+  for (const [motivo, n] of Object.entries(fora)) {
+    const curto = MOTIVO_CURTO.get(motivo) ?? motivo;
+    soma.set(curto, (soma.get(curto) ?? 0) + n);
+  }
+  return soma.size ? ` Ficaram de fora: ${[...soma].map(([motivo, n]) => `${n} ${motivo}`).join(", ")}.` : "";
+}
 
 export async function montar(raiz, ctx) {
   const { pasta, indice } = ctx;
@@ -307,6 +326,37 @@ export async function montar(raiz, ctx) {
   const atualizar = () => Promise.allSettled([atualizarSituacao(), preencherTabelas(), conferirCodigo()]);
   atualizar();
   const vigia = vigiar(ctx, () => true, atualizar);
+
+  // ------------------------------------------------------------------ lote de ouro das imagens aprovadas
+  // as imagens aprovadas que ainda não foram para nenhum lote viram um lote de ouro novo (o mesmo que o
+  // `anotacao ouro`): o .zip fica na pasta, em conjuntos/, e é baixado; para usar, importa-se pela
+  // página do gabarito
+  $("gerar-ouro").onclick = async () => {
+    const botao = $("gerar-ouro");
+    const mostrar = (t) => {
+      $("res-ouro").textContent = t;
+    };
+    botao.disabled = true;
+    mostrar("procurando as imagens aprovadas…");
+    try {
+      const r = await gerarLoteReal(indice);
+      const deFora = textoDeFora(r.fora);
+      if (!r.arquivo) {
+        mostrar(`Nada novo: nenhuma imagem aprovada (e já revisada de vez) que ainda não foi para um lote de ouro.${deFora}`);
+        return;
+      }
+      baixar(r.blob, r.nome);
+      const partes = [];
+      if (r.porTarefa.pontos) partes.push(`${r.porTarefa.pontos} dos pontos`);
+      if (r.porTarefa.placas) partes.push(`${r.porTarefa.placas} das placas`);
+      const onde = ctx.modo === "navegador" ? "" : "; fica também na pasta, em conjuntos/";
+      mostrar(`${r.nome} baixado, com ${r.itens} ${r.itens === 1 ? "item" : "itens"} (${partes.join(" e ")})${onde}. Para usar, importe pela página do gabarito.${deFora}`);
+    } catch (e) {
+      mostrar(mensagemDeErro(e));
+    } finally {
+      botao.disabled = false;
+    }
+  };
 
   // ------------------------------------------------------------------ pasta de trabalho
   if (ctx.modo === "navegador") {

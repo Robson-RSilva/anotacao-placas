@@ -1,4 +1,6 @@
-"""Lotes de ouro tirados do que a equipe já anotou: o gabarito arbitrado.
+"""Lotes de ouro tirados do que a equipe já anotou: o gabarito arbitrado — o mesmo que o botão "Gerar
+lote de ouro (.zip)" da página central faz (`web/js/nucleo/ouro.js`; tests/e2e confere que os dois
+montam os mesmos itens da mesma pasta).
 
 Cada item aprovado na revisão (a regra do `unificar`) vira um item do gabarito com `origem:
 "arbitrado"`, num .zip que entra pela página do gabarito ("Importar lote de ouro (.zip)") como os do
@@ -17,8 +19,8 @@ escondidos, por um sorteio fixo pelo item.
 
 Cada rodada leva só o que ainda não foi para nenhum lote: o registro `conjuntos/ouro-reais.json` guarda
 o que já foi, com o id de cada item. Assim cada .zip é um lote novo (PR1, PR2... nos pontos; PLR1,
-PLR2... nas placas), os ids nunca se repetem (pontos em g5001 a g5999, placas em g6001 a g6999) e
-importar um .zip de novo não muda nada.
+PLR2... nas placas), os ids nunca se repetem (pontos em g5001 a g5999, placas em g6001 a g6999; os que
+já estão no gabarito da pasta também contam) e importar um .zip de novo não muda nada.
 """
 
 from __future__ import annotations
@@ -32,6 +34,7 @@ from pathlib import Path
 
 import cv2
 import numpy as np
+from pydantic import ValidationError
 
 from .convencoes import REF_W
 from .formatos import GabaritoPlacas, GabaritoPontos, PontoVerdadeiro
@@ -100,12 +103,15 @@ def _observacao(chave: str, a, revisor: str, decisao: str) -> str:
     return f"rótulo real: {chave}, {a.nome}, {como} por {revisor}"
 
 
-def _candidatos_pontos(pasta: Pasta, indice: Indice, pid: str, fora: Counter) -> list[_Candidato]:
+def _candidatos_pontos(pasta: Pasta, indice: Indice, pid: str, registrados: dict, fora: Counter) -> list[_Candidato]:
     ip = indice.partida(pid, "pontos")
     ler = lambda a: indice.rotulo(a, "pontos")  # noqa: E731
     out = []
     for item in indice.fila(pid).itens:
         q = item.quadro
+        chave = f"{pid}/{q}"
+        if chave in registrados:  # já foi para um lote
+            continue
         escolhido = aprovado(ip, q, ler)
         if escolhido is None:
             continue
@@ -121,7 +127,6 @@ def _candidatos_pontos(pasta: Pasta, indice: Indice, pid: str, fora: Counter) ->
         if (tamanho_jpeg(jpg) if jpg else None) != (r.largura, r.altura):
             fora["sem a imagem (ou de outro tamanho)"] += 1
             continue
-        chave = f"{pid}/{q}"
         dados = {
             "rotulo": r,
             "observacao": _observacao(chave, a, revisor, decisao),
@@ -163,12 +168,15 @@ def _numerar(m: np.ndarray) -> tuple[np.ndarray, int]:
     return verdade, n - 1
 
 
-def _candidatos_placas(pasta: Pasta, indice: Indice, pid: str, fora: Counter) -> list[_Candidato]:
+def _candidatos_placas(pasta: Pasta, indice: Indice, pid: str, registrados: dict, fora: Counter) -> list[_Candidato]:
     rec = indice.recortes(pid)
     ip = indice.partida(pid, "placas")
     ler = lambda a: indice.rotulo(a, "placas")  # noqa: E731
     out = []
     for recorte, (_, it) in rec.itens.items():
+        chave = f"{pid}/{recorte}"
+        if chave in registrados:
+            continue
         escolhido = aprovado(ip, recorte, ler)
         if escolhido is None:
             continue
@@ -198,7 +206,6 @@ def _candidatos_placas(pasta: Pasta, indice: Indice, pid: str, fora: Counter) ->
             if n > 255:
                 fora["coisas demais na frente da placa"] += 1
                 continue
-        chave = f"{pid}/{recorte}"
         dados = {
             "item": it,
             "verdade": verdade,
@@ -237,8 +244,16 @@ def ler_registro(pasta: Pasta) -> dict:
     return ler_json(caminho)
 
 
+def _ids_na_pasta(pasta: Pasta, tarefa: str) -> list[int]:
+    """Os ids da faixa da tarefa que já estão no gabarito da pasta (para nunca repetir um id)."""
+    a, b = FAIXA[tarefa]
+    ids = (int(p.stem[1:]) for p in (pasta.gabarito / "itens").glob("g[0-9][0-9][0-9][0-9].json"))
+    return [v for v in ids if a <= v <= b]
+
+
 def _gravar_zip(destino: Path, partes: list[tuple[str, bytes]]) -> None:
-    """O .zip na ordem dada, com data fixa nas entradas (JPEG e PNG sem recomprimir)."""
+    """O .zip na ordem dada, com data fixa nas entradas (JPEG e PNG sem recomprimir). Um .zip desta
+    rodada que já esteja lá sem ela no registro é sobra de uma gravação interrompida: o registro manda."""
     destino.parent.mkdir(parents=True, exist_ok=True)
     tmp = destino.with_name(f".{destino.name}.tmp")
     with zipfile.ZipFile(tmp, "w") as z:
@@ -247,7 +262,7 @@ def _gravar_zip(destino: Path, partes: list[tuple[str, bytes]]) -> None:
             info.compress_type = zipfile.ZIP_DEFLATED if nome.endswith(".json") else zipfile.ZIP_STORED
             info.external_attr = 0o644 << 16
             z.writestr(info, dados)
-    escrever_bytes(destino, tmp.read_bytes())
+    escrever_bytes(destino, tmp.read_bytes(), sobrescrever=True)
     tmp.unlink()
 
 
@@ -268,24 +283,27 @@ def gerar_lote_real(pasta: Pasta, destino: Path | None = None, agora: datetime |
         except (ValueError, OSError):  # incompleta (ainda sincronizando) ou inválida: fica para a próxima
             rodada.fora["partida incompleta ou inválida"] += 1
             continue
-        candidatos += _candidatos_pontos(pasta, indice, pid, rodada.fora)
-        candidatos += _candidatos_placas(pasta, indice, pid, rodada.fora)
-    novos = [c for c in candidatos if c.chave not in registro["itens"][c.tarefa]]
-    if not novos:
+        candidatos += _candidatos_pontos(pasta, indice, pid, registro["itens"]["pontos"], rodada.fora)
+        candidatos += _candidatos_placas(pasta, indice, pid, registro["itens"]["placas"], rodada.fora)
+    if not candidatos:
         return rodada
 
     partes, itens_novos = [], {"pontos": {}, "placas": {}}
     for tarefa in ("pontos", "placas"):
-        usados = [int(g[1:]) for g in registro["itens"][tarefa].values()]
+        usados = [int(g[1:]) for g in registro["itens"][tarefa].values()] + _ids_na_pasta(pasta, tarefa)
         proximo = max(usados, default=FAIXA[tarefa][0] - 1) + 1
-        for c in sorted((c for c in novos if c.tarefa == tarefa), key=lambda c: (c.aprovado_em, c.chave)):
+        for c in sorted((c for c in candidatos if c.tarefa == tarefa), key=lambda c: (c.aprovado_em, c.chave)):
             if proximo > FAIXA[tarefa][1]:
                 rodada.fora[f"sem ids livres nos {tarefa}"] += 1
                 continue
             gid = f"g{proximo:04d}"
-            proximo += 1
             lote = _lote(tarefa, n, c.chave)
-            g, jpg, png = (_montar_pontos if tarefa == "pontos" else _montar_placas)(gid, lote, c.dados)
+            try:
+                g, jpg, png = (_montar_pontos if tarefa == "pontos" else _montar_placas)(gid, lote, c.dados)
+            except ValidationError:
+                rodada.fora["itens que não passam na validação"] += 1
+                continue
+            proximo += 1
             partes.append((f"gabarito/itens/{gid}.json", g.model_dump_json(indent=2).encode() + b"\n"))
             partes.append((f"gabarito/itens/{gid}.jpg", jpg))
             if png is not None:

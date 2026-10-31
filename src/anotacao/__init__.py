@@ -8,4 +8,4 @@ importar o gabarito e gravar previsões do modelo. Cortes, replays e artes das p
 na solução assistida, que é outro projeto.
 """
 
-__version__ = "0.11.0"
+__version__ = "0.12.0"

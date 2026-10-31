@@ -12,6 +12,7 @@ from __future__ import annotations
 import base64
 import functools
 import hashlib
+import io
 import json
 import os
 import re
@@ -39,8 +40,10 @@ from anotacao.formatos import (
     Tomadas,
 )
 from anotacao.mascara import gravar_png, ler_png, rasterizar
+from anotacao.ouro import gerar_lote_real, ler_registro
+from anotacao.pasta import Pasta
 
-from conftest import AGORA, PLANOS
+from conftest import AGORA, PLANOS, cenario_ouro
 from sintetico import (
     Camera,
     codificadores_ffmpeg,
@@ -815,6 +818,87 @@ def test_teste_do_gabarito(site, navegador, capturas, tmp_path):
         "trs => trs.map(tr => [tr.children[0].textContent, tr.children[3].textContent, tr.children[4].textContent])",
     )
     assert sorted(linhas) == [["g4901", "3 de 3 na frente · 100%", "certo"], ["g4902", "descartou", "certo"]]
+    assert not erros, erros
+
+
+# ---------------------------------------------------------------- o lote de ouro das imagens aprovadas
+
+
+def _mesmos_itens(a: bytes, b: bytes) -> None:
+    """Dois lotes de ouro com os mesmos itens: os mesmos arquivos, na mesma ordem, o mesmo JSON, as
+    mesmas imagens e as mesmas máscaras (o PNG pode vir comprimido de outro jeito)."""
+    with zipfile.ZipFile(io.BytesIO(a)) as za, zipfile.ZipFile(io.BytesIO(b)) as zb:
+        assert za.namelist() == zb.namelist()
+        for nome in za.namelist():
+            x, y = za.read(nome), zb.read(nome)
+            if nome.endswith(".json"):
+                assert json.loads(x) == json.loads(y), nome
+            elif nome.endswith(".png"):
+                assert np.array_equal(ler_png(x), ler_png(y)), nome
+            else:
+                assert x == y, nome
+
+
+def test_gerar_lote_de_ouro_na_central(site, navegador, capturas, tmp_path):
+    """O botão da central monta o lote de ouro das imagens aprovadas — os mesmos itens que o `anotacao
+    ouro` monta da mesma pasta —, guarda o .zip em conjuntos/ e o baixa; sem nada novo, avisa. O lote
+    entra pela página do gabarito e não vale para quem trabalhou nas imagens."""
+    origem = Pasta(tmp_path / "origem")
+    origem.criar()
+    cenario_ouro(origem)
+    pasta_zip = tmp_path / "pasta.zip"
+    with zipfile.ZipFile(pasta_zip, "w") as z:
+        for p in sorted((origem.raiz / "partidas").rglob("*")):
+            if p.is_file():
+                z.write(p, p.relative_to(origem.raiz).as_posix())
+        n = len(z.namelist())
+    erros: list[str] = []
+    pagina = _pagina(navegador, erros)
+    _criar_pasta(pagina, site)
+    _trazer_zip(pagina, site, pasta_zip, n)
+    pagina.wait_for_function("document.querySelector('#res-pasta')?.textContent === ''")  # a central de novo
+
+    with pagina.expect_download() as baixado:
+        pagina.click("#gerar-ouro")
+    assert baixado.value.suggested_filename == "ouro-reais-1.zip"
+    pagina.wait_for_function("document.querySelector('#res-ouro').textContent.startsWith('ouro-reais-1.zip')")
+    assert pagina.inner_text("#res-ouro") == (
+        "ouro-reais-1.zip baixado, com 5 itens (2 dos pontos e 3 das placas). Para usar, importe pela página do"
+        " gabarito. Ficaram de fora: 1 esperando revisão, 2 descartados."
+    )
+    pagina.screenshot(path=str(capturas / "e2e_11_lote_de_ouro.png"))
+    da_pagina = _bytes(pagina, "conjuntos/ouro-reais-1.zip")
+    assert Path(baixado.value.path()).read_bytes() == da_pagina
+
+    # o Python, na mesma pasta, monta os mesmos itens e o mesmo registro
+    rodada = gerar_lote_real(origem, agora=AGORA)
+    _mesmos_itens(da_pagina, rodada.arquivo.read_bytes())
+    reg_pagina, reg_python = json.loads(_ler(pagina, "conjuntos/ouro-reais.json")), ler_registro(origem)
+    assert reg_pagina["itens"] == reg_python["itens"]
+    resumo = lambda reg: [(x["n"], x["arquivo"], x["lotes"]) for x in reg["rodadas"]]  # noqa: E731
+    assert resumo(reg_pagina) == resumo(reg_python)
+
+    # sem nada novo, nada se grava
+    pagina.click("#gerar-ouro")
+    pagina.wait_for_function("document.querySelector('#res-ouro').textContent.startsWith('Nada novo')")
+    assert "ouro-reais-2.zip" not in _listar(pagina, "conjuntos")
+
+    # o lote entra pela página do gabarito; quem anotou e revisou essas imagens (A01 e A02) não é testado
+    _escolher_pessoa(pagina, site, "A01")
+    pagina.click("#ir-gabarito")
+    pagina.wait_for_selector("#lotes tbody td")
+    pagina.set_input_files("#importar-lote", baixado.value.path())
+    pagina.wait_for_function("document.querySelector('#res-lote').textContent.startsWith('12 arquivo(s) novo(s)')")
+    pagina.wait_for_function(
+        "document.querySelector('[data-tarefa=pontos] .st').textContent.includes('vieram de imagens')"
+    )
+    pagina.goto(site + "#/")
+    pagina.wait_for_function(
+        "document.querySelector('#st-pontos').textContent.includes('imagens em que você trabalhou')"
+    )
+    _escolher_pessoa(pagina, site, "A03")
+    pagina.wait_for_function("document.querySelector('#ir-pontos').textContent === 'Fazer o teste'")
+    pagina.wait_for_function("document.querySelector('#ir-placas').textContent === 'Fazer o teste'")
     assert not erros, erros
 
 
