@@ -19,12 +19,12 @@ que continuam valendo.
 
 - **O botão "Gerar lote de ouro (.zip)", na central** (desde a 0.12; na 0.11, só o
   `anotacao ouro --pasta P`, que continua montando os mesmos itens) monta um .zip de lote de ouro, no
-  formato dos do simulador, e o baixa, com os itens aprovados (a regra do `unificar`) que já não vão mudar: todo rótulo do item revisado e, na
-  dupla às cegas, as duas pessoas já anotaram. Nos pontos, a resposta são os pontos do rótulo aprovado
-  — os rentes à borda (a menos de 3 px, ref. 960) ficam opcionais, como no simulador. Nas placas, a
-  máscara aprovada, com cada pedaço pintado (vizinhos em 8 direções) como uma coisa na frente da placa;
-  o recorte descartado e aprovado como "o recorte não está na placa" vira um item para descartar. Os
-  outros descartes não viram gabarito.
+  formato dos do simulador, e o baixa, com os itens aprovados (a regra do `unificar`) que já não vão
+  mudar: todo rótulo do item revisado e, na dupla às cegas, as duas pessoas já anotaram. Nos pontos, a
+  resposta são os pontos do rótulo aprovado — os rentes à borda (a menos de 3 px, ref. 960) ficam
+  opcionais, como no simulador. Nas placas, a máscara aprovada, com cada pedaço pintado (vizinhos em 8
+  direções) como uma coisa na frente da placa; o recorte descartado e aprovado como "o recorte não está
+  na placa" vira um item para descartar. Os outros descartes não viram gabarito.
 - **`fora_de`**, um campo opcional novo nos itens do gabarito (`gabarito.pontos/1` e
   `gabarito.placas/1`, compatível com os arquivos de antes): quem anotou, revisou ou corrigiu a imagem.
   Para essas pessoas o item não existe — nem no teste, nem escondido, nem na liberação.
