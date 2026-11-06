@@ -1,11 +1,13 @@
 // Vista "Pontos do campo": pega a próxima imagem da fila e marca, direto nela, cada ponto do campo que
 // aparece — escolhendo no mapa qual é. No teste do gabarito, mostra o resultado na hora e a resposta.
+// Com `?editar=<partida>&quadro=<quadro>&de=<rótulo|modelo|nada>`, abre esse quadro para editar (vindo
+// da página da partida) e, ao salvar, volta para lá.
 
 import { Molde, descricaoPonto } from "../nucleo/campo.js";
 import { PARTIDA_GABARITO } from "../nucleo/convencoes.js";
-import { proximo, situacao } from "../nucleo/filas.js";
+import { aprovado, proximo, situacao } from "../nucleo/filas.js";
 import { compararPontos, motivoPontos } from "../nucleo/gabarito.js";
-import { salvarRotulo } from "../nucleo/rotulos.js";
+import { salvarEdicao, salvarRotulo } from "../nucleo/rotulos.js";
 import { Mapa } from "./mapa.js";
 import { Marcador } from "./marcador.js";
 import { abrirImagem, caixas, escrevendo, parametros, textoDevolvido, textoLiberacao, textoPartiu } from "./tarefa.js";
@@ -33,6 +35,9 @@ export async function montar(raiz, ctx) {
   const params = parametros();
   const pedirTreino = params.has("treino");
   const ver = params.get("ver");
+  const editar = params.get("editar"); // a partida, vindo da página dela
+  const voltarPara = editar ? `#/partida?id=${encodeURIComponent(editar)}&ver=${encodeURIComponent(params.get("quadro") ?? "")}` : null;
+  if (editar) Object.assign(raiz.querySelector(".voltar"), { href: voltarPara, textContent: "← Partida" });
   const cx = caixas(raiz);
   let marcador = null;
   let item = null;
@@ -160,6 +165,7 @@ export async function montar(raiz, ctx) {
     $("resultado").hidden = true;
     const pessoa = ctx.pessoa();
     if (!pessoa) return mostrarVazio("Digite o seu código na página central.");
+    if (editar) return abrirEdicao(pessoa);
     if (ver) return verResultado(pessoa);
     const prox = await proximo(indice, "pontos", pessoa, { treino: pedirTreino });
     if (!vivo) return; // a pessoa já saiu da página
@@ -183,6 +189,55 @@ export async function montar(raiz, ctx) {
   }
 
   const abrirProximo = () => carregar().catch((e) => mostrarVazio(mensagemDeErro(e)));
+
+  /** O quadro escolhido na página da partida, a partir do rótulo (ou da previsão) que estava na tela. */
+  async function abrirEdicao(pessoa) {
+    const quadro = params.get("quadro") ?? "";
+    const de = params.get("de") ?? "nada";
+    const man = await indice.manifesto(editar);
+    const fila = await indice.fila(editar);
+    if (!fila.itens.some((it) => it.quadro === quadro)) return mostrarVazio("Este quadro não está mais na fila da partida.", [voltarPara, "Voltar para a partida"]);
+    const ip = await indice.partida(editar, "pontos");
+    let inicio = [];
+    let partiu_de = { fonte: "nenhuma", versao: null, referencia: null };
+    let base = null;
+    let origem = "do zero";
+    if (de === "modelo") {
+      const prev = await indice.previsaoPontos(editar, quadro).catch(() => null);
+      if (prev) {
+        inicio = prev.pontos;
+        partiu_de = { fonte: "modelo", versao: `${prev.fonte}@${prev.versao}`, referencia: null };
+        origem = "da previsão do modelo";
+      }
+    } else if (de !== "nada") {
+      const a = ip.rotulos.find((r) => r.quadro === quadro && r.nome === de);
+      if (a) {
+        inicio = a.dados.pontos;
+        base = a;
+        origem = `do rótulo de ${a.pessoa} (v${a.versao})`;
+      }
+    }
+    const prox = {
+      tarefa: "pontos", partida: editar, quadro, largura: man.video.largura, altura: man.video.altura, regiao: null, inicio, partiu_de,
+      dupla: false, sem_previsao: false, devolvido: null, gabarito: false, treino: false,
+    };
+    if (!(await abrirNaTela(prox, inicio))) return;
+    const ap = aprovado(ip, quadro);
+    const efeito = ap
+      ? "Ao salvar, a sua versão corrige a aprovada e passa a valer no lugar dela."
+      : base && base.pessoa !== pessoa
+        ? `Ao salvar, a sua versão corrige o rótulo de ${base.pessoa} (vale como revisão) e passa a ser a aprovada.`
+        : "Ao salvar, a sua versão vai para a revisão como qualquer rótulo.";
+    $("treino").hidden = true;
+    $("devolvido").hidden = true;
+    $("partiu").replaceChildren(`Editando pela página da partida, a partir ${origem}. ${efeito} `, Object.assign(document.createElement("a"), { href: voltarPara, textContent: "Voltar sem salvar" }));
+    $("partiu").hidden = false;
+    modoResultado(false);
+    tempo.zerar();
+    atualizarPainel();
+    item = { ...prox, pessoa, base: base?.nome ?? null, edicao: true };
+    window.itemPontos = { partida: editar, quadro, treino: false, edicao: true };
+  }
 
   async function verResultado(pessoa) {
     const g = (await indice.itensGabarito("pontos")).find((x) => x.id === ver);
@@ -266,7 +321,7 @@ export async function montar(raiz, ctx) {
     salvando = true;
     const feito = item;
     try {
-      const { rotulo } = await salvarRotulo(indice, "pontos", feito.pessoa, {
+      const conteudo = {
         partida: feito.partida,
         quadro: feito.quadro,
         largura: feito.largura,
@@ -274,10 +329,15 @@ export async function montar(raiz, ctx) {
         partiu_de: feito.partiu_de,
         segundos_ativos: tempo.segundos(),
         ...dados,
-      });
+      };
+      const { rotulo } = feito.edicao
+        ? await salvarEdicao(indice, "pontos", feito.pessoa, conteudo, { base: feito.base })
+        : await salvarRotulo(indice, "pontos", feito.pessoa, conteudo);
       item = null; // gravado: daqui não se salva de novo esta imagem
       ctx.registrarCodigo(feito.pessoa);
-      if (feito.treino) {
+      if (feito.edicao) {
+        ctx.ir(voltarPara);
+      } else if (feito.treino) {
         const g = (await indice.itensGabarito("pontos")).find((x) => x.id === feito.quadro);
         await mostrarResultado(feito.pessoa, rotulo, g);
       } else {
@@ -389,7 +449,7 @@ export async function montar(raiz, ctx) {
 
   await abrirProximo();
   // sem nada na fila, a página confere sozinha se chegou algo (uma partida nova, um devolvido)
-  const vigia = vigiar(ctx, () => !ver && !item && !salvando && !$("vazio").hidden, abrirProximo);
+  const vigia = vigiar(ctx, () => !ver && !editar && !item && !salvando && !$("vazio").hidden, abrirProximo);
 
   return {
     desmontar() {

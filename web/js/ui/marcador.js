@@ -6,10 +6,12 @@
 //   arrastar um ponto                             ajusta o lugar
 //   botão direito num ponto (ou Delete)           apaga
 //   roda do mouse                                 aproxima; botão direito, do meio ou espaço + arrastar move a vista
+//   Ctrl apertado                                 o mouse lento: a mira anda 1/4 do que o mouse anda (ponteiro.js)
 //
 // As coordenadas são px da imagem a partir do canto de cima à esquerda (o primeiro pixel vai de 0 a 1).
 
 import { PONTOS_MARCAVEIS } from "../nucleo/campo.js";
+import { PonteiroFino } from "./ponteiro.js";
 
 const PERTO = 9; // px na tela: clique em cima de um ponto
 const LUPA = 168; // px na tela
@@ -41,6 +43,7 @@ export class Marcador {
     this.ponteiro = null;
     this.arraste = null; // {tipo: "vista" | "ponto", ...}
     this.espaco = false;
+    this.fino = new PonteiroFino(canvas);
     this._quadroPedido = false;
     this._eventos();
     this._ro = new ResizeObserver(() => this.ajustarVista());
@@ -177,15 +180,19 @@ export class Marcador {
     return [(sx - this.vista.ox) / this.vista.escala, (sy - this.vista.oy) / this.vista.escala];
   }
 
+  /** Onde o evento do ponteiro vale: a mira (com Ctrl, o mouse lento). */
   _posicao(e) {
-    const r = this.cv.getBoundingClientRect();
-    return [e.clientX - r.left, e.clientY - r.top];
+    return this.fino.posicao(e);
   }
 
   _roda(e) {
     e.preventDefault();
-    const [sx, sy] = this._posicao(e);
-    const nova = Math.min(60, Math.max(0.1, this.vista.escala * Math.exp(-e.deltaY * 0.0015)));
+    const [sx, sy] = this.fino.posicao(e, { atualizar: false }); // aproxima em volta da mira
+    this._zoom(sx, sy, e.deltaY);
+  }
+
+  _zoom(sx, sy, deltaY) {
+    const nova = Math.min(60, Math.max(0.1, this.vista.escala * Math.exp(-deltaY * 0.0015)));
     const [x, y] = this.paraImagem(sx, sy);
     this.vista = { escala: nova, ox: sx - nova * x, oy: sy - nova * y };
     this._pedirQuadro();
@@ -193,7 +200,13 @@ export class Marcador {
 
   aproximar(fator) {
     const r = this.cv.getBoundingClientRect();
-    this._roda({ preventDefault() {}, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2, deltaY: -Math.log(fator) / 0.0015 });
+    this._zoom(r.width / 2, r.height / 2, -Math.log(fator) / 0.0015);
+  }
+
+  /** O cursor do sistema some quando a página desenha a mira (o mouse lento). */
+  _cursor() {
+    if (this.arraste?.tipo === "vista" || (this.arraste && !this.arraste.tipo)) return;
+    this.cv.style.cursor = this.fino.desviada ? "none" : "";
   }
 
   // ------------------------------------------------------------------ eventos
@@ -209,6 +222,8 @@ export class Marcador {
       [this.cv, "contextmenu", (e) => e.preventDefault()],
       [this.cv, "pointerleave", () => {
         this.ponteiro = null;
+        this.fino.soltar();
+        this._cursor();
         this._passar(null);
         this.desenhar();
       }],
@@ -262,6 +277,7 @@ export class Marcador {
       }
     }
     this._passar(a?.tipo === "ponto" ? a.nome : this.pontoEm(sx, sy));
+    this._cursor();
     this._pedirQuadro();
   }
 
@@ -270,6 +286,7 @@ export class Marcador {
     const a = this.arraste;
     this.arraste = null;
     this.cv.style.cursor = "";
+    this._cursor();
     if (!a) return;
     if (a.tipo === "ponto") {
       if (a.moveu) {
@@ -335,6 +352,7 @@ export class Marcador {
       this._desenharPontos(ctx, (x, y) => this.paraTela(x, y), 1);
     }
     this._desenharLupa(ctx);
+    if (this.arraste?.tipo !== "vista") this.fino.desenhar(ctx);
   }
 
   _marca(ctx, sx, sy, cor, raio, grosso = false) {

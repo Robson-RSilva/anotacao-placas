@@ -46,15 +46,16 @@ export function quemAnotou(ip, quadro) {
 export const precisam = (item) => (item.dupla ? 2 : 1);
 
 /**
- * O rótulo aprovado primeiro do quadro, com quando (ms), quem aprovou e como: {quando, a, revisor,
- * decisao: "aprovar" | "corrigir"}, ou null — a regra do `unificar` (`aprovado` em
- * src/anotacao/unificar.py). A correção de quem revisou conta como aprovada quando foi gravada; um
- * rótulo aprovado, quando a revisão foi gravada. Empate: o primeiro por (pessoa, versão).
+ * O rótulo aprovado do quadro, com quando (ms), quem aprovou e como: {quando, a, revisor, decisao:
+ * "aprovar" | "corrigir"}, ou null — a regra do `unificar` (`aprovado` em src/anotacao/unificar.py).
+ * Vale o aprovado primeiro: a correção de quem revisou conta como aprovada quando foi gravada; um
+ * rótulo aprovado, quando a revisão foi gravada. Empate: o primeiro por (pessoa, versão). Uma correção
+ * do próprio aprovado (a edição pela página da partida) o substitui; de correção em correção, vale a
+ * mais recente (ADR-0014).
  */
 export function aprovado(ip, quadro) {
-  const candidatos = ip.rotulos
-    .filter((a) => a.quadro === quadro)
-    .sort((x, y) => (x.pessoa < y.pessoa ? -1 : x.pessoa > y.pessoa ? 1 : x.versao - y.versao));
+  const doQuadro = ip.rotulos.filter((a) => a.quadro === quadro);
+  const candidatos = [...doQuadro].sort((x, y) => (x.pessoa < y.pessoa ? -1 : x.pessoa > y.pessoa ? 1 : x.versao - y.versao));
   let melhor = null;
   for (const a of candidatos) {
     let quando;
@@ -68,6 +69,16 @@ export function aprovado(ip, quadro) {
       [quando, revisor, decisao] = [ms(rev.criado_em), rev.revisor, "aprovar"];
     }
     if (!melhor || quando < melhor.quando) melhor = { quando, a, revisor, decisao };
+  }
+  const vistos = new Set();
+  while (melhor && !vistos.has(melhor.a.nome)) {
+    vistos.add(melhor.a.nome);
+    const nome = melhor.a.nome;
+    const seguintes = candidatos.filter((a) => a.dados.corrige === nome);
+    if (!seguintes.length) break;
+    // a mais recente; empate: a última por (pessoa, versão)
+    const c = seguintes.reduce((x, y) => (ms(y.dados.criado_em) >= ms(x.dados.criado_em) ? y : x));
+    melhor = { quando: ms(c.dados.criado_em), a: c, revisor: c.pessoa, decisao: "corrigir" };
   }
   return melhor;
 }

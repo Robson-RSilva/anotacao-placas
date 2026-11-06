@@ -66,6 +66,30 @@ def test_um_rotulo_aprovado_por_quadro(pasta):
     assert man["descartados"] == {"pontos": {"transicao": 1}, "placas": {}}
 
 
+def test_a_correcao_do_aprovado_o_substitui(pasta):
+    """A edição pela página da partida é uma correção do aprovado: ela vale, mesmo gravada depois (ADR-0014);
+    de correção em correção, vale a última, e a correção de um rótulo que não é o aprovado não muda nada."""
+    fila = criar_partida(pasta, [{"dupla": True}, {}], imagens=False)
+    q = [it.quadro for it in fila.itens]
+    a1 = gravar_pontos(pasta, q[0], "A01", P1)
+    a2 = gravar_pontos(pasta, q[0], "A02", P2, minutos=5)
+    gravar_revisao(pasta, "pontos", q[0], a1, "A02", minutos=30)
+    gravar_revisao(pasta, "pontos", q[0], a2, "A01", minutos=10)  # o aprovado primeiro: A02
+    e1 = gravar_pontos(pasta, q[0], "A03", {"centro": (400.0, 200.0)}, minutos=60, corrige=a2)
+    gravar_pontos(pasta, q[0], "A01", {"centro": (410.0, 210.0)}, versao=2, minutos=70, corrige=e1)
+    gravar_pontos(pasta, q[0], "A03", {"centro": (1.0, 1.0)}, versao=2, minutos=80, corrige=a1)  # não é o aprovado
+    b = gravar_pontos(pasta, q[1], "A01", P1)
+    gravar_revisao(pasta, "pontos", q[1], b, "A02", minutos=5)
+
+    destino = unificar(pasta, agora=AGORA)
+    df = pd.read_parquet(destino / "pontos.parquet").set_index("quadro")
+    assert df.loc[q[0], "anotador"] == "A01" and df.loc[q[0], "versao"] == 2 and df.loc[q[0], "decisao"] == "corrigir"
+    lista = pd.read_parquet(destino / "pontos_lista.parquet")
+    centro = lista[lista["quadro"] == q[0]].iloc[0]
+    assert (centro["ponto"], centro["x"], centro["y"]) == ("centro", 410.0, 210.0)
+    assert df.loc[q[1], "anotador"] == "A01" and df.loc[q[1], "decisao"] == "aprovar"
+
+
 def test_placas_no_conjunto(pasta):
     """A pintura aprovada de cada recorte, com a máscara ao lado, a região e onde a placa está no quadro;
     sem nada na frente também entra; máscara que não chegou, estragada ou com pintura fora da placa

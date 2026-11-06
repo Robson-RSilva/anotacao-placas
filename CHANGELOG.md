@@ -5,6 +5,35 @@ Formato de [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); versões
 
 ## [Não lançado]
 
+## [0.14.0] - 2026-11-06
+
+A página de cada partida, para ver, editar e excluir; e o mouse lento com Ctrl (ADR-0014).
+
+### Adicionado
+
+- **A página da partida**, aberta pelo nome da partida na central (`#/partida?id=<partida>`): a ficha
+  do jogo, do vídeo e da importação; as miniaturas dos quadros e dos recortes das placas, com a
+  anotação por cima e a situação de cada um, e filtros; um visor com zoom e lupa, com cada versão de
+  cada rótulo (e as revisões dela), a previsão do modelo ou só a imagem; a lista de arquivos, para ver
+  os JSON e baixar; baixar a partida em .zip.
+- **Editar** pelo visor: abre o item na página de marcar ou de pintar, a partir da versão que estava
+  na tela, e volta ao salvar. Com um rótulo aprovado (ou de outra pessoa) no item, a versão salva é a
+  correção dele e vale como revisão; senão, é um rótulo da pessoa, que vai para a revisão.
+- **Excluir** um quadro, vários (marcando na grade), um recorte, um lote de recortes ou a partida
+  inteira (só com o nome dela escrito), depois de mostrar o que vai junto: o quadro leva os rótulos,
+  as revisões, a previsão e os recortes das placas tirados dele. Nada se exclui enquanto a partida está
+  sendo importada.
+- **Mouse lento**: marcando pontos ou pintando (também corrigindo na revisão), `Ctrl` apertado faz a
+  mira andar 1/4 do que o mouse anda; a página esconde o cursor e desenha a mira, que é onde o clique
+  vale.
+
+### Mudado
+
+- **A regra do aprovado** (páginas e `unificar`): uma correção do próprio aprovado o substitui, e de
+  correção em correção vale a mais recente. Na revisão às cegas o rótulo corrigido nunca está aprovado,
+  então nada muda nos dados de antes.
+- A caixa de confirmar das páginas aceita o texto dos botões (a de excluir diz "Excluir").
+
 ## [0.13.0] - 2026-11-06
 
 Vinhetas e grafismos animados não enchem mais o sorteio de quadros quase iguais.

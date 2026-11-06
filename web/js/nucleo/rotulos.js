@@ -1,11 +1,12 @@
-// Montar, validar e gravar os rótulos das duas tarefas (pontos e placas) e as revisões cruzadas.
+// Montar, validar e gravar os rótulos das duas tarefas (pontos e placas), as revisões cruzadas e as
+// edições feitas pela página da partida.
 //
 // Nas placas, a máscara (PNG) é gravada antes do rótulo: o índice só lê um rótulo depois que a
 // máscara dele existe, e, no outro computador, um rótulo que chegou antes da máscara espera por ela.
 
 import { MANUAL, VERSAO, mascaraDe, nomeArquivo } from "./convencoes.js";
 import { arredondar } from "./estatistica.js";
-import { pendentesRevisao } from "./filas.js";
+import { aprovado, pendentesRevisao } from "./filas.js";
 import { TIPOS_DA_TAREFA, validar } from "./formatos.js";
 import { codificarPng } from "./png.js";
 import { foraDaRegiao, mascaraDaRegiao } from "./regiao.js";
@@ -103,6 +104,17 @@ function montarRevisao(tarefa, arquivo, pessoa, versao, { decisao, motivo, comen
   };
 }
 
+/** Grava uma revisão de `arquivo` (sem conferir a fila de revisão; `nova`: a correção, quando há). */
+async function gravarRevisao(indice, tarefa, pessoa, arquivo, decisao, nova, agora) {
+  const pasta = indice.pasta;
+  const dir = pasta.revisoes(arquivo.partida, tarefa);
+  const versao = await pasta.proximaVersao(dir, arquivo.quadro, pessoa);
+  const rev = validar(TIPOS_DA_TAREFA[tarefa].revisao, montarRevisao(tarefa, arquivo, pessoa, versao, decisao, nova, agora));
+  const nome = nomeArquivo(arquivo.quadro, pessoa, versao);
+  await pasta.escreverJson(`${dir}/${nome}`, rev);
+  return { nome, caminho: `${dir}/${nome}`, revisao: rev };
+}
+
 /**
  * Grava a decisão da revisão cruzada sobre `arquivo` (o rótulo revisado). Ao corrigir, grava antes a
  * correção como rótulo novo de quem revisa, apontando o corrigido em `corrige`; `decisao.correcao`
@@ -140,8 +152,44 @@ export async function salvarRevisao(indice, tarefa, pessoa, arquivo, decisao, { 
     );
     nova = nome;
   }
-  const rev = validar(tipo, montarRevisao(tarefa, arquivo, pessoa, versao, decisao, nova, agora));
-  const nome = nomeArquivo(arquivo.quadro, pessoa, versao);
-  await pasta.escreverJson(`${dir}/${nome}`, rev);
-  return { nome, caminho: `${dir}/${nome}`, revisao: rev, correcao: nova };
+  const { nome, caminho, revisao } = await gravarRevisao(indice, tarefa, pessoa, arquivo, decisao, nova, agora);
+  return { nome, caminho, revisao, correcao: nova };
+}
+
+/**
+ * Grava a edição de um item feita pela página da partida, por `pessoa` (`dados` como em `salvarRotulo`;
+ * `base`: o nome do rótulo de onde a edição partiu, ou null quando partiu da previsão ou do zero — e
+ * então `dados.partiu_de` diz de onde).
+ *
+ * * Com um rótulo aprovado no item, a edição é a correção dele: vale como revisão e passa a ser o
+ *   aprovado (a correção do aprovado o substitui — `aprovado` em filas.js).
+ * * Sem aprovado, partindo do rótulo de outra pessoa, também é correção — e esse rótulo ganha a
+ *   revisão "corrigir", como na revisão às cegas: sai da fila de revisão (e, se tinha voltado para
+ *   quem o anotou, da fila dessa pessoa).
+ * * Senão (partindo do próprio rótulo, da previsão ou do zero), é um rótulo novo da pessoa, que vai
+ *   para a revisão como qualquer outro.
+ *
+ * Devolve o que `salvarRotulo` devolve, mais `como` ("corrige_aprovado", "corrige" ou "rotulo") e
+ * `corrigido` (o nome do rótulo corrigido, ou null).
+ */
+export async function salvarEdicao(indice, tarefa, pessoa, dados, { base = null, agora = new Date() } = {}) {
+  const ip = await indice.partida(dados.partida, tarefa);
+  const doItem = (nome) => ip.rotulos.find((a) => a.quadro === dados.quadro && a.nome === nome) ?? null;
+  const partiu = doItem(base);
+  const de = (fonte) => (partiu ? { fonte, versao: null, referencia: partiu.nome } : dados.partiu_de);
+  const ap = aprovado(ip, dados.quadro);
+  if (ap) {
+    const r = await salvarRotulo(indice, tarefa, pessoa, { ...dados, partiu_de: de("rotulo_revisado"), corrige: ap.a.nome }, { agora });
+    return { ...r, como: "corrige_aprovado", corrigido: ap.a.nome };
+  }
+  if (partiu && partiu.pessoa !== pessoa) {
+    const decisao = { decisao: "corrigir", comentario: "corrigido pela página da partida", segundos_ativos: dados.segundos_ativos };
+    // valida a revisão antes de gravar qualquer coisa (como na revisão às cegas)
+    validar(TIPOS_DA_TAREFA[tarefa].revisao, montarRevisao(tarefa, partiu, pessoa, 1, decisao, "pendente", agora));
+    const r = await salvarRotulo(indice, tarefa, pessoa, { ...dados, partiu_de: de("rotulo_revisado"), corrige: partiu.nome }, { agora });
+    await gravarRevisao(indice, tarefa, pessoa, partiu, decisao, r.nome, agora);
+    return { ...r, como: "corrige", corrigido: partiu.nome };
+  }
+  const r = await salvarRotulo(indice, tarefa, pessoa, { ...dados, partiu_de: de("rotulo_anterior"), corrige: null }, { agora });
+  return { ...r, como: "rotulo", corrigido: null };
 }

@@ -1,6 +1,6 @@
 // Aplicativo de uma página só: escolhe a pasta de trabalho e troca de vista pelo endereço
 // (#/, #/pontos, #/placas, #/revisao-pontos, #/revisao-placas, #/gabarito, #/importar,
-// #/coordenacao). Uma página só porque a permissão da pasta vale para a aba aberta: trocar de vista
+// #/coordenacao, #/partida). Uma página só porque a permissão da pasta vale para a aba aberta: trocar de vista
 // não pede de novo.
 
 import { RE_DISPOSITIVO, VERSAO, codigoPessoa } from "../nucleo/convencoes.js";
@@ -14,6 +14,7 @@ import * as coordenacao from "./vista-coordenacao.js";
 import * as gabarito from "./vista-gabarito.js";
 import * as importar from "./vista-importar.js";
 import * as inicio from "./vista-inicio.js";
+import * as partida from "./vista-partida.js";
 import * as placas from "./vista-placas.js";
 import * as pontos from "./vista-pontos.js";
 import { revisaoPlacas, revisaoPontos } from "./vista-revisao.js";
@@ -27,6 +28,7 @@ const ROTAS = {
   gabarito: ["gabarito", gabarito],
   importar: ["importar", importar],
   coordenacao: ["coordenacao", coordenacao],
+  partida: ["partida", partida],
 };
 
 /**

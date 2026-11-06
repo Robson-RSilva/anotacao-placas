@@ -2,13 +2,14 @@
 // em volta — e pinta o que está na frente dela (gente, bola, trave, outra placa, grafismo da
 // emissora…), só dentro do contorno da placa. O recorte é considerado certo: se ele não está na placa,
 // não se ajusta, se descarta. No teste do gabarito, mostra o resultado na hora (o que acertou, o que
-// faltou, o que pintou a mais) e a resposta.
+// faltou, o que pintou a mais) e a resposta. Com `?editar=<partida>&recorte=<recorte>&de=<rótulo|modelo|nada>`,
+// abre esse recorte para editar (vindo da página da partida) e, ao salvar, volta para lá.
 
 import { PARTIDA_GABARITO } from "../nucleo/convencoes.js";
-import { proximo, situacao } from "../nucleo/filas.js";
+import { aprovado, proximo, situacao } from "../nucleo/filas.js";
 import { REGRA, compararPlacas, motivoPlacas, verdadePlacas } from "../nucleo/gabarito.js";
 import { mascaraDaRegiao } from "../nucleo/regiao.js";
-import { salvarRotulo } from "../nucleo/rotulos.js";
+import { salvarEdicao, salvarRotulo } from "../nucleo/rotulos.js";
 import { Pintor, mapaDoResultado } from "./pintor.js";
 import { abrirImagem, caixas, escrevendo, parametros, textoDevolvido, textoLiberacao, textoPartiu } from "./tarefa.js";
 import { TempoAtivo } from "./tempo.js";
@@ -115,6 +116,9 @@ export async function montar(raiz, ctx) {
   const params = parametros();
   const pedirTreino = params.has("treino");
   const ver = params.get("ver");
+  const editar = params.get("editar"); // a partida, vindo da página dela
+  const voltarPara = editar ? `#/partida?id=${encodeURIComponent(editar)}&aba=recortes&ver=${encodeURIComponent(params.get("recorte") ?? "")}` : null;
+  if (editar) Object.assign(raiz.querySelector(".voltar"), { href: voltarPara, textContent: "← Partida" });
   const cx = caixas(raiz, "placas");
   let pintor = null;
   let item = null;
@@ -193,6 +197,7 @@ export async function montar(raiz, ctx) {
     $("resultado").hidden = true;
     const pessoa = ctx.pessoa();
     if (!pessoa) return mostrarVazio("Digite o seu código na página central.");
+    if (editar) return abrirEdicao(pessoa);
     if (ver) return verResultado(pessoa);
     const prox = await proximo(indice, "placas", pessoa, { treino: pedirTreino });
     if (!vivo) return;
@@ -216,6 +221,54 @@ export async function montar(raiz, ctx) {
   }
 
   const abrirProximo = () => carregar().catch((e) => mostrarVazio(mensagemDeErro(e)));
+
+  /** O recorte escolhido na página da partida, a partir da pintura (ou da pré-pintura) que estava na tela. */
+  async function abrirEdicao(pessoa) {
+    const recorte = params.get("recorte") ?? "";
+    const de = params.get("de") ?? "nada";
+    const doLote = (await indice.recortes(editar)).itens.get(recorte);
+    if (!doLote) return mostrarVazio("Este recorte não está mais nos lotes da partida.", [voltarPara, "Voltar para a partida"]);
+    const ip = await indice.partida(editar, "placas");
+    let inicio = null;
+    let partiu_de = { fonte: "nenhuma", versao: null, referencia: null };
+    let base = null;
+    let origem = "do zero";
+    if (de === "modelo") {
+      if (await pasta.existe(pasta.previsaoPlacas(editar, recorte))) {
+        inicio = pasta.previsaoPlacas(editar, recorte);
+        partiu_de = { fonte: "modelo", versao: null, referencia: null };
+        origem = "da pré-pintura do modelo";
+      }
+    } else if (de !== "nada") {
+      const a = ip.rotulos.find((r) => r.quadro === recorte && r.nome === de);
+      if (a) {
+        inicio = a.dados.mascara ? `${pasta.rotulos(editar, "placas")}/${a.dados.mascara}` : null;
+        base = a;
+        origem = `da pintura de ${a.pessoa} (v${a.versao})`;
+      }
+    }
+    const { item: it } = doLote;
+    const prox = {
+      tarefa: "placas", partida: editar, quadro: recorte, largura: it.largura, altura: it.altura, regiao: it.regiao, inicio, partiu_de,
+      dupla: false, sem_previsao: false, devolvido: null, gabarito: false, treino: false,
+    };
+    const mascara = await mascaraInicial(prox);
+    if (!vivo || !(await abrirNaTela(prox, mascara))) return;
+    const ap = aprovado(ip, recorte);
+    const efeito = ap
+      ? "Ao salvar, a sua versão corrige a aprovada e passa a valer no lugar dela."
+      : base && base.pessoa !== pessoa
+        ? `Ao salvar, a sua versão corrige a pintura de ${base.pessoa} (vale como revisão) e passa a ser a aprovada.`
+        : "Ao salvar, a sua versão vai para a revisão como qualquer pintura.";
+    $("treino").hidden = true;
+    $("devolvido").hidden = true;
+    $("partiu").replaceChildren(`Editando pela página da partida, a partir ${origem}. ${efeito} `, Object.assign(document.createElement("a"), { href: voltarPara, textContent: "Voltar sem salvar" }));
+    $("partiu").hidden = false;
+    modoResultado(false);
+    tempo.zerar();
+    item = { ...prox, pessoa, base: base?.nome ?? null, edicao: true };
+    window.itemPlacas = { partida: editar, quadro: recorte, treino: false, regiao: it.regiao, edicao: true };
+  }
 
   async function verResultado(pessoa) {
     const g = (await indice.itensGabarito("placas")).find((x) => x.id === ver);
@@ -318,7 +371,7 @@ export async function montar(raiz, ctx) {
     salvando = true;
     const feito = item;
     try {
-      const { rotulo, mascara } = await salvarRotulo(indice, "placas", feito.pessoa, {
+      const conteudo = {
         partida: feito.partida,
         quadro: feito.quadro,
         largura: feito.largura,
@@ -327,10 +380,15 @@ export async function montar(raiz, ctx) {
         partiu_de: feito.partiu_de,
         segundos_ativos: tempo.segundos(),
         ...dados,
-      });
+      };
+      const { rotulo, mascara } = feito.edicao
+        ? await salvarEdicao(indice, "placas", feito.pessoa, conteudo, { base: feito.base })
+        : await salvarRotulo(indice, "placas", feito.pessoa, conteudo);
       item = null;
       ctx.registrarCodigo(feito.pessoa);
-      if (feito.treino) {
+      if (feito.edicao) {
+        ctx.ir(voltarPara);
+      } else if (feito.treino) {
         const g = (await indice.itensGabarito("placas")).find((x) => x.id === feito.quadro);
         await mostrarResultado(feito.pessoa, rotulo, mascara, g);
       } else {
@@ -396,7 +454,7 @@ export async function montar(raiz, ctx) {
   window.addEventListener("keyup", teclas);
 
   await abrirProximo();
-  const vigia = vigiar(ctx, () => !ver && !item && !salvando && !$("vazio").hidden, abrirProximo);
+  const vigia = vigiar(ctx, () => !ver && !editar && !item && !salvando && !$("vazio").hidden, abrirProximo);
 
   return {
     desmontar() {

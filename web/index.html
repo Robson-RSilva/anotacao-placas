@@ -162,6 +162,113 @@
     </footer>
   </template>
 
+  <!-- ================================================================== uma partida -->
+  <template id="tpl-partida">
+    <header class="barra">
+      <a href="#/" class="voltar">← Central</a>
+      <h1 id="titulo-partida">Partida</h1>
+      <span class="espaco"></span>
+      <span class="sutil" data-versao></span>
+    </header>
+    <main class="central">
+      <p id="erro-partida" class="erro" role="alert" hidden></p>
+      <section class="cartao" id="ficha-partida" hidden>
+        <div class="titulo-secao largo">
+          <h2 id="nome-partida"></h2>
+          <div class="botoes">
+            <button type="button" id="baixar-partida" title="Todos os arquivos da partida: manifesto, tomadas, fila, quadros, recortes, rótulos e revisões">Baixar a partida (.zip)</button>
+            <button type="button" id="excluir-partida" class="perigo">Excluir a partida…</button>
+          </div>
+        </div>
+        <div class="fichas" id="dados-partida"></div>
+        <div id="confirmar-exclusao" class="faixa aviso-perigo largo" hidden>
+          <p id="texto-exclusao"></p>
+          <label class="campo-confirmar">Para confirmar, escreva o nome da partida:
+            <input id="nome-confirmacao" autocomplete="off" spellcheck="false">
+          </label>
+          <div class="botoes">
+            <button type="button" id="excluir-de-vez" class="perigo" disabled>Excluir de vez</button>
+            <button type="button" id="cancelar-exclusao">Cancelar</button>
+          </div>
+        </div>
+        <p class="sutil" id="res-partida" role="status"></p>
+      </section>
+
+      <section id="secao-itens" hidden>
+        <div class="titulo-secao">
+          <div class="botoes alternar" role="group" aria-label="O que ver">
+            <button type="button" data-aba="quadros" aria-pressed="true">Quadros <span id="n-quadros" class="contagem"></span></button>
+            <button type="button" data-aba="recortes" aria-pressed="false">Recortes das placas <span id="n-recortes" class="contagem"></span></button>
+            <button type="button" data-aba="arquivos" aria-pressed="false">Arquivos <span id="n-arquivos" class="contagem"></span></button>
+          </div>
+        </div>
+        <div id="aba-itens">
+          <div class="barra-itens">
+            <div class="botoes alternar" id="filtros" role="group" aria-label="Filtrar pela situação"></div>
+            <select id="filtro-lote" aria-label="Lote de recortes" hidden></select>
+            <span class="espaco"></span>
+            <label class="caixa-marcar"><input type="checkbox" id="ver-anotacoes" checked> anotações</label>
+            <button type="button" id="selecionar" aria-pressed="false">Selecionar</button>
+            <button type="button" id="selecionar-todos" hidden>Todos estes</button>
+            <button type="button" id="excluir-selecionados" class="perigo" hidden>Excluir</button>
+            <button type="button" id="excluir-lote" class="perigo" hidden>Excluir o lote…</button>
+          </div>
+          <p class="sutil" id="dica-itens"></p>
+          <div id="grade" class="grade-itens"></div>
+          <p id="vazio-itens" class="sutil" hidden></p>
+        </div>
+        <div id="aba-arquivos" hidden>
+          <div id="problemas-arquivos" class="faixa devolvido" hidden></div>
+          <div class="rolavel">
+            <table class="tabela" id="arquivos">
+              <thead><tr><th>Arquivo</th><th>Tamanho</th><th>Modificado</th><th></th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <div id="visor" class="visor" hidden role="dialog" aria-modal="true" aria-labelledby="visor-titulo">
+      <div class="visor-tela tela"><canvas id="tela-visor" aria-label="A imagem, com a anotação escolhida por cima"></canvas></div>
+      <aside class="painel visor-painel">
+        <div class="titulo-secao">
+          <h2 id="visor-titulo"></h2>
+          <button type="button" id="fechar-visor" title="Fechar (Esc)">Fechar <kbd>Esc</kbd></button>
+        </div>
+        <dl class="ficha" id="visor-ficha"></dl>
+        <section>
+          <h2>Ver</h2>
+          <div id="visor-versoes" class="versoes" role="radiogroup" aria-label="A anotação que aparece na imagem"></div>
+        </section>
+        <section id="visor-detalhe" class="detalhe"></section>
+        <div class="botoes">
+          <label class="caixa-marcar"><input type="checkbox" id="visor-nomes"> nomes <kbd>L</kbd></label>
+          <label class="caixa-marcar"><input type="checkbox" id="visor-mostrar" checked> anotação <kbd>H</kbd></label>
+        </div>
+        <div class="botoes">
+          <button type="button" id="visor-anterior">← Anterior</button>
+          <button type="button" id="visor-proximo">Próximo →</button>
+          <span id="visor-posicao" class="contagem"></span>
+        </div>
+        <div class="botoes acoes">
+          <button type="button" id="visor-editar" class="primario">Editar <kbd>E</kbd></button>
+          <button type="button" id="visor-baixar">Baixar a imagem</button>
+          <button type="button" id="visor-excluir" class="perigo">Excluir…</button>
+        </div>
+        <p class="sutil" id="visor-dica"></p>
+        <p class="erro" id="visor-erro" role="alert"></p>
+      </aside>
+    </div>
+
+    <div id="caixa-json" class="modal" hidden>
+      <div class="caixa caixa-larga" role="dialog" aria-modal="true" aria-labelledby="titulo-json">
+        <div class="titulo-secao"><h2 id="titulo-json"></h2><button type="button" id="fechar-json">Fechar</button></div>
+        <pre id="conteudo-json" class="json"></pre>
+      </div>
+    </div>
+  </template>
+
   <!-- ================================================================== caixas compartilhadas -->
   <template id="tpl-caixas">
     <div id="caixa-descartar" class="modal" hidden>
@@ -253,6 +360,7 @@
               <li>Ponto coberto por alguém: marque só se dá para saber exatamente onde ele está. Fora da imagem, não marque.</li>
               <li>Nenhum ponto à vista (um close, a torcida)? Salve sem pontos. <b>Descarte</b> só a imagem que não dá para anotar (transição, borrão, grafismo por cima).</li>
               <li><b>Arraste</b> um ponto para ajustar; <b>botão direito</b> (ou <kbd>Delete</kbd>) apaga. <kbd>Esc</kbd> cancela o ponto escolhido. Botão direito e arrastar move a vista; <kbd>0</kbd> volta a vista; <kbd>H</kbd> esconde os pontos.</li>
+              <li><b>Mouse lento</b>: com <kbd>Ctrl</kbd> apertado, a mira anda 1/4 do que o mouse anda — para acertar o pixel olhando a lupa. O clique vale onde está a mira.</li>
             </ul>
           </details>
         </div>
@@ -326,6 +434,7 @@
               <li><b>Pincel</b> (<kbd>B</kbd>) para os detalhes: braços, pernas, a chuteira. <kbd>[</kbd> e <kbd>]</kbd> mudam o tamanho. <b>Borracha</b> (<kbd>E</kbd>): o pincel e o laço passam a apagar.</li>
               <li>Pinte até a borda do que está na frente: <b>1 px de folga</b> não conta. Nada na frente da placa? Salve sem pintar.</li>
               <li><b>Roda do mouse</b> aproxima; botão direito (ou espaço) e arrastar move a vista; <kbd>0</kbd> volta a vista; <kbd>H</kbd> esconde a pintura para comparar com a imagem.</li>
+              <li><b>Mouse lento</b>: com <kbd>Ctrl</kbd> apertado, o pincel anda 1/4 do que o mouse anda — para contornar um braço ou a chuteira sem passar da borda.</li>
             </ul>
           </details>
         </div>
@@ -355,6 +464,7 @@
             <li>Passe o mouse em cada ponto: o nome aparece na imagem e no mapa. <b>Está no centro do cruzamento</b> (até 2 px)? <b>O nome confere</b> com o lugar no mapa?</li>
             <li>Procure <b>ponto que aparece e ficou sem marcar</b>, e ponto marcado onde não dá para ver.</li>
             <li>Decida. <b>Aprovar</b> (<kbd>A</kbd>): está certo. <b>Corrigir</b> (<kbd>C</kbd>): dá para consertar rápido — você ajusta, e a correção vale com o seu nome. <b>Devolver</b> (<kbd>D</kbd>): precisa refazer — volta para quem marcou, com o motivo.</li>
+            <li>Corrigindo, <kbd>Ctrl</kbd> apertado deixa o mouse lento (a mira anda 1/4 do que o mouse anda).</li>
             <li>Imagem descartada: aprove se ela não dá mesmo para anotar; se dá, devolva (“descarte errado”) ou corrija marcando os pontos.</li>
           </ol>
         </details>
@@ -440,6 +550,7 @@
             <li>Confira: <b>tudo o que está na frente da placa pintado</b> (gente, bola, trave, outra placa, grafismo…), até a borda (1 px de folga não conta)? Nada do anúncio, de sombra, reflexo ou da rede pintado?</li>
             <li>O contorno da placa (em azul) <b>não está na placa</b>? O certo era descartar: devolva (“descarte errado”) ou corrija descartando.</li>
             <li>Decida. <b>Aprovar</b> (<kbd>A</kbd>): está certo. <b>Corrigir</b> (<kbd>C</kbd>): dá para consertar rápido — você pinta, e a correção vale com o seu nome. <b>Devolver</b> (<kbd>D</kbd>): precisa refazer — volta para quem pintou, com o motivo.</li>
+            <li>Corrigindo, <kbd>Ctrl</kbd> apertado deixa o mouse lento (o pincel anda 1/4 do que o mouse anda).</li>
             <li>Recorte descartado: aprove se ele não está mesmo na placa (ou não dá para ver); se dá para pintar, devolva (“descarte errado”) ou corrija pintando.</li>
           </ol>
         </details>

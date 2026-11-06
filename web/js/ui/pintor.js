@@ -4,6 +4,7 @@
 //   laço: arrastar         contorna à mão e, ao soltar, preenche (ou apaga, com a borracha)
 //   laço: clique a clique  um vértice por clique; feche no primeiro ponto, com dois cliques ou Enter
 //   botão direito, botão do meio ou espaço + arrastar   move a vista; roda do mouse aproxima
+//   Ctrl apertado          o mouse lento: a mira anda 1/4 do que o mouse anda (ponteiro.js)
 //
 // A pintura guarda, em cada pixel, 1 onde algo cobre a placa e 0 no resto. Com a região da placa, só
 // se pinta dentro dela: o pincel e o laço não passam do contorno, e o que fica fora da placa (o pouco
@@ -13,6 +14,7 @@
 // faltou e o que pintou a mais.
 
 import { mascaraDaRegiao, rasterizar } from "../nucleo/regiao.js";
+import { PonteiroFino } from "./ponteiro.js";
 
 const COR = [255, 64, 129];
 const ALFA = 150; // 0 a 255
@@ -55,6 +57,7 @@ export class Pintor {
     this.laco = null;
     this.arraste = null;
     this.espaco = false;
+    this.fino = new PonteiroFino(canvas);
     this._op = null;
     this._geracao = new Uint32Array(this.w * this.h);
     this._nOps = 0;
@@ -312,15 +315,19 @@ export class Pintor {
     return [(sx - this.vista.ox) / this.vista.escala, (sy - this.vista.oy) / this.vista.escala];
   }
 
+  /** Onde o evento do ponteiro vale: a mira (com Ctrl, o mouse lento). */
   _posicao(e) {
-    const r = this.cv.getBoundingClientRect();
-    return [e.clientX - r.left, e.clientY - r.top];
+    return this.fino.posicao(e);
   }
 
   _roda(e) {
     e.preventDefault();
-    const [sx, sy] = this._posicao(e);
-    const nova = Math.min(40, Math.max(0.1, this.vista.escala * Math.exp(-e.deltaY * 0.0015)));
+    const [sx, sy] = this.fino.posicao(e, { atualizar: false }); // aproxima em volta da mira
+    this._zoom(sx, sy, e.deltaY);
+  }
+
+  _zoom(sx, sy, deltaY) {
+    const nova = Math.min(40, Math.max(0.1, this.vista.escala * Math.exp(-deltaY * 0.0015)));
     const [x, y] = this.paraImagem(sx, sy);
     this.vista = { escala: nova, ox: sx - nova * x, oy: sy - nova * y };
     this._pedirQuadro();
@@ -328,7 +335,13 @@ export class Pintor {
 
   aproximar(fator) {
     const r = this.cv.getBoundingClientRect();
-    this._roda({ preventDefault() {}, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2, deltaY: -Math.log(fator) / 0.0015 });
+    this._zoom(r.width / 2, r.height / 2, -Math.log(fator) / 0.0015);
+  }
+
+  /** O cursor do sistema some quando a página desenha a mira (o mouse lento). */
+  _cursor() {
+    if (this.arraste?.tipo === "vista" || (this.arraste && !this.arraste.tipo)) return;
+    this.cv.style.cursor = this.fino.desviada ? "none" : "";
   }
 
   // ------------------------------------------------------------------ eventos
@@ -345,6 +358,8 @@ export class Pintor {
       [this.cv, "contextmenu", (e) => e.preventDefault()],
       [this.cv, "pointerleave", () => {
         this.ponteiro = null;
+        this.fino.soltar();
+        this._cursor();
         this.desenhar();
       }],
     ];
@@ -407,6 +422,7 @@ export class Pintor {
       // o quanto o arraste se afastou de onde começou: o laço à mão livre termina perto do começo
       this.laco.longe = Math.max(this.laco.longe, Math.hypot(sx - this.laco.sx, sy - this.laco.sy));
     }
+    this._cursor();
     this._pedirQuadro();
   }
 
@@ -415,6 +431,7 @@ export class Pintor {
     if (this.arraste) {
       this.arraste = null;
       this.cv.style.cursor = "";
+      this._cursor();
       return;
     }
     if (this.traco) {
@@ -472,6 +489,7 @@ export class Pintor {
     this._desenharContorno(ctx);
     this._desenharLaco(ctx);
     this._desenharPincel(ctx);
+    if (!this.arraste) this.fino.desenhar(ctx);
   }
 
   /** O contorno da placa (a região), por cima de tudo. */

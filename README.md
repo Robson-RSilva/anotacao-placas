@@ -129,6 +129,33 @@ Não é preciso cadastrar equipe nem levantar o estádio antes: basta importar a
 Em ~10% dos quadros e dos recortes duas pessoas anotam (e pintam) do zero, às cegas, para medir a
 concordância; em outros ~10% a página começa sem previsão, para medir o viés de ancoragem.
 
+**Mouse lento.** Marcando pontos ou pintando (e corrigindo na revisão), segure `Ctrl`: a mira anda 1/4
+do que o mouse anda, para acertar o pixel olhando a lupa ou contornar um braço com o pincel. A página
+esconde o cursor e desenha a mira, que é onde o clique vale; soltando o `Ctrl`, ela volta aos poucos
+para debaixo do mouse.
+
+## A página da partida
+
+O nome da partida, na tabela da central, abre a página dela ([ADR-0014](docs/adr/0014-pagina-da-partida.md)):
+
+- a **ficha**: o jogo, o vídeo e a importação (quando, quanto tempo levou, trechos, tomadas, rajadas);
+- os **quadros** e os **recortes das placas** em miniaturas, com a anotação por cima e a situação de
+  cada um — sem rótulo, esperando revisão, devolvido, aprovado, descartado —, com filtros por situação
+  (e por lote, nos recortes);
+- o **visor**, com zoom e lupa: escolha a versão que aparece (a aprovada, cada versão de cada pessoa,
+  com as revisões, a previsão do modelo ou só a imagem); `←` `→` andam pelos itens, `L` mostra os
+  nomes dos pontos, `H` esconde a anotação;
+- **Editar** (`E`) abre o item na página de marcar (ou de pintar), a partir da versão que estava na
+  tela, e volta para a partida ao salvar. Se o item já tem rótulo aprovado (ou é de outra pessoa), a
+  sua versão vale como correção de revisão e passa a ser a aprovada; senão, vai para a revisão como
+  qualquer rótulo. A página diz qual dos dois antes de salvar;
+- **excluir** um quadro (ou vários, com "Selecionar"; `Shift` marca um intervalo): sai da fila com a
+  imagem, os rótulos, as revisões, a previsão e os recortes das placas tirados dele. Um recorte sai do
+  lote com a pintura e as revisões; dá para excluir um lote inteiro. Antes, a página mostra o que vai
+  junto e pede confirmação;
+- os **arquivos** da partida, para ver os JSON e baixar; **baixar a partida** inteira em .zip; e
+  **excluir a partida**, só com o nome dela escrito (no Drive, os arquivos vão para a lixeira dele).
+
 ## O gabarito e os lotes de ouro
 
 A página **Gabarito** (pela central) é o teste de quem começa. São imagens com a resposta certa:

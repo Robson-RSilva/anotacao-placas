@@ -22,7 +22,7 @@ const DESCARTE = {
 /**
  * Põe as caixas de descartar e de confirmar na vista, com os motivos de descarte da tarefa. Devolve
  * {pedirDescarte, confirmar, aberta}: `pedirDescarte()` resolve com {motivo, comentario} ou null
- * (voltou); `confirmar(titulo, texto)`, com true ou false.
+ * (voltou); `confirmar(titulo, texto, {sim, nao, perigo})`, com true ou false.
  */
 export function caixas(raiz, tarefa = "pontos") {
   raiz.append(document.getElementById("tpl-caixas").content.cloneNode(true));
@@ -80,9 +80,13 @@ export function caixas(raiz, tarefa = "pontos") {
         resolver = r;
       });
     },
-    confirmar(titulo, texto) {
+    confirmar(titulo, texto, { sim = "Salvar assim", nao = "Voltar", perigo = false } = {}) {
       $("titulo-confirmar").textContent = titulo;
       $("texto-confirmar").textContent = texto;
+      $("sim-confirmar").textContent = sim;
+      $("nao-confirmar").textContent = nao;
+      $("sim-confirmar").classList.toggle("primario", !perigo);
+      $("sim-confirmar").classList.toggle("perigo", perigo);
       $("caixa-confirmar").hidden = false;
       $("sim-confirmar").focus();
       return new Promise((r) => {

@@ -1,7 +1,8 @@
 """Unificar: lê tudo, valida de novo e gera os conjuntos de treino (Parquet + manifesto).
 
 Para cada item e cada tarefa fica um rótulo só: o aprovado na revisão cruzada (ou a correção do
-revisor). Se mais de um foi aprovado (item em dupla), vale o aprovado primeiro. Imagens descartadas
+revisor). Se mais de um foi aprovado (item em dupla), vale o aprovado primeiro; uma correção do próprio
+aprovado (a edição pela página da partida) o substitui (ADR-0014). Imagens descartadas
 ficam fora (o manifesto conta por motivo). O conjunto de cada item é o da partida em `divisao.json` —
 nunca se misturam itens da mesma partida entre treino e teste.
 
@@ -65,14 +66,21 @@ COLUNAS_PLACAS = [
 
 
 def aprovado(ip: IndicePartida, quadro: str, ler) -> tuple | None:
-    """O rótulo aprovado primeiro do item: (aprovado_em, arquivo, rótulo, revisor, decisão), ou None.
+    """O rótulo aprovado do item: (aprovado_em, arquivo, rótulo, revisor, decisão), ou None.
 
-    Uma correção do revisor conta como aprovada quando foi gravada; um rótulo aprovado, quando a
-    revisão foi gravada. Empate: o primeiro por (pessoa, versão). A mesma regra das páginas
-    (`rotuloAprovado` em `web/js/nucleo/filas.js`)."""
+    Vale o aprovado primeiro: uma correção do revisor conta como aprovada quando foi gravada; um rótulo
+    aprovado, quando a revisão foi gravada. Empate: o primeiro por (pessoa, versão). Uma correção do
+    próprio aprovado (a edição pela página da partida) o substitui; de correção em correção, vale a mais
+    recente (ADR-0014). A mesma regra das páginas (`aprovado` em `web/js/nucleo/filas.js`)."""
+    candidatos = sorted(ip.por_quadro().get(quadro, []), key=lambda a: (a.pessoa, a.versao))
+    lidos = {a.nome: ler(a) for a in candidatos}  # cada rótulo lido uma vez só
+
+    def rotulo(a):
+        return lidos[a.nome]
+
     escolhido = None
-    for a in sorted(ip.por_quadro().get(quadro, []), key=lambda a: (a.pessoa, a.versao)):
-        r = ler(a)
+    for a in candidatos:
+        r = rotulo(a)
         rev = ip.ultima_revisao(a.nome)
         if r.corrige is not None:
             aprovado_em, revisor, decisao = r.criado_em, a.pessoa, "corrigir"
@@ -82,6 +90,18 @@ def aprovado(ip: IndicePartida, quadro: str, ler) -> tuple | None:
             continue
         if escolhido is None or aprovado_em < escolhido[0]:
             escolhido = (aprovado_em, a, r, revisor, decisao)
+    vistos: set[str] = set()
+    while escolhido is not None and escolhido[1].nome not in vistos:
+        vistos.add(escolhido[1].nome)
+        seguintes = [a for a in candidatos if rotulo(a).corrige == escolhido[1].nome]
+        if not seguintes:
+            break
+        c = seguintes[0]
+        for a in seguintes[1:]:  # a mais recente; empate: a última por (pessoa, versão)
+            if rotulo(a).criado_em >= rotulo(c).criado_em:
+                c = a
+        rc = rotulo(c)
+        escolhido = (rc.criado_em, c, rc, c.pessoa, "corrigir")
     return escolhido
 
 

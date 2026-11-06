@@ -18,6 +18,7 @@ import os
 import re
 import threading
 import zipfile
+from datetime import timedelta
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -1256,6 +1257,256 @@ def test_importar_de_novo_so_sem_trabalho(site, video, navegador):
     assert "já foi importada e já tem rótulos: não dá para importá-la de novo" in _processar(pagina)
     assert pagina.is_hidden("#substituir")
     assert Fila.model_validate_json(_ler(pagina, f"partidas/{PARTIDA}/fila.json")) == fila  # nada mudou
+    assert not erros, erros
+
+
+def _gravar_rotulo_pontos(pagina, quadro: str, pessoa: str, pontos: dict, *, minutos: int = 0) -> str:
+    """Um rótulo de pontos gravado direto na pasta (como se outra pessoa tivesse anotado)."""
+    nome = f"{quadro}__{pessoa}__v1.json"
+    r = {
+        "formato": "rotulo.pontos/1",
+        "partida": PARTIDA,
+        "quadro": quadro,
+        "anotador": pessoa,
+        "versao": 1,
+        "ferramenta": "0.10.0",
+        "manual": "pontos-0.1",
+        "criado_em": (AGORA + timedelta(minutes=minutos)).isoformat(),
+        "segundos_ativos": 20,
+        "largura": 640,
+        "altura": 360,
+        "partiu_de": {"fonte": "nenhuma", "versao": None, "referencia": None},
+        "situacao": "ok",
+        "motivo_descarte": None,
+        "comentario": "",
+        "corrige": None,
+        "pontos": [{"ponto": n, "x": x, "y": y} for n, (x, y) in pontos.items()],
+    }
+    caminho = f"partidas/{PARTIDA}/rotulos/pontos/{nome}"
+    pagina.evaluate("async ([c, o]) => await anotacao.pasta.gravar('rotulo_pontos', c, o)", [caminho, r])
+    return nome
+
+
+def _aprovar(pagina, quadro: str, rotulo: str, revisor: str, *, minutos: int = 5) -> None:
+    r = {
+        "formato": "revisao.pontos/1",
+        "partida": PARTIDA,
+        "quadro": quadro,
+        "rotulo": rotulo,
+        "revisor": revisor,
+        "versao": 1,
+        "decisao": "aprovar",
+        "motivo": None,
+        "comentario": "",
+        "nova_versao": None,
+        "ferramenta": "0.10.0",
+        "manual": "revisao-0.4",
+        "criado_em": (AGORA + timedelta(minutes=minutos)).isoformat(),
+        "segundos_ativos": 4,
+    }
+    caminho = f"partidas/{PARTIDA}/revisoes/pontos/{quadro}__{revisor}__v1.json"
+    pagina.evaluate("async ([c, o]) => await anotacao.pasta.gravar('revisao_pontos', c, o)", [caminho, r])
+
+
+def test_pagina_da_partida(site, video, navegador, capturas):
+    """A partida aberta pela central: as miniaturas com a situação, o visor com as versões, editar (a
+    correção da aprovada passa a valer), excluir quadros, os arquivos e excluir a partida inteira."""
+    caminho, _ = video
+    erros: list[str] = []
+    pagina = _pagina(navegador, erros)
+    _criar_pasta(pagina, site)
+    _escolher_pessoa(pagina, site, "A01")
+    pagina.click("#ir-importar")
+    _preencher_importacao(pagina, caminho)
+    assert _processar(pagina) == ""
+    q = [it.quadro for it in Fila.model_validate_json(_ler(pagina, f"partidas/{PARTIDA}/fila.json")).itens]
+    assert len(q) == 3
+    # q0: aprovado (de A02, aprovado por A03); q1: esperando revisão (de A02); q2: sem rótulo
+    a = _gravar_rotulo_pontos(pagina, q[0], "A02", {"centro": (320.0, 180.0), "meio_cab": (330.0, 340.0)})
+    _aprovar(pagina, q[0], a, "A03")
+    _gravar_rotulo_pontos(pagina, q[1], "A02", {"centro": (300.0, 170.0)})
+
+    # 1) na central, o nome da partida abre a página dela
+    pagina.goto(site + "#/")
+    pagina.click(f"a.partida:has-text('{PARTIDA}')")
+    pagina.wait_for_selector("#grade .item")
+    assert pagina.locator("#grade .item").count() == 3
+    filtros = ["Todos (3)", "sem rótulo (1)", "esperando revisão (1)", "aprovado (1)"]
+    assert pagina.inner_text("#filtros").split("\n") == filtros
+    selos = pagina.eval_on_selector_all("#grade .selo", "els => els.map((e) => e.textContent)")
+    assert selos == ["aprovado", "esperando revisão", "sem rótulo"]
+    assert "Time A × Time B" in pagina.inner_text("#titulo-partida")
+    pagina.wait_for_timeout(400)  # as miniaturas
+    pagina.screenshot(path=str(capturas / "e2e_partida_1.png"), full_page=True)
+
+    # 2) o visor: a versão aprovada por cima, com a revisão; as setas andam pelos quadros
+    pagina.click("#grade .item >> nth=0")
+    pagina.wait_for_function("window.visorPartida && visorPartida.pontos.size === 2")
+    assert "A02 v1 · a aprovada" in pagina.inner_text("#visor-versoes")
+    assert "aprovado por A03" in pagina.inner_text("#visor-detalhe")
+    pagina.screenshot(path=str(capturas / "e2e_partida_2_visor.png"))
+    pagina.keyboard.press("ArrowRight")
+    pagina.wait_for_function("window.visorPartida && visorPartida.pontos.size === 1")
+    assert "Ainda sem revisão" in pagina.inner_text("#visor-detalhe")
+    pagina.keyboard.press("ArrowLeft")
+    pagina.wait_for_function("window.visorPartida && visorPartida.pontos.size === 2")
+
+    # 3) editar: na página de marcar, partindo da aprovada; ao salvar, volta, e a correção é a aprovada
+    pagina.keyboard.press("e")
+    pagina.wait_for_function("window.itemPontos && itemPontos.edicao && window.marcador && marcador.pontos.size === 2")
+    assert "corrige a aprovada" in pagina.inner_text("#partiu")
+    assert pagina.inner_text("a.voltar") == "← Partida"
+    _marcar(pagina, "meio_opo", 300.0, 40.0)
+    pagina.keyboard.press("s")
+    pagina.wait_for_function("window.visorPartida && visorPartida.pontos.size === 3")
+    assert "A01 v1 · a aprovada" in pagina.inner_text("#visor-versoes")
+    r = RotuloPontos.model_validate_json(_ler(pagina, f"partidas/{PARTIDA}/rotulos/pontos/{q[0]}__A01__v1.json"))
+    assert r.corrige == a and r.partiu_de.fonte == "rotulo_revisado" and len(r.pontos) == 3
+    pagina.keyboard.press("Escape")
+    assert pagina.is_hidden("#visor")
+
+    # 4) excluir um quadro marcando na grade
+    pagina.click("#selecionar")
+    pagina.click("#grade .item >> nth=2")
+    assert pagina.inner_text("#excluir-selecionados") == "Excluir 1 quadro…"
+    pagina.click("#excluir-selecionados")
+    pagina.wait_for_selector("#caixa-confirmar", state="visible")
+    assert "Nenhum rótulo nem revisão sai junto" in pagina.inner_text("#texto-confirmar")
+    pagina.click("#sim-confirmar")
+    pagina.wait_for_function("document.querySelectorAll('#grade .item').length === 2")
+    fila = Fila.model_validate_json(_ler(pagina, f"partidas/{PARTIDA}/fila.json"))
+    assert [it.quadro for it in fila.itens] == q[:2]
+    assert f"{q[2]}.jpg" not in _listar(pagina, f"partidas/{PARTIDA}/quadros")
+
+    # 5) pelo visor, o que sai junto aparece antes (e dá para voltar)
+    pagina.click("#grade .item >> nth=1")
+    pagina.wait_for_function("window.visorPartida && visorPartida.pontos.size === 1")
+    pagina.click("#visor-excluir")
+    pagina.wait_for_selector("#caixa-confirmar", state="visible")
+    assert "Sai junto: 1 rótulo." in pagina.inner_text("#texto-confirmar")
+    pagina.click("#nao-confirmar")
+    pagina.keyboard.press("Escape")
+    assert pagina.locator("#grade .item").count() == 2
+
+    # 6) os arquivos, com o JSON para ver
+    pagina.click("[data-aba=arquivos]")
+    pagina.wait_for_selector("#arquivos tbody tr:has-text('fila.json')")
+    pagina.click("#arquivos tbody tr:has-text('fila.json') button:has-text('Ver')")
+    pagina.wait_for_selector("#caixa-json", state="visible")
+    assert '"formato": "fila.partida/1"' in pagina.inner_text("#conteudo-json")
+    pagina.keyboard.press("Escape")
+    assert pagina.is_hidden("#caixa-json")
+
+    # 7) excluir a partida inteira: só com o nome escrito
+    pagina.click("#excluir-partida")
+    pagina.fill("#nome-confirmacao", "outra")
+    assert pagina.is_disabled("#excluir-de-vez")
+    pagina.fill("#nome-confirmacao", PARTIDA)
+    pagina.click("#excluir-de-vez")
+    pagina.wait_for_selector("#partidas td:has-text('Nenhuma partida importada ainda.')")
+    assert _listar(pagina, "partidas") == []
+    assert not erros, erros
+
+
+def test_partida_recortes(site, video, navegador, capturas, tmp_path):
+    """A aba dos recortes: a pintura por cima, o visor com a máscara, editar a própria pintura (versão nova,
+    que vai para a revisão) e excluir o lote inteiro."""
+    caminho, _ = video
+    erros: list[str] = []
+    pagina = _pagina(navegador, erros)
+    _importar(pagina, site, caminho)
+    lote, _ = _zip_dos_recortes(tmp_path)
+    _trazer_zip(pagina, site, lote, 4)
+    # pinta o primeiro recorte com o pincel, pela página de pintar
+    pagina.goto(site + "#/placas")
+    pagina.wait_for_function("window.itemPlacas && window.pintor")
+    r1 = pagina.evaluate("itemPlacas.quadro")
+    pagina.keyboard.press("b")
+    pagina.evaluate("pintor.raio = 5")
+    a, b = _janela(pagina, "pintor", 60, 30), _janela(pagina, "pintor", 100, 30)
+    pagina.mouse.move(*a)
+    pagina.mouse.down()
+    pagina.mouse.move(*b, steps=8)
+    pagina.mouse.up()
+    n1 = pagina.evaluate("pintor.pixels()")
+    pagina.keyboard.press("s")
+    pagina.wait_for_function("(q) => window.itemPlacas && itemPlacas.quadro !== q", arg=r1)
+
+    pagina.goto(site + f"#/partida?id={PARTIDA}&aba=recortes")
+    pagina.wait_for_selector("#grade .item.recorte")
+    assert pagina.locator("#grade .item").count() == 3
+    assert pagina.inner_text("#filtros").split("\n") == ["Todos (3)", "sem rótulo (2)", "esperando revisão (1)"]
+    pagina.wait_for_timeout(400)
+    pagina.screenshot(path=str(capturas / "e2e_partida_3_recortes.png"), full_page=True)
+    pagina.click(f"#grade .item[data-id='{r1}']")
+    pagina.wait_for_function("(n) => window.visorPartida && visorPartida.pixels() === n", arg=n1)
+    pagina.screenshot(path=str(capturas / "e2e_partida_4_visor_recorte.png"))
+    # editar a própria pintura (ainda sem revisão): versão nova, que vai para a revisão
+    pagina.click("#visor-editar")
+    editando = "(n) => window.itemPlacas && itemPlacas.edicao && window.pintor && pintor.pixels() === n"
+    pagina.wait_for_function(editando, arg=n1)
+    assert "vai para a revisão" in pagina.inner_text("#partiu")
+    a, b = _janela(pagina, "pintor", 60, 50), _janela(pagina, "pintor", 100, 50)
+    pagina.mouse.move(*a)
+    pagina.mouse.down()
+    pagina.mouse.move(*b, steps=8)
+    pagina.mouse.up()
+    n2 = pagina.evaluate("pintor.pixels()")
+    assert n2 > n1
+    pagina.keyboard.press("s")
+    pagina.wait_for_function("(n) => window.visorPartida && visorPartida.pixels() === n", arg=n2)
+    assert "A01 v2" in pagina.inner_text("#visor-versoes")
+    r = RotuloPlacas.model_validate_json(_ler(pagina, f"partidas/{PARTIDA}/rotulos/placas/{r1}__A01__v2.json"))
+    assert r.corrige is None and r.partiu_de.fonte == "rotulo_anterior" and r.pixels == n2
+    pagina.keyboard.press("Escape")
+    # excluir o lote inteiro
+    pagina.select_option("#filtro-lote", "r1")
+    pagina.click("#excluir-lote")
+    pagina.wait_for_selector("#caixa-confirmar", state="visible")
+    assert "São 3 recortes; sai junto: 2 pinturas e 0 revisões" in pagina.inner_text("#texto-confirmar")
+    pagina.click("#sim-confirmar")
+    pagina.wait_for_selector("#vazio-itens:not([hidden])")
+    assert _listar(pagina, f"partidas/{PARTIDA}/recortes") == []
+    assert _listar(pagina, f"partidas/{PARTIDA}/rotulos/placas") == []
+    assert not erros, erros
+
+
+def test_mouse_lento_com_ctrl(site, video, navegador):
+    """Com Ctrl, a mira anda 1/4 do que o mouse anda, e o clique vale onde ela está; sem Ctrl, ela volta aos
+    poucos para debaixo do mouse; saindo da imagem, volta de vez."""
+    caminho, _ = video
+    erros: list[str] = []
+    pagina = _pagina(navegador, erros)
+    _criar_pasta(pagina, site)
+    _escolher_pessoa(pagina, site, "A01")
+    pagina.click("#ir-importar")
+    _preencher_importacao(pagina, caminho)
+    assert _processar(pagina) == ""
+    pagina.goto(site + "#/pontos")
+    pagina.wait_for_function("window.itemPontos && window.marcador")
+    r = pagina.evaluate(
+        "(() => { const b = marcador.cv.getBoundingClientRect(); return [b.left, b.top, b.width, b.height] })()"
+    )
+    cx, cy = r[0] + r[2] / 2, r[1] + r[3] / 2
+    pagina.mouse.move(cx, cy)
+    pagina.keyboard.down("Control")
+    pagina.mouse.move(cx + 200, cy + 80, steps=20)
+    mira = pagina.evaluate("marcador.fino.mira")
+    assert abs(mira[0] - (r[2] / 2 + 50)) < 0.6 and abs(mira[1] - (r[3] / 2 + 20)) < 0.6, mira
+    assert pagina.evaluate("marcador.fino.desviada && marcador.cv.style.cursor === 'none'")
+    pagina.mouse.down()
+    pagina.mouse.up()
+    pendente = pagina.evaluate("marcador.pendente")
+    esperado = pagina.evaluate("([x, y]) => marcador.paraImagem(x, y)", mira)
+    assert abs(pendente["x"] - esperado[0]) < 0.01 and abs(pendente["y"] - esperado[1]) < 0.01
+    pagina.keyboard.up("Control")
+    longe = float(np.hypot(150, 60))
+    pagina.mouse.move(cx + 300, cy + 80, steps=10)
+    mira2 = pagina.evaluate("marcador.fino.mira")
+    real = (r[2] / 2 + 300, r[3] / 2 + 80)
+    assert abs(float(np.hypot(real[0] - mira2[0], real[1] - mira2[1])) - (longe - 50)) < 1.5, mira2
+    pagina.mouse.move(r[0] - 30, cy, steps=4)
+    assert not pagina.evaluate("marcador.fino.desviada")
     assert not erros, erros
 
 

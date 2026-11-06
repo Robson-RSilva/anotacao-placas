@@ -271,6 +271,15 @@ export async function montar(raiz, ctx) {
     };
   }
 
+  /** O nome da partida, que abre a página dela (quadros, recortes, anotações, arquivos). */
+  const celulaPartida = (pid) => {
+    const td = document.createElement("td");
+    const a = Object.assign(document.createElement("a"), { className: "partida", href: `#/partida?id=${encodeURIComponent(pid)}`, textContent: pid });
+    a.title = "Abrir a partida: os quadros e os recortes, com as anotações, os arquivos, editar e excluir";
+    td.append(a);
+    return td;
+  };
+
   async function preencherTabelas() {
     let pl;
     try {
@@ -288,7 +297,7 @@ export async function montar(raiz, ctx) {
       const aviso = celula(`fora das filas: ${p.erro}`, "erro");
       aviso.colSpan = 7;
       const tr = document.createElement("tr");
-      tr.append(celula(p.partida), aviso);
+      tr.append(celulaPartida(p.partida), aviso);
       linhasPartidas.push(tr);
     }
     const placasDe = new Map(pl.placas.partidas.map((g) => [g.partida, g]));
@@ -298,7 +307,7 @@ export async function montar(raiz, ctx) {
       const j = placasDe.get(g.partida);
       const tr = document.createElement("tr");
       tr.append(
-        celula(g.partida),
+        celulaPartida(g.partida),
         celula(c.emissora),
         celula(`${c.iluminacao}${c.chuva ? ", chuva" : ""}`),
         celula(String(g.sorteados), "num"),
