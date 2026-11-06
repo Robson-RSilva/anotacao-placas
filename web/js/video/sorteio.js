@@ -3,6 +3,7 @@
 // Variedade vem da amostragem, não do volume: no máximo 1 ou 2 quadros por tomada (quadros vizinhos
 // são quase iguais), longe dos cortes e fora das transições, com a cota dividida entre os grupos de
 // aparência para que tomadas raras (câmera atrás do gol, close) não sumam no meio das da principal.
+// Tomada com menos de 1 s não entra: é sobra de vinheta ou de grafismo animado, não um plano.
 //
 // Cerca de 10% dos quadros vão em dupla às cegas (duas pessoas anotam do zero, para medir a
 // concordância) e outros ~10% começam sem previsão (para medir o viés de ancoragem). Tudo é
@@ -13,19 +14,31 @@ import { arredondarPar, idQuadro } from "../nucleo/convencoes.js";
 export const PARAMETROS = Object.freeze({
   alvo: 100,
   margem_s: 0.4,
+  tomada_min_s: 1.0,
   max_por_tomada: 2,
   tomada_longa_s: 6.0,
   frac_dupla: 0.1,
   frac_sem_previsao: 0.1,
 });
 
-/** Quadros elegíveis de uma tomada: longe das bordas e fora das transições. */
-export function elegiveis(t, pts, transicao, margemMs) {
+/** Duração da tomada em ms: do primeiro quadro ao começo da seguinte (no fim do vídeo, mais um quadro). */
+export function duracaoMs(t, pts) {
+  if (t.i1 < pts.length) return pts[t.i1] - pts[t.i0];
+  const n = t.i1 - t.i0;
+  return n > 1 ? ((pts[t.i1 - 1] - pts[t.i0]) * n) / (n - 1) : 0;
+}
+
+/**
+ * Quadros elegíveis de uma tomada: longe das bordas e fora das transições. Tomada com menos de `minMs`
+ * não dá quadro; se nenhum fica longe das bordas, vale o do meio.
+ */
+export function elegiveis(t, pts, transicao, margemMs, minMs = PARAMETROS.tomada_min_s * 1000) {
+  if (t.i1 <= t.i0 || duracaoMs(t, pts) < minMs) return [];
   const out = [];
   for (let i = t.i0; i < t.i1; i++) {
     if (!transicao[i] && pts[i] >= pts[t.i0] + margemMs && pts[i] <= pts[t.i1 - 1] - margemMs) out.push(i);
   }
-  if (!out.length && t.i1 - t.i0 >= 3) {
+  if (!out.length) {
     const meio = (t.i0 + t.i1) >> 1;
     if (!transicao[meio]) out.push(meio);
   }
@@ -63,7 +76,7 @@ export function sortear(tomadas, pts, transicao, params, aleatorio) {
   const p = { ...PARAMETROS, ...params };
   const eleg = new Map();
   tomadas.forEach((t, k) => {
-    const e = elegiveis(t, pts, transicao, p.margem_s * 1000);
+    const e = elegiveis(t, pts, transicao, p.margem_s * 1000, p.tomada_min_s * 1000);
     if (e.length) eleg.set(k, e);
   });
   if (!eleg.size) return [];

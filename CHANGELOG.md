@@ -5,6 +5,36 @@ Formato de [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); versões
 
 ## [Não lançado]
 
+## [0.13.0] - 2026-11-06
+
+Vinhetas e grafismos animados não enchem mais o sorteio de quadros quase iguais.
+
+### Corrigido
+
+- Numa vinheta de replay ou num grafismo animado, cada passo da animação parecia um corte (a 15 q/s
+  num vídeo a 60 q/s, um "corte" a cada 4 quadros): o trecho virava dezenas de tomadas de 4 quadros,
+  o sorteio aceitava o quadro do meio de cada uma, e elas ainda formavam grupos próprios, com cota.
+  Numa partida real de 14 min, 53 dos 100 quadros saíram de 4 s de vinhetas. Agora cortes a menos de
+  1 s um do outro viram uma transição, com corte só nas pontas (vão em `transicoes` no
+  `tomadas.json`, e o manifesto conta as `rajadas`), e tomada com menos de 1 s não entra no sorteio
+  (`sorteio_tomada_min_s`). Com os cortes daquela partida: 51 tomadas, 79 quadros de 51 tomadas,
+  nenhum a menos de 1,2 s do seguinte (antes, metade ficava a menos de 0,3 s).
+- Só as tomadas que podem dar quadro formam os grupos de aparência: as de transição e as de fora dos
+  trechos lidos tomavam grupos para si.
+
+### Adicionado
+
+- Uma partida que ninguém começou a usar (sem rótulos, revisões, recortes nem previsões) pode ser
+  importada de novo: a página avisa que a partida já existe e oferece apagar a importação anterior e
+  refazer tudo. Com qualquer trabalho na partida, continua recusando.
+
+### Mudado
+
+- O resumo da importação diz quanto tempo ela levou com todas as letras ("A importação levou 15 min
+  41 s"), conta só as tomadas que podiam dar quadro, diz quantas rajadas ficaram de fora e explica
+  quando saem menos quadros que os pedidos (no máximo 1 por tomada, 2 nas de 6 s ou mais). A mesma
+  regra aparece ao lado de "Quadros a sortear".
+
 ## [0.12.0] - 2026-10-31
 
 O lote de ouro das imagens reais sai de um botão da página, sem comando.

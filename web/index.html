@@ -589,7 +589,7 @@
             <select name="iluminacao"><option value="dia">dia</option><option value="noite">noite</option><option value="transicao">transição</option></select>
           </label>
           <label class="caixa-marcar"><input type="checkbox" name="chuva"> chuva</label>
-          <label>Quadros a sortear <input name="alvo" type="text" inputmode="numeric" autocomplete="off" value="100" aria-describedby="dica-alvo"><span class="sutil" id="dica-alvo">de 1 a 5000</span></label>
+          <label>Quadros a sortear <input name="alvo" type="text" inputmode="numeric" autocomplete="off" value="100" aria-describedby="dica-alvo"><span class="sutil" id="dica-alvo">de 1 a 5000; no máximo 1 por tomada (2 nas de 6 s ou mais)</span></label>
           <label class="largo">Trechos do vídeo (opcional)
             <input name="trechos" autocomplete="off" placeholder="ex.: 0:05:00-0:50:00, 1:05:00-1:50:00 (vazio: o vídeo inteiro)">
           </label>
@@ -603,6 +603,7 @@
         <div id="progresso" class="progresso" hidden><div class="barra-progresso"><div id="barra"></div></div><span id="etapa"></span></div>
         <p id="res-importar" class="sutil" role="status"></p>
         <p id="erro-importar" class="erro" role="alert"></p>
+        <button type="button" id="substituir" hidden>Apagar a importação anterior e importar de novo</button>
       </section>
     </main>
   </template>

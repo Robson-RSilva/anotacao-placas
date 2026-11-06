@@ -49,6 +49,7 @@ from sintetico import (
     codificadores_ffmpeg,
     codificar,
     gravar_quadros,
+    gravar_quadros_com_vinheta,
     marcar_chaves_falsas,
     recorte_sintetico,
     renderizar,
@@ -82,6 +83,15 @@ def video(tmp_path_factory):
     pasta = tmp_path_factory.mktemp("video")
     verdade = gravar_quadros(pasta / "quadros")
     return codificar(pasta / "quadros", pasta / "jogo.mp4"), verdade
+
+
+@pytest.fixture(scope="module")
+def video_com_vinheta(tmp_path_factory):
+    if not codificadores_ffmpeg() & {"libsvtav1", "libvpx-vp9", "libaom-av1"}:
+        pytest.skip("precisa do ffmpeg com AV1 ou VP9")
+    pasta = tmp_path_factory.mktemp("vinheta")
+    cortes, vinheta = gravar_quadros_com_vinheta(pasta / "quadros")
+    return codificar(pasta / "quadros", pasta / "vinheta.mp4", fps=60), cortes, vinheta
 
 
 @pytest.fixture
@@ -1186,6 +1196,66 @@ def test_importar_so_os_trechos(site, video, navegador, capturas):
     # dele (2 s e 4 s) nem são procurados
     assert tomadas.cortes == [55, 95]
     _bate_com_o_video(pagina, fila, caminho.parent / "quadros")
+    assert not erros, erros
+
+
+def test_vinheta_animada_vira_transicao(site, video_com_vinheta, navegador):
+    """Uma vinheta de replay que anda um passo a cada 4 quadros (60 q/s) não vira 16 tomadas de 4 quadros
+    nem dá quadro para anotar: é uma transição, com corte só nas pontas."""
+    caminho, cortes, (v0, v1) = video_com_vinheta
+    erros: list[str] = []
+    pagina = _pagina(navegador, erros)
+    _criar_pasta(pagina, site)
+    _escolher_pessoa(pagina, site, "A01")
+    pagina.click("#ir-importar")
+    _preencher_importacao(pagina, caminho)
+    assert _processar(pagina) == ""
+    resumo = pagina.inner_text("#res-importar")
+    assert "3 tomadas, 3 quadros sorteados" in resumo, resumo
+    assert "1 rajada de cortes (vinhetas, grafismos animados) ficou fora do sorteio" in resumo, resumo
+    assert "Saíram menos que os 10 pedidos" in resumo and "A importação levou" in resumo, resumo
+    man = Manifesto.model_validate_json(_ler(pagina, f"partidas/{PARTIDA}/manifesto.json"))
+    tomadas = Tomadas.model_validate_json(_ler(pagina, f"partidas/{PARTIDA}/tomadas.json"))
+    fila = Fila.model_validate_json(_ler(pagina, f"partidas/{PARTIDA}/fila.json"))
+    assert man.video.fps == 60 and man.pre_processamento.parametros["rajadas"] == 1
+    assert tomadas.cortes == cortes and tomadas.transicoes == [(v0, v1)]
+    assert len(fila.itens) == 3 and {i.tomada for i in fila.itens} == {0, 2, 3}
+    assert all(not v0 <= it.i < v1 for it in fila.itens)
+    assert not erros, erros
+
+
+def test_importar_de_novo_so_sem_trabalho(site, video, navegador):
+    """A mesma partida de novo: se ninguém começou a usá-la, a importação anterior sai inteira e tudo é
+    refeito; com um rótulo, não dá mais."""
+    caminho, _ = video
+    erros: list[str] = []
+    pagina = _pagina(navegador, erros)
+    _criar_pasta(pagina, site)
+    _escolher_pessoa(pagina, site, "A01")
+    pagina.click("#ir-importar")
+    _preencher_importacao(pagina, caminho, "0:02.2-0:03.8")
+    assert _processar(pagina) == ""
+    sobra = f"partidas/{PARTIDA}/quadros/t0000099999.jpg"  # algo da importação anterior
+    pagina.evaluate("async (c) => await anotacao.pasta.escrever(c, 'x')", sobra)
+
+    pagina.fill("input[name=trechos]", "")  # agora o vídeo inteiro
+    assert "já foi importada; como ninguém começou a anotá-la" in _processar(pagina)
+    assert pagina.is_visible("#substituir")
+    pagina.click("#substituir")  # a confirmação é aceita (ver _pagina)
+    pronto = "document.querySelector('#res-importar').textContent.startsWith('Pronto')"
+    pagina.wait_for_function(pronto, timeout=120_000)
+    assert pagina.inner_text("#erro-importar") == "" and pagina.is_hidden("#substituir")
+    man = Manifesto.model_validate_json(_ler(pagina, f"partidas/{PARTIDA}/manifesto.json"))
+    fila = Fila.model_validate_json(_ler(pagina, f"partidas/{PARTIDA}/fila.json"))
+    assert "trechos" not in man.pre_processamento.parametros and len(fila.itens) == 3
+    assert _listar(pagina, f"partidas/{PARTIDA}") == ["fila.json", "manifesto.json", "quadros", "tomadas.json"]
+    assert _listar(pagina, f"partidas/{PARTIDA}/quadros") == sorted(f"{it.quadro}.jpg" for it in fila.itens)
+
+    rotulo = f"partidas/{PARTIDA}/rotulos/pontos/{fila.itens[0].quadro}__A01__v1.json"
+    pagina.evaluate("async (c) => await anotacao.pasta.escrever(c, '{}')", rotulo)
+    assert "já foi importada e já tem rótulos: não dá para importá-la de novo" in _processar(pagina)
+    assert pagina.is_hidden("#substituir")
+    assert Fila.model_validate_json(_ler(pagina, f"partidas/{PARTIDA}/fila.json")) == fila  # nada mudou
     assert not erros, erros
 
 

@@ -25,6 +25,7 @@ self.onmessage = async (evento) => {
       cadastro: m.cadastro,
       trechos: m.trechos,
       alvo: m.alvo,
+      substituir: Boolean(m.substituir),
       sinal: controle.signal,
       aoProgresso: (etapa, frac) => {
         const agora = performance.now();
@@ -36,6 +37,11 @@ self.onmessage = async (evento) => {
     });
     self.postMessage({ tipo: "fim", resultado });
   } catch (erro) {
-    self.postMessage({ tipo: "erro", nome: erro?.name || "Error", mensagem: erro?.message || String(erro) });
+    self.postMessage({
+      tipo: "erro",
+      nome: erro?.name || "Error",
+      mensagem: erro?.message || String(erro),
+      podeSubstituir: Boolean(erro?.podeSubstituir),
+    });
   }
 };

@@ -118,6 +118,42 @@ def gravar_quadros(destino: Path, w: int = 640, h: int = 360) -> list[dict]:
     return verdade
 
 
+def gravar_quadros_com_vinheta(
+    destino: Path, w: int = 640, h: int = 360, fps: int = 60
+) -> tuple[list[int], tuple[int, int]]:
+    """Três tomadas de 2 s com uma vinheta de replay entre a primeira e a segunda: uma faixa que varre a
+    tela um passo a cada 4 quadros (uma animação a 15 q/s num vídeo a 60 q/s) — cada passo parece um
+    corte. Grava os PNG e devolve (os cortes de verdade, [início, fim) da vinheta)."""
+    destino.mkdir(parents=True, exist_ok=True)
+    n_tomada, passo, passos = 2 * fps, 4, 16
+    quadros: list[np.ndarray] = []
+
+    def tomada(plano: int) -> None:
+        C, alvo, hfov = PLANOS[plano]
+        for k in range(n_tomada):
+            cam = Camera.look_at(C, np.add(alvo, (0.03 * k, 0.0, 0.0)), hfov, w, h)
+            quadros.append(renderizar(cam, semente=len(quadros))[0])
+
+    tomada(0)
+    inicio = len(quadros)
+    fundo = np.empty((h, w, 3), np.uint8)
+    fundo[:] = (110, 40, 20)
+    for j in range(passos):
+        img = fundo.copy()
+        x = round((j + 1) * w / passos)
+        img[:, :x] = (30, 200, 240) if j % 2 else (40, 160, 250)
+        canto = (max(10, x - 260), h // 2 + 20)
+        cv2.putText(img, "REPLAY", canto, cv2.FONT_HERSHEY_SIMPLEX, 2.0, (255, 255, 255), 6, cv2.LINE_AA)
+        quadros.extend([img] * passo)
+    fim = len(quadros)
+    tomada(1)
+    meio = len(quadros)
+    tomada(2)
+    for i, img in enumerate(quadros):
+        cv2.imwrite(str(destino / f"{i:05d}.png"), img)
+    return [inicio, fim, meio], (inicio, fim)
+
+
 def codificadores_ffmpeg() -> set[str]:
     if not shutil.which("ffmpeg"):
         return set()

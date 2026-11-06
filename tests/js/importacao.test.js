@@ -1,10 +1,30 @@
-// A marca "importando": duas pessoas não importam a mesma partida ao mesmo tempo.
+// A marca "importando": duas pessoas não importam a mesma partida ao mesmo tempo. E só a partida que
+// ninguém começou a usar pode ser importada de novo.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { Pasta } from "../../web/js/nucleo/pasta.js";
-import { MarcaDeImportacao, PartidaJaExiste } from "../../web/js/video/importar.js";
+import { MarcaDeImportacao, PartidaJaExiste, trabalhoNaPartida } from "../../web/js/video/importar.js";
 import { PARTIDA, PastaMemoria } from "./apoio.js";
+
+test("o que impede importar de novo: rótulos, revisões, recortes ou previsões (pasta vazia não conta)", async () => {
+  const pasta = new Pasta(new PastaMemoria());
+  assert.deepEqual(await trabalhoNaPartida(pasta, PARTIDA), []); // nem existe
+  const raiz = pasta.partida(PARTIDA);
+  for (const c of [pasta.manifesto(PARTIDA), pasta.tomadas(PARTIDA), pasta.fila(PARTIDA), pasta.quadro(PARTIDA, "t0000000040")]) {
+    await pasta.escrever(c, "x");
+  }
+  await pasta.diretorio(`${raiz}/rotulos/pontos`, { criar: true });
+  assert.deepEqual(await trabalhoNaPartida(pasta, PARTIDA), []); // só a importação: pode refazer
+  await pasta.escrever(`${raiz}/rotulos/pontos/t0000000040__A01__v1.json`, "{}");
+  assert.deepEqual(await trabalhoNaPartida(pasta, PARTIDA), ["rótulos"]);
+  await pasta.escrever(`${raiz}/revisoes/pontos/t0000000040__R01__v1.json`, "{}");
+  await pasta.escrever(`${raiz}/recortes/r1.json`, "{}");
+  await pasta.escrever(`${raiz}/previsoes/pontos/t0000000040.json`, "{}");
+  assert.deepEqual(await trabalhoNaPartida(pasta, PARTIDA), ["rótulos", "revisões", "recortes de placas", "previsões"]);
+  assert.equal(new PartidaJaExiste("x").podeSubstituir, false);
+  assert.equal(new PartidaJaExiste("x", { podeSubstituir: true }).podeSubstituir, true);
+});
 
 test("marca de importação: uma importação por partida de cada vez, e marca parada não trava", async () => {
   const pasta = new Pasta(new PastaMemoria());

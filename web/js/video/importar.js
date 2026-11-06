@@ -4,11 +4,15 @@
 // 1. leitura do vídeo (uma passada): hash do arquivo, relógio de cada quadro (PTS) e descritores
 //    de quadros reduzidos, com o decodificador do navegador (WebCodecs) — só nos trechos
 //    escolhidos, quando há;
-// 2. cortes e transições (regras do laboratório), só para organizar o sorteio;
+// 2. cortes e transições (regras do laboratório), só para organizar o sorteio; uma rajada de cortes
+//    (vinheta, grafismo animado) vira transição;
 // 3. agrupamento das tomadas por aparência e zoom;
-// 4. sorteio de 1 ou 2 quadros por tomada (a fila é aberta: quem anota pega o próximo);
+// 4. sorteio de 1 ou 2 quadros por tomada de 1 s ou mais (a fila é aberta: quem anota pega o próximo);
 // 5. extração dos quadros sorteados em JPEG, na resolução original;
 // 6. tomadas, fila e manifesto — o manifesto por último: partida sem manifesto não existe.
+//
+// Uma partida que ninguém começou a usar (sem rótulos, revisões, recortes nem previsões) pode ser
+// importada de novo: a importação anterior é apagada inteira e tudo é refeito.
 
 import { Aleatorio } from "../nucleo/aleatorio.js";
 import { VERSAO, arredondarPar, idPartida } from "../nucleo/convencoes.js";
@@ -16,15 +20,60 @@ import { arredondar, mediana } from "../nucleo/estatistica.js";
 import { validar } from "../nucleo/formatos.js";
 import { Sha256 } from "../nucleo/hash.js";
 import { formatarTempo } from "../nucleo/trechos.js";
-import { agrupar, corrigirPts, detectarCortes, detectarGraduais, montarTomadas } from "./cortes.js";
+import {
+  agrupar,
+  colapsarRajadas,
+  corrigirPts,
+  detectarCortes,
+  detectarGraduais,
+  juntarIntervalos,
+  montarTomadas,
+} from "./cortes.js";
 import { ALTURA, LARGURA, descrever, distanciaEstrutura, qui2 } from "./descritores.js";
 import { ErroVideo, abrirMp4, apresentacao, leitorDeArquivo } from "./mp4.js";
-import { PARAMETROS, sortear } from "./sorteio.js";
+import { PARAMETROS, elegiveis, sortear } from "./sorteio.js";
 
+/** A partida já existe. `podeSubstituir`: ninguém começou a usá-la, então dá para importar de novo. */
 export class PartidaJaExiste extends Error {
-  constructor(mensagem) {
+  constructor(mensagem, { podeSubstituir = false } = {}) {
     super(mensagem);
     this.name = "PartidaJaExiste";
+    this.podeSubstituir = podeSubstituir;
+  }
+}
+
+// o que, numa partida já importada, é trabalho de alguém (e impede importar de novo)
+const TRABALHO = [
+  ["rotulos", "rótulos"],
+  ["revisoes", "revisões"],
+  ["recortes", "recortes de placas"],
+  ["previsoes", "previsões"],
+];
+
+async function temArquivo(pasta, caminho) {
+  for (const item of await pasta.listar(caminho)) {
+    if (item.tipo === "arquivo" || (await temArquivo(pasta, `${caminho}/${item.nome}`))) return true;
+  }
+  return false;
+}
+
+/** O que já foi feito numa partida importada: ["rótulos", ...], ou [] quando ninguém começou. */
+export async function trabalhoNaPartida(pasta, partida) {
+  const out = [];
+  for (const [sub, nome] of TRABALHO) if (await temArquivo(pasta, `${pasta.partida(partida)}/${sub}`)) out.push(nome);
+  return out;
+}
+
+const emLista = (itens) => (itens.length > 1 ? `${itens.slice(0, -1).join(", ")} e ${itens[itens.length - 1]}` : itens[0]);
+
+/** Partida que já existe: só passa quando é para importar de novo e ninguém começou a usá-la. */
+async function conferirSubstituicao(pasta, pid, substituir) {
+  const feito = await trabalhoNaPartida(pasta, pid);
+  if (feito.length) throw new PartidaJaExiste(`a partida ${pid} já foi importada e já tem ${emLista(feito)}: não dá para importá-la de novo`);
+  if (!substituir) {
+    throw new PartidaJaExiste(`a partida ${pid} já foi importada; como ninguém começou a anotá-la, dá para apagar a importação anterior e importar de novo`, {
+      podeSubstituir: true,
+    });
   }
 }
 
@@ -516,11 +565,23 @@ async function extrair(leitor, faixa, ap, config, alvos, gravar, { aoProgresso, 
  * Importa um vídeo (File) para a pasta. `cadastro`: estádio (o nome, que entra no ID da partida),
  * emissora, competição, data e hora (ISO com fuso), mandante, visitante, iluminação, chuva e
  * observações. `trechos`: [[início, fim], ...] em segundos, ou null para o vídeo inteiro.
+ * `substituir`: se a partida já existe e ninguém começou a usá-la, apaga a importação anterior e
+ * importa de novo.
  */
-export async function importarVideo({ pasta, arquivo, cadastro, trechos = null, alvo = PARAMETROS.alvo, aoProgresso = () => {}, sinal = null }) {
+export async function importarVideo({
+  pasta,
+  arquivo,
+  cadastro,
+  trechos = null,
+  alvo = PARAMETROS.alvo,
+  substituir = false,
+  aoProgresso = () => {},
+  sinal = null,
+}) {
   const t0 = performance.now();
   const pid = idPartida(cadastro.data_hora, cadastro.estadio, cadastro.mandante, cadastro.visitante);
-  if (await pasta.existe(pasta.manifesto(pid))) throw new PartidaJaExiste(`a partida ${pid} já foi importada`);
+  const jaExiste = await pasta.existe(pasta.manifesto(pid));
+  if (jaExiste) await conferirSubstituicao(pasta, pid, substituir);
 
   // confere o cadastro antes de ler o vídeo inteiro
   const provisorio = {
@@ -534,6 +595,12 @@ export async function importarVideo({ pasta, arquivo, cadastro, trechos = null, 
 
   const marca = new MarcaDeImportacao(pasta, pid, arquivo);
   await marca.conferir();
+  if (jaExiste) {
+    // importar de novo: confere outra vez (alguém pode ter começado a anotar) e apaga a importação
+    // anterior inteira — manifesto, tomadas, fila e quadros
+    await conferirSubstituicao(pasta, pid, true);
+    await pasta.apagar(pasta.partida(pid), { recursivo: true });
+  }
   await marca.renovar(true);
   try {
     return await importarComMarca({ pasta, arquivo, cadastro, trechos, alvo, aoProgresso, sinal, t0, pid, marca });
@@ -581,15 +648,20 @@ async function importarComMarca({ pasta, arquivo, cadastro, trechos, alvo, aoPro
   const { pts, fonte } = corrigirPts(ap.ptsMs, fps);
   const detectados = detectarCortes(lido.dHist, lido.dEstr);
   const graduais = detectarGraduais(lido.dHist, detectados);
+  // vinheta ou grafismo animado: cortes a menos de uma tomada mínima um do outro viram uma transição
+  const { cortes: separados, rajadas } = colapsarRajadas(detectados, pts, params.tomada_min_s * 1000);
   // os limites dos trechos também cortam: nenhuma tomada atravessa um pedaço que não foi lido
   const limites = (plano?.limites ?? []).filter((k) => k > 0 && k < n);
-  const cortes = [...new Set([...detectados, ...limites])].sort((a, b) => a - b);
+  const cortes = [...new Set([...separados, ...limites])].sort((a, b) => a - b);
+  const transicoes = juntarIntervalos([...graduais, ...rajadas]);
   const transicao = new Uint8Array(n);
-  for (const [a, b] of graduais) transicao.fill(1, a, b);
+  for (const [a, b] of transicoes) transicao.fill(1, a, b);
   for (let k = 0; k < n; k++) if (!lido.visto[k]) transicao[k] = 1; // o que não foi decodificado não é sorteado
   const tomadas = montarTomadas(n, cortes);
+  // só as tomadas que podem dar quadro formam os grupos de aparência
+  const aproveitaveis = tomadas.map((t) => elegiveis(t, pts, transicao, params.margem_s * 1000, params.tomada_min_s * 1000).length > 0);
   const aleatorio = new Aleatorio(pid);
-  agrupar(tomadas, lido.curtos, lido.gramado, lido.bordas, aleatorio);
+  agrupar(tomadas, lido.curtos, lido.gramado, lido.bordas, aleatorio, 6, aproveitaveis);
   const sorteados = sortear(tomadas, pts, transicao, params, aleatorio);
   aoProgresso("achando cortes e sorteando", 1);
 
@@ -623,7 +695,7 @@ async function importarComMarca({ pasta, arquivo, cadastro, trechos, alvo, aoPro
       formato: "tomadas.partida/1",
       partida: pid,
       cortes,
-      transicoes: graduais,
+      transicoes,
       tomadas: tomadas.map((t, k) => ({
         id: k,
         i0: t.i0,
@@ -662,7 +734,8 @@ async function importarComMarca({ pasta, arquivo, cadastro, trechos, alvo, aoPro
   Object.assign(parametros, {
     pts: fonte,
     cortes: cortes.length,
-    transicoes: graduais.length,
+    transicoes: transicoes.length,
+    rajadas: rajadas.length,
     vinheta: false,
     analise: `${LARGURA}x${ALTURA}`,
     codec: faixa.codec,
@@ -695,12 +768,14 @@ async function importarComMarca({ pasta, arquivo, cadastro, trechos, alvo, aoPro
   aoProgresso("pronto", 1);
   return {
     partida: pid,
+    alvo: params.alvo,
     n_quadros_video: n,
-    n_tomadas: tomadas.length,
+    n_nos_trechos: plano ? plano.n_dentro : null, // com trechos: só o que foi lido
+    n_tomadas: aproveitaveis.filter(Boolean).length, // as que podiam dar quadro
+    n_rajadas: rajadas.length,
+    n_sorteio: sorteados.length,
     n_sorteados: itens.length,
+    n_nao_extraidos: naoExtraidos,
     segundos,
-    // com trechos: só o que foi lido
-    n_nos_trechos: plano ? plano.n_dentro : null,
-    n_tomadas_nos_trechos: plano ? tomadas.filter((t) => lido.visto.subarray(t.i0, t.i1).some(Boolean)).length : null,
   };
 }

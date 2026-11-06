@@ -3,7 +3,7 @@
 
 import { isoComFuso, slug } from "../nucleo/convencoes.js";
 import { ErroTrechos, lerTrechos } from "../nucleo/trechos.js";
-import { el, lerInteiro, mensagemDeErro, numero } from "./util.js";
+import { el, formatarDuracao, lerInteiro, mensagemDeErro, numero } from "./util.js";
 
 function iniciarImportacao(ctx, mensagem) {
   const worker = new Worker(new URL("../video/trabalhador.js", import.meta.url), { type: "module" });
@@ -29,6 +29,7 @@ function iniciarImportacao(ctx, mensagem) {
       terminar();
     } else if (m.tipo === "erro") {
       job.erro = m.nome === "AbortError" ? "importação cancelada" : mensagemDeErro({ name: m.nome, message: m.mensagem });
+      job.podeSubstituir = Boolean(m.podeSubstituir); // a partida já existe, mas ninguém começou a usá-la
       terminar();
     }
   };
@@ -41,6 +42,29 @@ function iniciarImportacao(ctx, mensagem) {
 }
 
 const contar = (n, um, varios) => `${numero(n, 0)} ${n === 1 ? um : varios}`;
+
+/** O resumo da importação: o que foi lido, o que saiu e quanto tempo levou. */
+function resumo(r) {
+  const tomadas = contar(r.n_tomadas, "tomada", "tomadas");
+  const lido =
+    r.n_nos_trechos === null
+      ? `${contar(r.n_quadros_video, "quadro lido", "quadros lidos")}, ${tomadas}`
+      : `${contar(r.n_nos_trechos, "quadro lido", "quadros lidos")} nos trechos (o vídeo tem ${numero(r.n_quadros_video, 0)}), ${tomadas}`;
+  const frases = [`Pronto: ${r.partida} — ${lido}, ${contar(r.n_sorteados, "quadro sorteado", "quadros sorteados")}.`];
+  if (r.n_rajadas) {
+    const ficou = r.n_rajadas === 1 ? "ficou" : "ficaram";
+    frases.push(`${contar(r.n_rajadas, "rajada de cortes", "rajadas de cortes")} (vinhetas, grafismos animados) ${ficou} fora do sorteio.`);
+  }
+  if (r.n_sorteio < r.alvo) {
+    const dica = r.n_nos_trechos === null ? "" : " Para mais quadros, use trechos maiores.";
+    frases.push(`Saíram menos que os ${numero(r.alvo, 0)} pedidos: o sorteio tira no máximo 1 quadro por tomada (2 nas de 6 s ou mais).${dica}`);
+  }
+  if (r.n_nao_extraidos) {
+    frases.push(`${contar(r.n_nao_extraidos, "quadro sorteado não pôde ser extraído", "quadros sorteados não puderam ser extraídos")} e ficou de fora.`);
+  }
+  frases.push(`A importação levou ${formatarDuracao(r.segundos)}.`);
+  return frases.join(" ");
+}
 
 /** Quanto falta na etapa atual, pelo ritmo até aqui (só depois de um tempo, para não chutar). */
 function falta(job) {
@@ -65,6 +89,7 @@ export async function montar(raiz, ctx) {
     const rodando = Boolean(job?.worker);
     for (const campo of form.elements) if (campo.id !== "cancelar") campo.disabled = rodando || (campo.id === "processar" && !suportado);
     $("cancelar").hidden = !rodando;
+    $("substituir").hidden = rodando || !job?.podeSubstituir;
     $("progresso").hidden = !job;
     if (!job) return;
     const frac = job.resultado ? 1 : job.frac || 0;
@@ -72,12 +97,8 @@ export async function montar(raiz, ctx) {
     $("etapa").textContent = rodando ? `${job.etapa} ${Math.round(100 * frac)}%${falta(job)}` : job.resultado ? "pronto" : "parou";
     $("erro-importar").textContent = job.erro || "";
     if (job.resultado) {
-      const r = job.resultado;
-      const lido = r.n_nos_trechos === null
-        ? `${contar(r.n_quadros_video, "quadro lido", "quadros lidos")}, ${contar(r.n_tomadas, "tomada", "tomadas")}`
-        : `${contar(r.n_nos_trechos, "quadro lido", "quadros lidos")} nos trechos (o vídeo tem ${numero(r.n_quadros_video, 0)}), ${contar(r.n_tomadas_nos_trechos, "tomada", "tomadas")}`;
       $("res-importar").replaceChildren(
-        `Pronto: ${r.partida} — ${lido}, ${contar(r.n_sorteados, "quadro sorteado", "quadros sorteados")} em ${numero(r.segundos, 0)} s. `,
+        `${resumo(job.resultado)} `,
         Object.assign(document.createElement("a"), { href: "#/", textContent: "Voltar para a central" }),
       );
     } else {
@@ -93,8 +114,8 @@ export async function montar(raiz, ctx) {
   };
   if (ctx.importacao) acompanhar(ctx.importacao);
 
-  form.onsubmit = (e) => {
-    e.preventDefault();
+  /** Lê o formulário e começa a importação; `substituir`: apaga a importação anterior desta partida. */
+  function enviar(substituir) {
     if (ctx.importacao?.worker) return;
     const f = new FormData(form);
     const arquivo = f.get("video");
@@ -135,7 +156,19 @@ export async function montar(raiz, ctx) {
       observacoes: String(f.get("observacoes") || "").trim(),
     };
     $("res-importar").textContent = "";
-    acompanhar(iniciarImportacao(ctx, { arquivo, cadastro, trechos, alvo }));
+    acompanhar(iniciarImportacao(ctx, { arquivo, cadastro, trechos, alvo, substituir }));
+  }
+
+  form.onsubmit = (e) => {
+    e.preventDefault();
+    enviar(false);
+  };
+  $("substituir").onclick = () => {
+    const ok = confirm(
+      "Apagar a importação anterior desta partida (tomadas, fila e quadros sorteados) e importar de novo? " +
+        "Faça isso só se ninguém começou a anotá-la em outro computador.",
+    );
+    if (ok) enviar(true);
   };
   $("cancelar").onclick = () => ctx.importacao?.worker?.postMessage({ tipo: "cancelar" });
 

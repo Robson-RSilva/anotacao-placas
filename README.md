@@ -75,13 +75,18 @@ Não é preciso cadastrar equipe nem levantar o estádio antes: basta importar a
    — por exemplo `0:05:00-0:50:00, 1:05:00-1:50:00` para os dois tempos sem o intervalo; vazio, vale o
    vídeo inteiro. O vídeo é lido no navegador com o decodificador do próprio navegador (WebCodecs):
    hash, relógio de cada quadro (PTS), cortes e transições (regras do laboratório, só para organizar o
-   sorteio), agrupamento das tomadas e sorteio de 1 ou 2 quadros por tomada. Fora dos trechos, nada é
-   decodificado, o que poupa a maior parte do tempo. Só os quadros sorteados vão para a pasta, em
+   sorteio), agrupamento das tomadas e sorteio de 1 quadro por tomada (2 nas de 6 s ou mais). Uma
+   rajada de cortes a menos de 1 s um do outro — vinheta de replay, grafismo animado — vira transição
+   e não dá quadro, e tomada com menos de 1 s não entra no sorteio: por isso um trecho curto pode dar
+   menos quadros que o pedido (a página avisa). Fora dos trechos, nada é decodificado, o que poupa a
+   maior parte do tempo. Só os quadros sorteados vão para a pasta, em
    JPEG, numa **fila aberta**: quem anota pega o próximo, e cada pessoa começa num ponto diferente da
    fila para duas pessoas não pegarem o mesmo quadro. MKV e TS: converta antes para MP4 (no OBS,
    Arquivo → Remuxar gravações). A leitura leva tempo: num teste com 2 núcleos e sem decodificação
    pela placa de vídeo, 2 minutos de vídeo em 1080p levaram 1 minuto. Deixe a aba aberta até terminar;
-   dá para voltar à central enquanto isso.
+   dá para voltar à central enquanto isso. Uma partida que ninguém começou a usar (sem rótulos,
+   revisões, recortes nem previsões) pode ser importada de novo: a página oferece apagar a importação
+   anterior e refazer tudo.
 2. **Marcar os pontos do campo.** A imagem abre sem molde por cima (só com os pontos de um modelo,
    quando há previsão, para corrigir). Ao lado fica o **mapa do campo** com os 39 pontos que se
    marcam (cruzamentos das linhas, marcas do pênalti e do centro, pés e topos das traves). Escolha o

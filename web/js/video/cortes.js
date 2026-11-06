@@ -1,9 +1,12 @@
 // Cortes, transições e agrupamento das tomadas — só para organizar o sorteio. Nada aqui é rótulo:
 // são as mesmas regras do laboratório (sem rede), usadas para escolher 1 ou 2 quadros por tomada e
-// equilibrar o sorteio por aparência e zoom. tests/js/cortes.test.js confere com a v0.1 em Python.
+// equilibrar o sorteio por aparência e zoom. tests/js/cortes.test.js confere com a v0.1 em Python
+// (descritores, cortes e fusões; as rajadas e o agrupamento só das tomadas aproveitáveis vieram depois).
 //
 // * Cortes: duas pistas com limiar adaptativo (quanto o quadro foge da vizinhança): qui-quadrado
 //   entre histogramas HSV de quadros vizinhos (cor) e 1 - correlação de quadros reduzidos (estrutura).
+// * Rajadas: cortes a menos de uma tomada mínima um do outro (vinhetas de replay, grafismos animados)
+//   viram uma transição, com corte só nas pontas.
 // * Transições graduais: diferenças moderadas que se acumulam.
 // * Grupo e zoom: k-médias sobre um descritor simples por tomada (histograma, fração de gramado e
 //   densidade de bordas). É aproximado; depois da anotação, o tipo de câmera sai da própria câmera.
@@ -69,6 +72,43 @@ export function detectarGraduais(dHist, cortes = [], { tBaixo = 0.04, tAlto = 0.
   return out;
 }
 
+/**
+ * Cortes a menos de `minMs` um do outro não separam tomadas: são rajadas, como as vinhetas de replay e
+ * os grafismos animados (num vídeo a 60 q/s, uma animação a 15 q/s dá um "corte" a cada 4 quadros). Cada
+ * rajada vira uma transição [primeiro corte, último corte) e só os cortes das pontas ficam; assim,
+ * nenhuma tomada entre dois cortes que ficaram dura menos que `minMs`, a não ser as de transição.
+ * `pts`: o tempo de cada quadro, em ms. -> { cortes, rajadas: [[i0, i1), ...] }
+ */
+export function colapsarRajadas(cortes, pts, minMs) {
+  const cs = [...new Set(cortes)].sort((a, b) => a - b);
+  const out = [];
+  const rajadas = [];
+  for (let k = 0; k < cs.length; ) {
+    let j = k;
+    while (j + 1 < cs.length && pts[cs[j + 1]] - pts[cs[j]] < minMs) j += 1;
+    if (j === k) {
+      out.push(cs[k]);
+    } else {
+      out.push(cs[k], cs[j]);
+      rajadas.push([cs[k], cs[j]]);
+    }
+    k = j + 1;
+  }
+  return { cortes: out, rajadas };
+}
+
+/** Intervalos [i0, i1) em ordem, com os que se tocam ou se sobrepõem juntados num só. */
+export function juntarIntervalos(intervalos) {
+  const out = [];
+  const ordem = intervalos.filter(([a, b]) => b > a).sort((x, y) => x[0] - y[0] || x[1] - y[1]);
+  for (const [a, b] of ordem) {
+    const ultimo = out[out.length - 1];
+    if (ultimo && a <= ultimo[1]) ultimo[1] = Math.max(ultimo[1], b);
+    else out.push([a, b]);
+  }
+  return out;
+}
+
 /** Tomadas entre os cortes: [{i0, i1, replay: null, zoom, grupo}]. */
 export function montarTomadas(n, cortes) {
   const bordas = [0, ...[...new Set(cortes)].filter((b) => b > 0 && b < n).sort((a, b) => a - b), n];
@@ -124,9 +164,12 @@ export function kMedias(X, k, aleatorio, iteracoes = 30) {
 
 /**
  * Preenche `grupo` e `zoom` de cada tomada. `curtos`: Map índice do quadro -> histograma curto
- * (alguns quadros por segundo); `gramado` e `bordas`: um valor por quadro.
+ * (alguns quadros por segundo); `gramado` e `bordas`: um valor por quadro. `usar` (opcional): uma
+ * marca por tomada. Só as marcadas formam os grupos — as que não podem dar quadro (só transição, fora
+ * dos trechos lidos) tomariam grupos inteiros para si e roubariam a cota das outras no sorteio — e as
+ * demais ficam no grupo mais parecido.
  */
-export function agrupar(tomadas, curtos, gramado, bordas, aleatorio, k = 6) {
+export function agrupar(tomadas, curtos, gramado, bordas, aleatorio, k = 6, usar = null) {
   if (!tomadas.length) return;
   const indices = [...curtos.keys()].sort((a, b) => a - b);
   const feats = [];
@@ -146,16 +189,41 @@ export function agrupar(tomadas, curtos, gramado, bordas, aleatorio, k = 6) {
     G.push(media(gramado.slice(t.i0, t.i1)));
     B.push(media(bordas.slice(t.i0, t.i1)));
   }
+  let base = tomadas.map((_, i) => !usar || Boolean(usar[i]));
+  if (!base.some(Boolean)) base = tomadas.map(() => true);
+  const daBase = (v) => v.filter((_, i) => base[i]);
   const z = (v) => {
-    const m = media(v);
-    const s = desvio(v) + 1e-9;
+    const m = media(daBase(v));
+    const s = desvio(daBase(v)) + 1e-9;
     return v.map((x) => (x - m) / s);
   };
   const zg = z(G);
   const zb = z(B);
   const X = feats.map((f, i) => [...f, zg[i], zb[i]]);
-  const rot = kMedias(X, k, aleatorio);
-  const mb = mediana(B) ?? 0;
+  const ids = X.flatMap((_, i) => (base[i] ? [i] : []));
+  const rotBase = kMedias(ids.map((i) => X[i]), k, aleatorio);
+  const rot = new Array(tomadas.length).fill(0);
+  ids.forEach((i, j) => {
+    rot[i] = rotBase[j];
+  });
+  if (ids.length < tomadas.length) {
+    const centros = Array.from({ length: Math.max(...rotBase) + 1 }, (_, c) => {
+      const membros = ids.filter((_, j) => rotBase[j] === c);
+      return X[membros[0]].map((_, d) => membros.reduce((s, i) => s + X[i][d], 0) / membros.length);
+    });
+    tomadas.forEach((_, i) => {
+      if (base[i]) return;
+      let dm = Infinity;
+      centros.forEach((c, g) => {
+        const d = dist2(X[i], c);
+        if (d < dm) {
+          dm = d;
+          rot[i] = g;
+        }
+      });
+    });
+  }
+  const mb = mediana(daBase(B)) ?? 0;
   tomadas.forEach((t, i) => {
     t.grupo = rot[i];
     if (G[i] < 0.25 || B[i] < 0.5 * mb) t.zoom = "fechado";
