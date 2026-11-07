@@ -9,7 +9,7 @@ import { aprovado, proximo, situacao } from "../nucleo/filas.js";
 import { compararPontos, motivoPontos } from "../nucleo/gabarito.js";
 import { salvarEdicao, salvarRotulo } from "../nucleo/rotulos.js";
 import { Mapa } from "./mapa.js";
-import { Marcador } from "./marcador.js";
+import { Marcador, textoCruzamento } from "./marcador.js";
 import { abrirImagem, caixas, escrevendo, parametros, textoDevolvido, textoLiberacao, textoPartiu } from "./tarefa.js";
 import { TempoAtivo } from "./tempo.js";
 import { el, formatarTempo, local, mensagemDeErro, numero } from "./util.js";
@@ -65,16 +65,18 @@ export async function montar(raiz, ctx) {
 
   function escreverEscolha() {
     const e = $("escolha");
+    $("cruzamento").setAttribute("aria-pressed", String(Boolean(marcador?.cruzamento)));
     if (!marcador || resultado) {
       e.textContent = "";
       return;
     }
-    if (marcador.pendente) e.textContent = "Qual ponto é este? Clique nele no mapa. (Esc cancela)";
+    if (marcador.cruzamento) e.textContent = textoCruzamento(marcador, descricaoPonto);
+    else if (marcador.pendente) e.textContent = "Qual ponto é este? Clique nele no mapa. (Esc cancela)";
     else if (marcador.selecionado) {
       const ja = marcador.pontos.has(marcador.selecionado);
       e.textContent = `${descricaoPonto(marcador.selecionado)} — clique na imagem onde ele está${ja ? " (já marcado: o clique muda de lugar)" : ""}.`;
     } else e.textContent = "Escolha um ponto no mapa e clique no lugar dele na imagem (ou o contrário).";
-    e.classList.toggle("pedindo", Boolean(marcador.pendente || marcador.selecionado));
+    e.classList.toggle("pedindo", Boolean(marcador.pendente || marcador.selecionado || marcador.cruzamento));
   }
 
   function atualizarPainel() {
@@ -147,6 +149,10 @@ export async function montar(raiz, ctx) {
         mapa.atualizar({ destaque: nome });
       },
       aoPendente: escreverEscolha,
+      aoCruzamento: (e) => {
+        $("erro").textContent = e.erro || e.aviso || "";
+        escreverEscolha();
+      },
     });
     marcador.mostrarNomes = $("ver-nomes").checked;
     window.marcador = marcador; // ajuda a depurar e a testar
@@ -358,6 +364,10 @@ export async function montar(raiz, ctx) {
       $("erro").textContent = "Falta dizer qual é o ponto marcado com “?”: clique nele no mapa (ou Esc para cancelar).";
       return;
     }
+    if (marcador.cruzamento) {
+      $("erro").textContent = "Termine o cruzamento (dois cliques em cada linha) ou cancele com Esc.";
+      return;
+    }
     const pontos = marcador.lista();
     if (!pontos.length) {
       const ok = await cx.confirmar("Salvar sem nenhum ponto?", "Salve sem pontos só quando nenhum ponto do campo aparece na imagem (um close, a torcida). Se a imagem não dá para anotar, descarte.");
@@ -381,6 +391,13 @@ export async function montar(raiz, ctx) {
   $("salvar").onclick = salvar;
   $("descartar").onclick = descartar;
   $("desfazer").onclick = () => marcador?.desfazer();
+  const alternarCruzamento = () => {
+    if (!marcador || resultado) return;
+    $("erro").textContent = "";
+    if (marcador.cruzamento) marcador.cancelarCruzamento();
+    else marcador.iniciarCruzamento();
+  };
+  $("cruzamento").onclick = alternarCruzamento;
   $("ver-resposta").onclick = alternarResposta;
   $("proximo").onclick = () => abrirProximo();
   $("girar").onclick = () => {
@@ -432,8 +449,14 @@ export async function montar(raiz, ctx) {
     } else if (k === "d") {
       e.preventDefault();
       descartar();
+    } else if (k === "x") {
+      alternarCruzamento();
     } else if (k === "escape") {
-      marcador.cancelar();
+      if (marcador.cruzamento || marcador.construcao) marcador.cancelarCruzamento();
+      else marcador.cancelar();
+    } else if (k === "backspace" && marcador.cruzamento) {
+      e.preventDefault();
+      marcador.tirarCliqueDoCruzamento();
     } else if (k === "delete" || k === "backspace") {
       const alvo = marcador.destaque ?? marcador.selecionado;
       if (alvo) {

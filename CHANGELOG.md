@@ -5,6 +5,26 @@ Formato de [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); versões
 
 ## [Não lançado]
 
+## [0.15.0] - 2026-11-07
+
+### Adicionado
+
+- **Ajudante de cruzamento** nos pontos (`X`, ou o botão "Cruzamento"), também ao corrigir na
+  revisão e ao editar pela página da partida: para o ponto coberto por um jogador, a trave ou um
+  grafismo, dois cliques em cada uma das duas linhas retas que se cruzam nele, e a página marca o
+  ponto onde as retas se encontram. A reta tracejada segue o mouse (na imagem e na lupa), para
+  alinhar com o meio da linha pintada, e um círculo mostra onde o ponto vai ficar antes do último
+  clique. Com o ponto escolhido antes no mapa, ele vai direto para lá; senão, fica o "?" esperando o
+  nome. Backspace desfaz o último clique, Esc cancela; linhas quase paralelas (menos de 3°) não
+  servem, um ângulo pequeno (menos de 10°) pede para conferir na lupa, e um cruzamento fora da
+  imagem não se marca. O Ctrl (mouse lento) vale nos cliques do cruzamento.
+
+### Mudado
+
+- "Como marcar" diz quando marcar um ponto coberto: no cruzamento de duas retas que aparecem, sim
+  (com o cruzamento); a marca do pênalti ou do centro coberta, ou um ponto numa curva com um vão
+  grande, não.
+
 ## [0.14.1] - 2026-11-07
 
 ### Mudado

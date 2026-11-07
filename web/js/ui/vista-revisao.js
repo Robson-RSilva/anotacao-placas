@@ -7,7 +7,7 @@ import { pendentesRevisao } from "../nucleo/filas.js";
 import { MOTIVOS } from "../nucleo/formatos.js";
 import { ForaDaFila, salvarRevisao } from "../nucleo/rotulos.js";
 import { Mapa } from "./mapa.js";
-import { Marcador } from "./marcador.js";
+import { Marcador, textoCruzamento } from "./marcador.js";
 import { Pintor } from "./pintor.js";
 import { abrirImagem, caixas, escrevendo, textoSituacao } from "./tarefa.js";
 import { TempoAtivo } from "./tempo.js";
@@ -54,7 +54,9 @@ async function montarRevisao(raiz, ctx, tarefa) {
     $("r-pontos").textContent = atual ? `${atual.rotulo.pontos.length} marcado(s)${corrigindo() ? ` · na correção: ${lista.length}` : ""}` : "";
     mapa.atualizar({ estados: new Map(lista.map((p) => [p.ponto, "marcado"])), selecionado: tela.selecionado });
     const e = $("escolha");
+    $("cruzamento").setAttribute("aria-pressed", String(Boolean(tela.cruzamento)));
     if (!corrigindo()) e.textContent = "Passe o mouse num ponto (na imagem ou no mapa) para ver o nome.";
+    else if (tela.cruzamento) e.textContent = textoCruzamento(tela, descricaoPonto);
     else if (tela.pendente) e.textContent = "Qual ponto é este? Clique nele no mapa. (Esc cancela)";
     else if (tela.selecionado) e.textContent = `${descricaoPonto(tela.selecionado)} — clique na imagem onde ele está.`;
     else e.textContent = "Escolha um ponto no mapa e clique no lugar dele na imagem.";
@@ -99,6 +101,7 @@ async function montarRevisao(raiz, ctx, tarefa) {
     $("secao-corrigir").hidden = qual !== "corrigir";
     if (tela) {
       tela.somenteLeitura = qual !== "corrigir";
+      if (pontos) tela.cancelarCruzamento();
       if (qual !== "corrigir") {
         // voltou: a correção começada some
         if (pontos) tela.definir(atual?.rotulo.pontos ?? []);
@@ -148,6 +151,10 @@ async function montarRevisao(raiz, ctx, tarefa) {
           mapa.atualizar({ destaque: nome });
         },
         aoPendente: atualizarPontos,
+        aoCruzamento: (e) => {
+          $("erro").textContent = e.erro || e.aviso || "";
+          atualizarPontos();
+        },
       });
     } else {
       tela = new Pintor($("tela"), { imagem: img, mascara, regiao, somenteLeitura: true, aoMudar: ferramentas.mostrar });
@@ -201,6 +208,10 @@ async function montarRevisao(raiz, ctx, tarefa) {
         $("erro").textContent = "Falta dizer qual é o ponto marcado com “?”: clique nele no mapa (ou Esc para cancelar).";
         return;
       }
+      if (tela.cruzamento) {
+        $("erro").textContent = "Termine o cruzamento (dois cliques em cada linha) ou cancele com Esc.";
+        return;
+      }
       const lista = tela.lista();
       if (!lista.length && !(await cx.confirmar("Salvar a correção sem nenhum ponto?", "Só quando nenhum ponto do campo aparece na imagem."))) return;
       await enviar({ decisao: "corrigir", correcao: { pontos: lista, situacao: "ok", motivo_descarte: null, comentario, segundos_ativos: tempo.segundos() } });
@@ -242,7 +253,14 @@ async function montarRevisao(raiz, ctx, tarefa) {
   };
   $("salvar-correcao").onclick = salvarCorrecao;
   $("descartar").onclick = corrigirComDescarte;
+  const alternarCruzamento = () => {
+    if (!tela || !corrigindo()) return;
+    $("erro").textContent = "";
+    if (tela.cruzamento) tela.cancelarCruzamento();
+    else tela.iniciarCruzamento();
+  };
   if (pontos) {
+    $("cruzamento").onclick = alternarCruzamento;
     $("desfazer").onclick = () => tela?.desfazer();
     $("girar").onclick = () => {
       mapa.girar();
@@ -282,8 +300,14 @@ async function montarRevisao(raiz, ctx, tarefa) {
         return tela.desenhar();
       }
       if (editar) {
-        if (k === "escape") tela.cancelar();
-        else if ((k === "delete" || k === "backspace") && (tela.destaque ?? tela.selecionado)) {
+        if (k === "x") alternarCruzamento();
+        else if (k === "escape") {
+          if (tela.cruzamento || tela.construcao) tela.cancelarCruzamento();
+          else tela.cancelar();
+        } else if (k === "backspace" && tela.cruzamento) {
+          e.preventDefault();
+          tela.tirarCliqueDoCruzamento();
+        } else if ((k === "delete" || k === "backspace") && (tela.destaque ?? tela.selecionado)) {
           e.preventDefault();
           tela.apagar(tela.destaque ?? tela.selecionado);
         }

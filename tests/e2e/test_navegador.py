@@ -1523,6 +1523,81 @@ def test_mira_da_lupa_contrasta(site, video, navegador, capturas):
     assert not erros, erros
 
 
+def _cruzar(a, b, c, d) -> tuple[float, float]:
+    """Onde a reta por a e b cruza a reta por c e d."""
+    ux, uy, vx, vy = b[0] - a[0], b[1] - a[1], d[0] - c[0], d[1] - c[1]
+    t = ((c[0] - a[0]) * vy - (c[1] - a[1]) * vx) / (ux * vy - uy * vx)
+    return a[0] + t * ux, a[1] + t * uy
+
+
+def test_ajudante_de_cruzamento(site, video, navegador, capturas):
+    """Ponto coberto: dois cliques em cada linha, e o ponto vai para onde as duas retas se cruzam — com o "?"
+    esperando o nome, ou direto no ponto escolhido antes no mapa. Quase paralelas, a página avisa; Backspace
+    desfaz o último clique, Esc cancela, e salvar no meio do cruzamento não deixa."""
+    caminho, _ = video
+    erros: list[str] = []
+    pagina = _pagina(navegador, erros)
+    _importar(pagina, site, caminho)
+    pagina.goto(site + "#/pontos")
+    pagina.wait_for_function("window.itemPontos && window.marcador")
+
+    def clicar(x: float, y: float) -> None:
+        pagina.mouse.click(*_janela(pagina, "marcador", x, y))
+
+    # 1) sem ponto escolhido: o "?" fica no cruzamento, esperando o nome no mapa
+    pagina.keyboard.press("x")
+    assert pagina.get_attribute("#cruzamento", "aria-pressed") == "true"
+    assert "primeira linha" in pagina.inner_text("#escolha")
+    clicar(100, 100)
+    clicar(300, 140)
+    assert "outra linha" in pagina.inner_text("#escolha")
+    clicar(420, 60)
+    pagina.mouse.move(*_janela(pagina, "marcador", 400, 250))  # a reta segue o mouse; o círculo mostra o ponto
+    pagina.screenshot(path=str(capturas / "e2e_cruzamento.png"))
+    clicar(400, 250)
+    (a, b), (c, d) = pagina.evaluate("marcador.construcao.linhas")  # os cliques, em px da imagem
+    x, y = _cruzar(a, b, c, d)
+    pendente = pagina.evaluate("marcador.pendente")
+    assert abs(pendente["x"] - x) < 1e-6 and abs(pendente["y"] - y) < 1e-6
+    tx, ty = _cruzar((100, 100), (300, 140), (420, 60), (400, 250))
+    assert np.hypot(x - tx, y - ty) < 2, (x, y, tx, ty)
+    assert pagina.get_attribute("#cruzamento", "aria-pressed") == "false"
+    pagina.click("[data-ponto=centro]")
+    pagina.wait_for_function("marcador.pontos.has('centro') && !marcador.pendente")
+
+    # 2) com o ponto escolhido antes no mapa: vai direto para o cruzamento
+    pagina.click("[data-ponto=meio_opo]")
+    pagina.keyboard.press("x")
+    assert "O ponto vai ser" in pagina.inner_text("#escolha")
+    for p in [(50, 300), (250, 320), (500, 100), (520, 300)]:
+        clicar(*p)
+    pagina.wait_for_function("marcador.pontos.has('meio_opo')")
+    meio = pagina.evaluate("marcador.pontos.get('meio_opo')")
+    assert np.hypot(meio["x"] - 524.75, meio["y"] - 347.47) < 2, meio
+
+    # 3) Backspace desfaz o último clique; quase paralelas, a página pede a outra linha de novo
+    pagina.keyboard.press("x")
+    clicar(100, 50)
+    clicar(300, 50)
+    clicar(100, 60)
+    pagina.keyboard.press("Backspace")
+    assert pagina.evaluate("marcador.cruzamento.cliques.length") == 2
+    clicar(100, 60)
+    clicar(300, 61)
+    assert "quase paralelas" in pagina.inner_text("#erro")
+    assert pagina.evaluate("marcador.cruzamento.cliques.length") == 2
+    pagina.keyboard.press("s")
+    assert "Termine o cruzamento" in pagina.inner_text("#erro")
+    pagina.keyboard.press("Escape")
+    assert pagina.evaluate("marcador.cruzamento") is None
+
+    # 4) desfazer tira o ponto que o cruzamento marcou
+    pagina.keyboard.press("Control+z")
+    assert not pagina.evaluate("marcador.pontos.has('meio_opo')")
+    assert pagina.evaluate("marcador.pontos.has('centro')")
+    assert not erros, erros
+
+
 def test_mouse_lento_com_ctrl(site, video, navegador):
     """Com Ctrl, a mira anda 1/4 do que o mouse anda, e o clique vale onde ela está; sem Ctrl, ela volta aos
     poucos para debaixo do mouse; saindo da imagem, volta de vez."""

@@ -7,10 +7,12 @@
 //   botão direito num ponto (ou Delete)           apaga
 //   roda do mouse                                 aproxima; botão direito, do meio ou espaço + arrastar move a vista
 //   Ctrl apertado                                 o mouse lento: a mira anda 1/4 do que o mouse anda (ponteiro.js)
+//   cruzamento (X): dois cliques em cada linha    o ponto vai para onde as duas retas se cruzam (o ponto coberto)
 //
 // As coordenadas são px da imagem a partir do canto de cima à esquerda (o primeiro pixel vai de 0 a 1).
 
 import { PONTOS_MARCAVEIS } from "../nucleo/campo.js";
+import { ANGULO_PEQUENO, DISTANCIA_MINIMA, cruzarRetas, retaNaImagem } from "../nucleo/cruzamento.js";
 import { PonteiroFino } from "./ponteiro.js";
 
 const PERTO = 9; // px na tela: clique em cima de um ponto
@@ -20,9 +22,23 @@ const MIRA = [4, 14]; // px na tela, do centro da lupa: onde cada braço da mira
 const CLARO = 140; // a claridade (0 a 255) a partir da qual a mira da lupa fica preta
 const ORDEM = new Map(PONTOS_MARCAVEIS.map((n, i) => [n, i]));
 const COR = { certo: "#3fb950", longe: "#d29922", errado: "#f85149" };
+const COR_LINHAS = ["#ffd33d", "#ff6fd8"]; // as duas retas do cruzamento
+
+/** O que a página diz em cada passo do cruzamento (`descrever`: o nome do ponto para gente). */
+export function textoCruzamento(m, descrever = (nome) => nome) {
+  const n = m.cruzamento?.cliques.length ?? 0;
+  const passo = [
+    "Cruzamento: clique dois pontos na primeira linha, longe um do outro, no meio da linha pintada.",
+    "Cruzamento: o segundo ponto da primeira linha — a reta tracejada tem que seguir a linha pintada.",
+    "Cruzamento: agora dois pontos na outra linha.",
+    "Cruzamento: o segundo ponto da outra linha — o círculo mostra onde o ponto vai ficar.",
+  ][Math.min(n, 3)];
+  const qual = m.selecionado ? ` O ponto vai ser: ${descrever(m.selecionado)}.` : "";
+  return `${passo}${qual} (Esc cancela; Backspace desfaz o último clique)`;
+}
 
 export class Marcador {
-  constructor(canvas, { imagem, pontos = [], somenteLeitura = false, aoMudar = () => {}, aoPassar = () => {}, aoPendente = () => {} }) {
+  constructor(canvas, { imagem, pontos = [], somenteLeitura = false, aoMudar = () => {}, aoPassar = () => {}, aoPendente = () => {}, aoCruzamento = () => {} }) {
     this.cv = canvas;
     this.ctx = canvas.getContext("2d");
     this.img = imagem;
@@ -32,9 +48,12 @@ export class Marcador {
     this.aoMudar = aoMudar;
     this.aoPassar = aoPassar;
     this.aoPendente = aoPendente;
+    this.aoCruzamento = aoCruzamento; // ({erro, aviso, feito}) a cada passo do cruzamento
     this.pontos = new Map(pontos.map((p) => [p.ponto, { x: p.x, y: p.y }]));
     this.selecionado = null; // o ponto a marcar no próximo clique (escolhido no mapa)
     this.pendente = null; // {x, y}: um clique esperando o nome
+    this.cruzamento = null; // {cliques: [[x, y], ...]}: o ajudante de cruzamento em andamento
+    this.construcao = null; // {linhas, ponto}: as retas do último cruzamento, até o próximo clique
     this.destaque = null; // o ponto em que o mouse está (na imagem ou no mapa)
     this.mostrarNomes = false;
     this.mostrarPontos = true;
@@ -84,6 +103,8 @@ export class Marcador {
     this.desfeitos = [];
     this.refeitos = [];
     this.pendente = null;
+    this.cruzamento = null;
+    this.construcao = null;
     this._mudou();
   }
 
@@ -145,6 +166,81 @@ export class Marcador {
     this.desfeitos.push(this.lista());
     this.pontos = new Map(depois.map((p) => [p.ponto, { x: p.x, y: p.y }]));
     this._mudou();
+  }
+
+  // ------------------------------------------------------------------ o ajudante de cruzamento
+  /** Começa o cruzamento: dois cliques em cada linha, e o ponto vai para onde as duas retas se cruzam. */
+  iniciarCruzamento() {
+    if (this.somenteLeitura) return;
+    this.pendente = null;
+    this.construcao = null;
+    this.cruzamento = { cliques: [] };
+    this.aoPendente(null);
+    this.aoCruzamento({});
+    this.desenhar();
+  }
+
+  cancelarCruzamento() {
+    if (!this.cruzamento && !this.construcao) return;
+    this.cruzamento = null;
+    this.construcao = null;
+    this.aoCruzamento({});
+    this.desenhar();
+  }
+
+  /** Desfaz o último clique do cruzamento. */
+  tirarCliqueDoCruzamento() {
+    if (!this.cruzamento) return;
+    this.cruzamento.cliques.pop();
+    this.aoCruzamento({});
+    this.desenhar();
+  }
+
+  _cliqueDoCruzamento(x, y) {
+    const c = this.cruzamento;
+    c.cliques.push([x, y]);
+    const n = c.cliques.length;
+    if (n % 2 === 0) {
+      const [a, b] = c.cliques.slice(-2);
+      if (Math.hypot(a[0] - b[0], a[1] - b[1]) < DISTANCIA_MINIMA) {
+        c.cliques.pop();
+        this.aoCruzamento({ erro: "Os dois cliques de uma linha precisam ficar longe um do outro." });
+        this.desenhar();
+        return;
+      }
+    }
+    if (n < 4) {
+      this.aoCruzamento({});
+      this.desenhar();
+      return;
+    }
+    const [a, b, p, q] = c.cliques;
+    const r = cruzarRetas(a, b, p, q);
+    if (!r) {
+      c.cliques.splice(2);
+      this.aoCruzamento({ erro: "As duas linhas estão quase paralelas: o ponto ficaria incerto demais. Clique de novo a outra linha." });
+      this.desenhar();
+      return;
+    }
+    const [ix, iy] = r.ponto;
+    this.cruzamento = null;
+    this.construcao = { linhas: [[a, b], [p, q]], ponto: r.ponto };
+    if (ix < 0 || iy < 0 || ix > this.w || iy > this.h) {
+      this.construcao.ponto = null;
+      this.aoCruzamento({ erro: "As linhas se cruzam fora da imagem: ponto fora da imagem não se marca." });
+      this.desenhar();
+      return;
+    }
+    if (this.selecionado) {
+      const nome = this.selecionado;
+      this.selecionado = null;
+      this.colocar(nome, ix, iy);
+    } else {
+      this.pendente = { x: ix, y: iy };
+      this.aoPendente(this.pendente);
+      this._mudou();
+    }
+    this.aoCruzamento({ feito: true, aviso: r.angulo < ANGULO_PEQUENO ? "As linhas se cruzam num ângulo pequeno: confira o ponto na lupa." : "" });
   }
 
   /** O ponto marcado debaixo do mouse (px da tela), ou null. */
@@ -236,7 +332,11 @@ export class Marcador {
 
   _baixar(e) {
     const [sx, sy] = this._posicao(e);
-    const sobre = this.pontoEm(sx, sy);
+    if (e.button === 0 && !this.espaco && this.construcao) {
+      this.construcao = null; // as retas do último cruzamento ficam até o próximo clique
+      this._pedirQuadro();
+    }
+    const sobre = this.cruzamento ? null : this.pontoEm(sx, sy); // no cruzamento, o clique num ponto é um clique dele
     if (e.button === 2 && sobre && !this.somenteLeitura) {
       this.apagar(sobre);
       return;
@@ -312,6 +412,10 @@ export class Marcador {
     if (Math.hypot(sx - a.sx, sy - a.sy) > 6) return;
     const [x, y] = this.paraImagem(sx, sy);
     if (x < 0 || y < 0 || x > this.w || y > this.h) return;
+    if (this.cruzamento) {
+      this._cliqueDoCruzamento(x, y);
+      return;
+    }
     if (this.selecionado) {
       const nome = this.selecionado;
       this.selecionado = null;
@@ -354,6 +458,7 @@ export class Marcador {
       if (this.resultado) this._desenharResultado(ctx);
       this._desenharPontos(ctx, (x, y) => this.paraTela(x, y), 1);
     }
+    this._desenharCruzamento(ctx, (x, y) => this.paraTela(x, y), 1);
     this._desenharLupa(ctx);
     if (this.arraste?.tipo !== "vista") this.fino.desenhar(ctx);
   }
@@ -431,6 +536,74 @@ export class Marcador {
     }
   }
 
+  /**
+   * O cruzamento em andamento (as retas pelos cliques, a reta ainda sendo escolhida, que segue o mouse, e
+   * onde o ponto vai ficar) ou o último feito; `tela` leva px da imagem à tela (ou à lupa).
+   */
+  _desenharCruzamento(ctx, tela, fator) {
+    const c = this.cruzamento;
+    const k = this.construcao;
+    if (!c && !k) return;
+    const mouse = this.ponteiro && this.arraste?.tipo !== "vista" ? this.paraImagem(...this.ponteiro) : null;
+    const cliques = c ? c.cliques : [];
+    const linhas = []; // [p, q, cor, se ainda segue o mouse]
+    if (c) {
+      if (cliques.length >= 2) linhas.push([cliques[0], cliques[1], COR_LINHAS[0], false]);
+      else if (cliques.length === 1 && mouse) linhas.push([cliques[0], mouse, COR_LINHAS[0], true]);
+      if (cliques.length === 3 && mouse) linhas.push([cliques[2], mouse, COR_LINHAS[1], true]);
+    } else {
+      k.linhas.forEach(([p, q], i) => linhas.push([p, q, COR_LINHAS[i], false]));
+    }
+    ctx.save();
+    ctx.lineCap = "butt";
+    for (const [p, q, cor, seguindo] of linhas) {
+      const seg = retaNaImagem(p, q, this.w, this.h);
+      if (!seg) continue;
+      const [a, b] = seg.map(([x, y]) => tela(x, y));
+      ctx.beginPath();
+      ctx.moveTo(...a);
+      ctx.lineTo(...b);
+      ctx.setLineDash([]);
+      ctx.strokeStyle = "rgba(0,0,0,0.6)";
+      ctx.lineWidth = 2.5 * fator;
+      ctx.stroke();
+      ctx.setLineDash(seguindo ? [3, 4] : [9, 4]);
+      ctx.strokeStyle = cor;
+      ctx.lineWidth = fator;
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
+    for (const [i, [x, y]] of cliques.entries()) {
+      const [sx, sy] = tela(x, y);
+      for (const [cor, largura] of [["rgba(0,0,0,0.85)", 3], [COR_LINHAS[i < 2 ? 0 : 1], 1.5]]) {
+        ctx.strokeStyle = cor;
+        ctx.lineWidth = largura;
+        ctx.beginPath();
+        ctx.moveTo(sx - 4, sy - 4);
+        ctx.lineTo(sx + 4, sy + 4);
+        ctx.moveTo(sx + 4, sy - 4);
+        ctx.lineTo(sx - 4, sy + 4);
+        ctx.stroke();
+      }
+    }
+    let alvo = null;
+    if (c && cliques.length === 3 && mouse) alvo = cruzarRetas(cliques[0], cliques[1], cliques[2], mouse)?.ponto ?? null;
+    else if (!c) alvo = k.ponto;
+    if (alvo) {
+      const [sx, sy] = tela(...alvo);
+      ctx.beginPath();
+      ctx.arc(sx, sy, 7 * fator, 0, 2 * Math.PI);
+      ctx.strokeStyle = "rgba(0,0,0,0.85)";
+      ctx.lineWidth = 3.5;
+      ctx.stroke();
+      ctx.setLineDash(c ? [3, 3] : []);
+      ctx.strokeStyle = "#ffffff";
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
   /** O pixel da imagem em (x, y) é claro (a mira da lupa fica preta em cima dele)? */
   claro(x, y) {
     if (this._pixels === undefined) {
@@ -490,6 +663,7 @@ export class Marcador {
     ctx.drawImage(this.img, x - meio, y - meio, 2 * meio, 2 * meio, lx, ly, LUPA, LUPA);
     const tela = (px, py) => [lx + LUPA / 2 + (px - x) * aumento, ly + LUPA / 2 + (py - y) * aumento];
     if (this.mostrarPontos) this._desenharPontos(ctx, tela, 0.8);
+    this._desenharCruzamento(ctx, tela, 0.8);
     this._desenharMira(ctx, lx + LUPA / 2, ly + LUPA / 2, x, y, aumento);
     ctx.restore();
     ctx.strokeStyle = "rgba(255,255,255,0.6)";

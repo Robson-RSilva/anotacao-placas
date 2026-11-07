@@ -96,7 +96,13 @@ Não é preciso cadastrar equipe nem levantar o estádio antes: basta importar a
    resto). Arrastar ajusta, o botão direito apaga. O mapa gira de 90 em 90 graus (`R`)
    até ficar como a imagem — o lado de baixo é o mais perto da câmera. Os nomes dos lados são os do
    campo ("cab", o lado das cabines), e a mesma marcação vista do outro lado do campo (girada 180°)
-   também vale.
+   também vale. **Ponto coberto** (por um jogador, a trave, um grafismo): marque só quando dá para
+   saber o lugar exato. No cruzamento de duas linhas retas que aparecem, use o **Cruzamento** (`X`):
+   dois cliques em cada linha — longe um do outro, no meio da linha pintada; a reta tracejada mostra
+   se ela segue a linha — e a página marca onde as duas se cruzam (o círculo mostra onde, antes do
+   último clique). Com o ponto escolhido antes no mapa, ele vai direto para lá; senão, fica o "?"
+   esperando o nome. Marca do pênalti ou do centro coberta, ou ponto numa curva com um vão grande:
+   não marque.
 3. **Trazer os recortes das placas.** Os recortes chegam prontos, de fora das páginas — hoje do
    simulador do laboratório; depois, da projeção das placas com a câmera de cada quadro —, em lotes:
    `recortes/<lote>.json` com as imagens ao lado, uma por placa por quadro (a placa endireitada, com

@@ -339,7 +339,8 @@
           <section>
             <h2>Marcados <span id="n-pontos" class="contagem"></span></h2>
             <ul id="lista-pontos" class="pinos"></ul>
-            <div class="botoes">
+            <div class="botoes alternar">
+              <button id="cruzamento" type="button" aria-pressed="false" title="Para um ponto coberto: dois cliques em cada linha, e o ponto vai para onde elas se cruzam">Cruzamento <kbd>X</kbd></button>
               <button id="desfazer" type="button">Desfazer <kbd>Ctrl Z</kbd></button>
               <label class="caixa-marcar"><input type="checkbox" id="ver-nomes"> nomes <kbd>L</kbd></label>
             </div>
@@ -357,7 +358,7 @@
               <li><b>Escolha o ponto no mapa e clique no lugar dele na imagem.</b> Ou o contrário: clique na imagem e depois no mapa.</li>
               <li>Marque <b>todo ponto do campo que aparece</b>, no centro exato do cruzamento das linhas (ou da marca, ou da trave). Aproxime com a roda do mouse; a lupa mostra o pixel (a mira dela fica preta em cima das linhas brancas).</li>
               <li><b>Gire o mapa</b> (<kbd>R</kbd>) até ele ficar como a imagem: o lado de baixo do mapa é o mais perto da câmera. Câmera atrás do gol: o gol de perto embaixo.</li>
-              <li>Ponto coberto por alguém: marque só se dá para saber exatamente onde ele está. Fora da imagem, não marque.</li>
+              <li><b>Ponto coberto</b> (por um jogador, a trave, um grafismo): marque só se dá para saber o lugar exato. No cruzamento de duas linhas retas que aparecem, use o <b>Cruzamento</b> (<kbd>X</kbd>): dois cliques em cada linha — longe um do outro, no meio da linha pintada — e a página marca onde as duas se cruzam. Marca do pênalti ou do centro coberta, ou ponto numa curva com um vão grande: não marque. Fora da imagem, não marque.</li>
               <li>Nenhum ponto à vista (um close, a torcida)? Salve sem pontos. <b>Descarte</b> só a imagem que não dá para anotar (transição, borrão, grafismo por cima).</li>
               <li><b>Arraste</b> um ponto para ajustar; <b>botão direito</b> (ou <kbd>Delete</kbd>) apaga. <kbd>Esc</kbd> cancela o ponto escolhido. Botão direito e arrastar move a vista; <kbd>0</kbd> volta a vista; <kbd>H</kbd> esconde os pontos.</li>
               <li><b>Mouse lento</b>: com <kbd>Ctrl</kbd> apertado, a mira anda 1/4 do que o mouse anda — para acertar o pixel olhando a lupa. O clique vale onde está a mira.</li>
@@ -512,7 +513,8 @@
           <h2>Corrigir</h2>
           <p class="sutil">Como na página de pontos: escolha no mapa e clique na imagem; arraste para ajustar; botão direito apaga. A correção vira uma versão nova, com a sua autoria.</p>
           <ul id="lista-pontos" class="pinos"></ul>
-          <div class="botoes">
+          <div class="botoes alternar">
+            <button id="cruzamento" type="button" aria-pressed="false" title="Para um ponto coberto: dois cliques em cada linha, e o ponto vai para onde elas se cruzam">Cruzamento <kbd>X</kbd></button>
             <button id="desfazer" type="button">Desfazer <kbd>Ctrl Z</kbd></button>
             <button id="descartar" type="button">Descartar em vez disso</button>
           </div>
