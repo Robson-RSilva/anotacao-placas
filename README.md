@@ -92,7 +92,8 @@ Não é preciso cadastrar equipe nem levantar o estádio antes: basta importar a
    marcam (cruzamentos das linhas, marcas do pênalti e do centro, pés e topos das traves). Escolha o
    ponto no mapa e clique no lugar dele na imagem — ou ao contrário: clique na imagem e depois no
    mapa. Marque todo ponto que aparece, no centro exato do cruzamento; a roda do mouse aproxima e a
-   lupa mostra o pixel. Arrastar ajusta, o botão direito apaga. O mapa gira de 90 em 90 graus (`R`)
+   lupa mostra o pixel (a mira dela fica preta em cima do que é claro, como as linhas, e branca no
+   resto). Arrastar ajusta, o botão direito apaga. O mapa gira de 90 em 90 graus (`R`)
    até ficar como a imagem — o lado de baixo é o mais perto da câmera. Os nomes dos lados são os do
    campo ("cab", o lado das cabines), e a mesma marcação vista do outro lado do campo (girada 180°)
    também vale.

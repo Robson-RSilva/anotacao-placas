@@ -1471,6 +1471,58 @@ def test_partida_recortes(site, video, navegador, capturas, tmp_path):
     assert not erros, erros
 
 
+_MIRA_NA_DIVISA = """async () => {
+  // uma imagem metade clara (como uma linha do campo) e metade escura (como o gramado)
+  const c = document.createElement("canvas");
+  c.width = 200;
+  c.height = 100;
+  const g = c.getContext("2d");
+  g.fillStyle = "#f0f0f0";
+  g.fillRect(0, 0, 100, 100);
+  g.fillStyle = "#1e3c1e";
+  g.fillRect(100, 0, 100, 100);
+  const img = new Image();
+  img.src = c.toDataURL();
+  await img.decode();
+  const caixa = document.createElement("div");
+  caixa.style.cssText = "position:fixed;left:0;top:0;width:800px;height:400px;z-index:99";
+  const tela = document.createElement("canvas");
+  caixa.append(tela);
+  document.body.append(caixa);
+  const m = new marcador.constructor(tela, { imagem: img });
+  m.ponteiro = m.paraTela(100, 50); // na divisa: um braço da mira no claro, o outro no escuro
+  m.desenhar();
+  // a lupa fica à esquerda, com o centro em (96, 96) e 10 px de lupa por pixel da imagem
+  const px = (x, y) => Array.from(tela.getContext("2d").getImageData(x, y, 1, 1).data.slice(0, 3));
+  const cores = { esquerda: px(88, 96), direita: px(104, 96), cima: px(96, 88), baixo: px(96, 104) };
+  m.destruir();
+  caixa.remove();
+  return cores;
+}"""
+
+
+def test_mira_da_lupa_contrasta(site, video, navegador, capturas):
+    """Na lupa dos pontos, a mira fica preta em cima do que é claro (as linhas do campo, onde ficam os pontos)
+    e branca no resto, pixel a pixel."""
+    caminho, verdade = video
+    erros: list[str] = []
+    pagina = _pagina(navegador, erros)
+    _importar(pagina, site, caminho)
+    pagina.goto(site + "#/pontos")
+    pagina.wait_for_function("window.itemPontos && window.marcador")
+    cores = pagina.evaluate(_MIRA_NA_DIVISA)
+    preto, branco = [0, 0, 0], [255, 255, 255]
+    assert cores == {"esquerda": preto, "direita": branco, "cima": branco, "baixo": branco}
+    # numa imagem de verdade: o mouse num ponto do campo (o cruzamento de duas linhas brancas)
+    fila = Fila.model_validate_json(_ler(pagina, f"partidas/{PARTIDA}/fila.json"))
+    v = _verdade_do_quadro(pagina, fila, verdade, "itemPontos")
+    nome, (x, y) = next(iter(_pontos_visiveis(v, 1).items()))
+    pagina.mouse.move(*_janela(pagina, "marcador", x, y))
+    assert pagina.evaluate("([x, y]) => marcador.claro(x, y)", [x, y]), nome  # o ponto está numa linha branca
+    pagina.screenshot(path=str(capturas / "e2e_lupa.png"))
+    assert not erros, erros
+
+
 def test_mouse_lento_com_ctrl(site, video, navegador):
     """Com Ctrl, a mira anda 1/4 do que o mouse anda, e o clique vale onde ela está; sem Ctrl, ela volta aos
     poucos para debaixo do mouse; saindo da imagem, volta de vez."""

@@ -16,6 +16,8 @@ import { PonteiroFino } from "./ponteiro.js";
 const PERTO = 9; // px na tela: clique em cima de um ponto
 const LUPA = 168; // px na tela
 const AUMENTO = 6;
+const MIRA = [4, 14]; // px na tela, do centro da lupa: onde cada braço da mira começa e termina
+const CLARO = 140; // a claridade (0 a 255) a partir da qual a mira da lupa fica preta
 const ORDEM = new Map(PONTOS_MARCAVEIS.map((n, i) => [n, i]));
 const COR = { certo: "#3fb950", longe: "#d29922", errado: "#f85149" };
 
@@ -44,6 +46,7 @@ export class Marcador {
     this.arraste = null; // {tipo: "vista" | "ponto", ...}
     this.espaco = false;
     this.fino = new PonteiroFino(canvas);
+    this._pixels = undefined; // os pixels da imagem, lidos na primeira vez que a lupa aparece
     this._quadroPedido = false;
     this._eventos();
     this._ro = new ResizeObserver(() => this.ajustarVista());
@@ -428,6 +431,45 @@ export class Marcador {
     }
   }
 
+  /** O pixel da imagem em (x, y) é claro (a mira da lupa fica preta em cima dele)? */
+  claro(x, y) {
+    if (this._pixels === undefined) {
+      try {
+        const c = document.createElement("canvas");
+        c.width = this.w;
+        c.height = this.h;
+        const cc = c.getContext("2d", { willReadFrequently: true });
+        cc.drawImage(this.img, 0, 0);
+        this._pixels = cc.getImageData(0, 0, this.w, this.h).data;
+      } catch {
+        this._pixels = null; // sem os pixels, a mira fica branca
+      }
+    }
+    const xi = Math.floor(x);
+    const yi = Math.floor(y);
+    if (!this._pixels || xi < 0 || yi < 0 || xi >= this.w || yi >= this.h) return false;
+    const i = 4 * (yi * this.w + xi);
+    return 0.2126 * this._pixels[i] + 0.7152 * this._pixels[i + 1] + 0.0722 * this._pixels[i + 2] > CLARO;
+  }
+
+  /**
+   * A mira da lupa: quatro braços de 2 px em volta do centro (o centro fica livre, para ver o pixel), cada
+   * pixel preto em cima do que é claro — as linhas do campo, onde ficam os pontos — e branco no resto.
+   */
+  _desenharMira(ctx, cx, cy, x, y, aumento) {
+    const [vao, fim] = MIRA;
+    for (let s = vao; s < fim; s++) {
+      // [onde a célula de 1 px fica na lupa, se o braço é deitado]; a cor sai do meio da célula
+      for (const [px, py, deitado] of [[cx + s, cy, true], [cx - s - 1, cy, true], [cx, cy + s, false], [cx, cy - s - 1, false]]) {
+        const ix = x + (px + (deitado ? 0.5 : 0) - cx) / aumento;
+        const iy = y + (py + (deitado ? 0 : 0.5) - cy) / aumento;
+        ctx.fillStyle = this.claro(ix, iy) ? "#000" : "#fff";
+        if (deitado) ctx.fillRect(px, cy - 1, 1, 2);
+        else ctx.fillRect(cx - 1, py, 2, 1);
+      }
+    }
+  }
+
   _desenharLupa(ctx) {
     if (!this.ponteiro || this.arraste?.tipo === "vista" || this.vista.escala * AUMENTO < 2) return;
     const [sx, sy] = this.ponteiro;
@@ -448,18 +490,7 @@ export class Marcador {
     ctx.drawImage(this.img, x - meio, y - meio, 2 * meio, 2 * meio, lx, ly, LUPA, LUPA);
     const tela = (px, py) => [lx + LUPA / 2 + (px - x) * aumento, ly + LUPA / 2 + (py - y) * aumento];
     if (this.mostrarPontos) this._desenharPontos(ctx, tela, 0.8);
-    ctx.strokeStyle = "rgba(255,255,255,0.85)";
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(lx + LUPA / 2, ly + LUPA / 2 - 14);
-    ctx.lineTo(lx + LUPA / 2, ly + LUPA / 2 - 4);
-    ctx.moveTo(lx + LUPA / 2, ly + LUPA / 2 + 4);
-    ctx.lineTo(lx + LUPA / 2, ly + LUPA / 2 + 14);
-    ctx.moveTo(lx + LUPA / 2 - 14, ly + LUPA / 2);
-    ctx.lineTo(lx + LUPA / 2 - 4, ly + LUPA / 2);
-    ctx.moveTo(lx + LUPA / 2 + 4, ly + LUPA / 2);
-    ctx.lineTo(lx + LUPA / 2 + 14, ly + LUPA / 2);
-    ctx.stroke();
+    this._desenharMira(ctx, lx + LUPA / 2, ly + LUPA / 2, x, y, aumento);
     ctx.restore();
     ctx.strokeStyle = "rgba(255,255,255,0.6)";
     ctx.lineWidth = 1;

@@ -5,6 +5,14 @@ Formato de [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); versões
 
 ## [Não lançado]
 
+## [0.14.1] - 2026-11-07
+
+### Mudado
+
+- Na lupa dos pontos, a mira fica preta em cima do que é claro e branca no resto, pixel a pixel. Antes,
+  sempre branca, ela sumia em cima das linhas do campo — justamente onde ficam os pontos. Os braços
+  passaram a ter 2 px, centrados no ponto (antes, 1 px borrado entre dois pixels).
+
 ## [0.14.0] - 2026-11-06
 
 A página de cada partida, para ver, editar e excluir; e o mouse lento com Ctrl (ADR-0014).
