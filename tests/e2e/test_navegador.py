@@ -1408,6 +1408,109 @@ def test_pagina_da_partida(site, video, navegador, capturas):
     assert not erros, erros
 
 
+def _gravar_fila(pagina, fila: Fila) -> None:
+    caminho = f"partidas/{PARTIDA}/fila.json"
+    obj = json.loads(fila.model_dump_json())
+    pagina.evaluate("async ([c, o]) => await anotacao.pasta.gravar('fila', c, o, {sobrescrever: true})", [caminho, obj])
+
+
+def test_camera_dos_rotulos(site, video, navegador, capturas):
+    """A câmera dos rótulos: a página da partida mede o campo pelos rótulos e aponta o quadro com um ponto
+    fora do lugar (com o campo projetado e a seta no visor) e o da câmera do outro lado; a página de marcar
+    e a revisão mostram a mesma conferência embaixo dos pontos."""
+    caminho, verdade = video
+    erros: list[str] = []
+    pagina = _pagina(navegador, erros)
+    _criar_pasta(pagina, site)
+    _escolher_pessoa(pagina, site, "A01")
+    pagina.click("#ir-importar")
+    _preencher_importacao(pagina, caminho)
+    assert _processar(pagina) == ""
+    fila = Fila.model_validate_json(_ler(pagina, f"partidas/{PARTIDA}/fila.json"))
+    assert [it.tomada for it in fila.itens] == [0, 1, 2]  # principal, atrás do gol, do outro lado
+    q0, q1, q2 = (it.quadro for it in fila.itens)
+    pontos = [dict(verdade[it.i]["pontos"]) for it in fila.itens]
+    assert len(pontos[1]) >= 15 and len(pontos[2]) >= 6
+    # q1, de trás do gol: um ponto 25 px fora do lugar
+    fora = "ga_dir_frente_opo"
+    x, y = pontos[1][fora]
+    errado = {**pontos[1], fora: (x + 25.0, y)}
+    a0 = _gravar_rotulo_pontos(pagina, q0, "A02", pontos[0])
+    a1 = _gravar_rotulo_pontos(pagina, q1, "A02", errado)
+    a2 = _gravar_rotulo_pontos(pagina, q2, "A02", pontos[2])
+    # mais cinco quadros da mesma câmera (sem imagem, só os rótulos certos) para a medida do campo
+    base = fila.itens[1]
+    extras = []
+    for k in range(1, 6):
+        ms = base.pts_ms + 40 * k
+        extras.append(base.model_copy(update={"quadro": f"t{ms:010d}", "pts_ms": ms, "i": base.i + k}))
+    _gravar_fila(pagina, fila.model_copy(update={"itens": [*fila.itens, *extras]}))
+    for it in extras:
+        _gravar_rotulo_pontos(pagina, it.quadro, "A01", pontos[1])
+
+    # 1) a página da partida: o resumo, a medida do campo e os filtros da câmera
+    pagina.goto(site + f"#/partida?id={PARTIDA}")
+    pagina.wait_for_function("document.querySelector('#camera-resumo')?.textContent.includes('campo medido')")
+    resumo = pagina.inner_text("#camera-resumo")
+    assert "8 quadros com pontos · 1 para conferir · 1 com atenção" in resumo, resumo
+    assert "105 × 68 m" in resumo
+    filtros = pagina.inner_text("#filtros-camera").split("\n")
+    assert filtros[:3] == ["Câmera: todos", "para conferir (1)", "atenção (1)"], filtros
+    selos = pagina.eval_on_selector_all("#grade .selo-camera", "els => els.map((e) => e.textContent)")
+    assert selos == ["câmera: conferir", "câmera: atenção"], selos
+    pagina.click("#filtros-camera [data-camera=conferir]")
+    pagina.wait_for_function("document.querySelectorAll('#grade .item').length === 1")
+    assert pagina.get_attribute("#grade .item", "data-id") == q1
+    pagina.wait_for_timeout(300)
+    pagina.screenshot(path=str(capturas / "e2e_camera_1_partida.png"), full_page=True)
+
+    # 2) o visor: o diagnóstico e, com C, o campo visto pela câmera e a seta do ponto acusado
+    pagina.click("#grade .item >> nth=0")
+    pagina.wait_for_selector("#visor-camera:not([hidden])")
+    texto = pagina.inner_text("#visor-camera-resumo")
+    assert f"({fora}) está a" in texto and "confira o lugar e o nome" in texto, texto
+    assert "m de altura" in pagina.inner_text("#visor-camera-onde")
+    assert pagina.evaluate("visorPartida.camadaCampo") is None
+    pagina.keyboard.press("c")
+    pagina.wait_for_function("visorPartida.camadaCampo && visorPartida.camadaCampo.linhas.length > 5")
+    seta = pagina.evaluate("visorPartida.camadaCampo.setas")
+    assert len(seta) == 1 and abs(seta[0]["de"][0] - (x + 25.0)) < 1e-6
+    assert abs(seta[0]["para"][0] - x) < 3 and abs(seta[0]["para"][1] - y) < 3  # os outros pontos dizem onde ele fica
+    pagina.screenshot(path=str(capturas / "e2e_camera_2_visor.png"))
+    pagina.keyboard.press("Escape")
+
+    # 3) a câmera do outro lado: atenção; editando, a página de marcar mostra o mesmo aviso
+    pagina.click("#filtros-camera [data-camera=atencao]")
+    pagina.wait_for_function(f"document.querySelector('#grade .item')?.dataset.id === '{q2}'")
+    pagina.click("#grade .item >> nth=0")
+    pagina.wait_for_selector("#visor-camera:not([hidden])")
+    assert "lado oposto às cabines" in pagina.inner_text("#visor-camera-resumo")
+    pagina.keyboard.press("e")
+    pagina.wait_for_function("window.itemPontos && itemPontos.edicao && window.marcador")
+    pagina.wait_for_selector("#camera:not([hidden])")
+    assert "lado oposto às cabines" in pagina.inner_text("#camera")
+    assert "atencao" in pagina.get_attribute("#camera", "class")
+    pagina.screenshot(path=str(capturas / "e2e_camera_3_marcar.png"))
+    # tirando pontos até sobrar 4, a linha some (são precisos 5 para conferir)
+    for nome in list(pontos[2])[:2]:
+        pagina.evaluate("(n) => marcador.apagar(n)", nome)
+    pagina.wait_for_selector("#camera", state="hidden")
+
+    # 4) a revisão às cegas mostra a conferência do rótulo em revisão
+    pagina.goto(site + "#/revisao-pontos")
+    pagina.wait_for_function("window.itemRevisao && window.revisando")
+    quadro = pagina.evaluate("itemRevisao.quadro")
+    assert quadro in (q0, q1, q2)
+    esperado = {
+        q0: "não dá para conferir cada um",
+        q1: "confira o lugar e o nome",
+        q2: "lado oposto às cabines",
+    }[quadro]
+    pagina.wait_for_function("(t) => document.querySelector('#camera')?.textContent.includes(t)", arg=esperado)
+    assert {a0, a1, a2}  # os três rótulos de A02 esperam revisão
+    assert not erros, erros
+
+
 def test_partida_recortes(site, video, navegador, capturas, tmp_path):
     """A aba dos recortes: a pintura por cima, o visor com a máscara, editar a própria pintura (versão nova,
     que vai para a revisão) e excluir o lote inteiro."""

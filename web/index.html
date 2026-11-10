@@ -213,6 +213,10 @@
             <button type="button" id="excluir-selecionados" class="perigo" hidden>Excluir</button>
             <button type="button" id="excluir-lote" class="perigo" hidden>Excluir o lote…</button>
           </div>
+          <div id="camera-partida" class="faixa camera-partida" hidden>
+            <p id="camera-resumo" role="status"></p>
+            <div class="botoes alternar" id="filtros-camera" role="group" aria-label="Filtrar pela conferência da câmera"></div>
+          </div>
           <p class="sutil" id="dica-itens"></p>
           <div id="grade" class="grade-itens"></div>
           <p id="vazio-itens" class="sutil" hidden></p>
@@ -242,9 +246,15 @@
           <div id="visor-versoes" class="versoes" role="radiogroup" aria-label="A anotação que aparece na imagem"></div>
         </section>
         <section id="visor-detalhe" class="detalhe"></section>
+        <section id="visor-camera" class="detalhe camera-visor" hidden>
+          <h2>Câmera dos rótulos</h2>
+          <p id="visor-camera-resumo"></p>
+          <p id="visor-camera-onde" class="sutil"></p>
+        </section>
         <div class="botoes">
           <label class="caixa-marcar"><input type="checkbox" id="visor-nomes"> nomes <kbd>L</kbd></label>
           <label class="caixa-marcar"><input type="checkbox" id="visor-mostrar" checked> anotação <kbd>H</kbd></label>
+          <label class="caixa-marcar" id="caixa-visor-campo"><input type="checkbox" id="visor-campo"> campo da câmera <kbd>C</kbd></label>
         </div>
         <div class="botoes">
           <button type="button" id="visor-anterior">← Anterior</button>
@@ -344,6 +354,7 @@
               <button id="desfazer" type="button">Desfazer <kbd>Ctrl Z</kbd></button>
               <label class="caixa-marcar"><input type="checkbox" id="ver-nomes"> nomes <kbd>L</kbd></label>
             </div>
+            <p id="camera" class="camera-status" role="status" hidden></p>
           </section>
 
           <div class="botoes acoes">
@@ -362,6 +373,7 @@
               <li>Nenhum ponto à vista (um close, a torcida)? Salve sem pontos. <b>Descarte</b> só a imagem que não dá para anotar (transição, borrão, grafismo por cima).</li>
               <li><b>Arraste</b> um ponto para ajustar; <b>botão direito</b> (ou <kbd>Delete</kbd>) apaga. <kbd>Esc</kbd> cancela o ponto escolhido. Botão direito e arrastar move a vista; <kbd>0</kbd> volta a vista; <kbd>H</kbd> esconde os pontos.</li>
               <li><b>Mouse lento</b>: com <kbd>Ctrl</kbd> apertado, a mira anda 1/4 do que o mouse anda — para acertar o pixel olhando a lupa. O clique vale onde está a mira.</li>
+              <li><b>Conferência da câmera</b>: com 5 pontos ou mais, a página calcula a câmera e avisa embaixo dos marcados quando um ponto não bate com os outros (ou quando os nomes estão espelhados ou girados). Confira o ponto apontado; se ele está certo, salve assim mesmo — o aviso não impede salvar.</li>
             </ul>
           </details>
         </div>
@@ -478,6 +490,7 @@
             <dt>Partiu de</dt><dd id="r-partiu"></dd>
             <dt>Comentário</dt><dd id="r-comentario"></dd>
           </dl>
+          <p id="camera" class="camera-status" role="status" hidden></p>
         </section>
 
         <section>

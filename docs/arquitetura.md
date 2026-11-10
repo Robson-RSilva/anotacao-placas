@@ -72,6 +72,7 @@ GitHub Pages (site estático)          navegador de cada pessoa                 
 | `nucleo/pasta.js`, `nucleo/indice.js` | layout da pasta, escrita que nunca sobrescreve, índice com cache |
 | `nucleo/filas.js`, `nucleo/gabarito.js`, `nucleo/placar.js` | o que cada pessoa faz a seguir em cada tarefa, a comparação com o gabarito e a liberação, o placar e a concordância |
 | `nucleo/regiao.js` | a região da placa no recorte: o polígono em pixels (a mesma conta do Python) |
+| `nucleo/camera.js` | a câmera de um quadro pelos pontos (homografia, focal e pose, refino), a conferência deixando um ponto de fora e a medida do campo — o modelo de câmera do laboratório, sem a distorção |
 | `nucleo/rotulos.js`, `nucleo/png.js` | montar e gravar rótulos (com a máscara) e revisões; o PNG de índices |
 | `nucleo/zip.js`, `nucleo/transferencia.js` | levar e trazer arquivos em .zip |
 | `nucleo/hash.js`, `nucleo/aleatorio.js`, `nucleo/estatistica.js` | SHA-256 por partes, sorteio reprodutível, mediana e percentil |
@@ -81,6 +82,7 @@ GitHub Pages (site estático)          navegador de cada pessoa                 
 | `ui/mapa.js`, `ui/marcador.js` | o mapa do campo e a imagem em que se marcam os pontos (zoom, lupa, arrastar, apagar) |
 | `ui/pintor.js` | a pintura no recorte (pincel, laço, borracha, só dentro da região da placa) e o resultado do teste por cima |
 | `ui/tarefa.js` | o que as duas tarefas têm em comum: abrir a imagem (o quadro ou o recorte), descartar, confirmar, os avisos |
+| `ui/conferencia.js` | a conferência da câmera nas páginas: o rótulo que vale, a medida do campo guardada, os textos dos avisos e o campo desenhado por cima |
 | `ui/vista-*.js` | as páginas: central, importar, pontos, placas, revisões, gabarito e coordenação |
 | `ui/app.js`, `ui/armazenamento.js` | as rotas (`#/pontos`, `#/placas`, …; os endereços da 0.8 e da 0.9 levam às páginas novas) e onde fica a pasta (escolhida ou do navegador) |
 | `ui/vigia.js`, `ui/tempo.js`, `ui/util.js` | pegar o que chega de outros computadores, o tempo ativo, utilidades |

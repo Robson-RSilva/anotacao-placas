@@ -4,6 +4,9 @@
 // lote ou a partida inteira, e baixar tudo num .zip.
 //
 // #/partida?id=<partida>[&aba=quadros|recortes|arquivos][&ver=<quadro ou recorte>]
+//
+// Nos quadros, a câmera dos rótulos: a página calcula a câmera de cada quadro pelos pontos e aponta os que
+// não batem (ui/conferencia.js); no visor, o campo visto por essa câmera aparece por cima da imagem.
 
 import { descricaoPonto } from "../nucleo/campo.js";
 import {
@@ -20,6 +23,7 @@ import {
 import { MOTIVOS } from "../nucleo/formatos.js";
 import { exportarZip } from "../nucleo/transferencia.js";
 import { formatarTempo as tempoDoVideo } from "../nucleo/trechos.js";
+import { CAMPO_PADRAO, NIVEIS, camadaDoCampo, conferirPartida, conferirRotulo, pontosQueValem, resumoDaConferencia, soRobustos, textoDaCamera } from "./conferencia.js";
 import { Marcador } from "./marcador.js";
 import { Pintor } from "./pintor.js";
 import { caixas, escrevendo, parametros, textoSituacao } from "./tarefa.js";
@@ -67,6 +71,9 @@ export async function montar(raiz, ctx) {
   let lista = []; // os itens que aparecem (da aba e do filtro)
   let visor = null; // {k, x, tela, url, opcoes, escolhida}
   let miniaturas = null; // IntersectionObserver
+  let camera = null; // a conferência dos quadros: {campo, porQuadro, feitos, total, pronta}
+  let filtroCamera = "todas";
+  let geracaoCamera = 0;
 
   const mostrarErro = (t) => {
     $("erro-partida").textContent = t;
@@ -221,7 +228,9 @@ export async function montar(raiz, ctx) {
     }
     const todos = itensDaAba();
     mostrarFiltros(todos);
-    lista = todos.filter((x) => (filtro === "todos" || x.sit.estado === filtro) && (!loteEscolhido || x.lote === loteEscolhido));
+    mostrarCamera();
+    const daCamera = (x) => aba !== "quadros" || filtroCamera === "todas" || camera?.porQuadro.get(x.id)?.nivel === filtroCamera;
+    lista = todos.filter((x) => (filtro === "todos" || x.sit.estado === filtro) && (!loteEscolhido || x.lote === loteEscolhido) && daCamera(x));
     for (const id of [...selecao]) if (!todos.some((x) => x.id === id)) selecao.delete(id);
     miniaturas?.disconnect();
     miniaturas = new IntersectionObserver(
@@ -267,6 +276,8 @@ export async function montar(raiz, ctx) {
     if (x.sit.pessoas.length) texto(x.sit.pessoas.join(", "));
     if (x.item.dupla) texto(x.sit.falta ? `dupla (falta ${x.sit.falta})` : "dupla");
     if (x.tarefa === "placas") texto(`quadro ${tempoDoQuadro(Number(x.id.slice(1, 11)))}`);
+    const c = x.tarefa === "pontos" ? camera?.porQuadro.get(x.id) : null;
+    if (c && (c.nivel === "conferir" || c.nivel === "atencao")) leg.append(seloCamera(c));
     b.title = x.tarefa === "pontos" ? `${x.id} · tomada ${x.item.tomada}` : `${x.id} · lote ${x.lote}`;
     b.append(cv, marca, leg);
     b.classList.toggle("selecionado", selecao.has(x.id));
@@ -380,6 +391,121 @@ export async function montar(raiz, ctx) {
     $("grade").classList.remove("selecionando");
     mostrarSelecao();
     $("dica-itens").textContent = `Clique ${aba === "quadros" ? "num quadro" : "num recorte"} para ver as anotações de perto, com as versões e as revisões.`;
+  }
+
+  // ------------------------------------------------------------------ a câmera dos rótulos
+  /** Os quadros com o rótulo que vale (o aprovado ou o mais recente) e pontos que dão câmera. */
+  function quadrosParaCamera() {
+    if (!dados?.fila) return [];
+    const man = dados.manifesto;
+    const out = [];
+    for (const it of dados.fila.itens) {
+      const sit = situacaoDoItem(dados.ip.pontos, it.quadro, it);
+      const a = sit.aprovado?.a ?? sit.rotulos[sit.rotulos.length - 1] ?? null;
+      const pontos = pontosQueValem(a?.dados);
+      if (!a || pontos.length < 4) continue;
+      out.push({ id: it.quadro, nome: a.nome, pontos, largura: a.dados.largura ?? man?.video.largura, altura: a.dados.altura ?? man?.video.altura });
+    }
+    return out;
+  }
+
+  async function conferirCamera() {
+    const g = ++geracaoCamera;
+    const quadros = quadrosParaCamera();
+    camera = { campo: null, porQuadro: new Map(), feitos: 0, total: quadros.length, pronta: false };
+    mostrarCamera();
+    const r = await conferirPartida(pid, quadros, {
+      aoAndar: (feitos) => {
+        if (g !== geracaoCamera || !vivo) return;
+        camera.feitos = feitos;
+        mostrarCamera();
+      },
+      vivo: () => vivo && g === geracaoCamera,
+    });
+    if (!r || g !== geracaoCamera || !vivo) return;
+    camera = { campo: r.campo, porQuadro: r.porQuadro, feitos: quadros.length, total: quadros.length, pronta: true };
+    mostrarCamera();
+    atualizarSelosCamera();
+    if (visor?.x.tarefa === "pontos") mostrarCameraNoVisor(); // o visor aberto ganha a medida do campo
+  }
+
+  function textoDoCampo(m) {
+    const medida = `${numero(m.L, 1)} × ${numero(m.W, 1)} m`;
+    return m.conhecido ? `campo medido pelos rótulos: ${medida}` : `ainda sem quadros para medir o campo (a conferência ponto a ponto espera por eles; até lá, ${medida})`;
+  }
+
+  function mostrarCamera() {
+    const caixa = $("camera-partida");
+    caixa.hidden = aba !== "quadros" || !camera || !camera.total;
+    if (caixa.hidden) return;
+    if (!camera.pronta) {
+      $("camera-resumo").textContent = `Conferindo a câmera de cada quadro pelos pontos… ${numero(camera.feitos, 0)} de ${numero(camera.total, 0)}.`;
+      $("filtros-camera").replaceChildren();
+      return;
+    }
+    const conta = new Map();
+    for (const c of camera.porQuadro.values()) conta.set(c.nivel, (conta.get(c.nivel) ?? 0) + 1);
+    const partes = [plural(camera.total, "quadro com pontos", "quadros com pontos")];
+    if (conta.get("conferir")) partes.push(`${numero(conta.get("conferir"), 0)} para conferir`);
+    if (conta.get("atencao")) partes.push(`${numero(conta.get("atencao"), 0)} com atenção`);
+    $("camera-resumo").textContent = `Câmera dos rótulos: ${partes.join(" · ")}; ${textoDoCampo(camera.campo)}.`;
+    if (filtroCamera !== "todas" && !conta.get(filtroCamera)) filtroCamera = "todas";
+    const botao = (chave, texto) => {
+      const b = Object.assign(document.createElement("button"), { type: "button", textContent: texto });
+      b.dataset.camera = chave;
+      b.setAttribute("aria-pressed", String(filtroCamera === chave));
+      b.onclick = () => {
+        filtroCamera = chave;
+        mostrarItens();
+      };
+      return b;
+    };
+    $("filtros-camera").replaceChildren(
+      botao("todas", "Câmera: todos"),
+      ...["conferir", "atencao", "sem_camera", "sem_folga", "ok"].filter((k) => conta.get(k)).map((k) => botao(k, `${NIVEIS[k]} (${numero(conta.get(k), 0)})`)),
+    );
+  }
+
+  function seloCamera(c) {
+    const s = Object.assign(document.createElement("span"), { className: `selo selo-camera camera-${c.nivel}`, textContent: c.nivel === "conferir" ? "câmera: conferir" : "câmera: atenção" });
+    s.title = resumoDaConferencia(c);
+    return s;
+  }
+
+  function atualizarSelosCamera() {
+    for (const card of $("grade").children) {
+      const leg = card.querySelector(".legenda-item");
+      if (!leg) continue;
+      leg.querySelector(".selo-camera")?.remove();
+      const c = camera?.porQuadro.get(card.dataset.id);
+      if (c && (c.nivel === "conferir" || c.nivel === "atencao")) leg.append(seloCamera(c));
+    }
+  }
+
+  /** A conferência da anotação que está no visor (um rótulo ou a previsão), com a medida do campo da partida. */
+  function mostrarCameraNoVisor() {
+    const sec = $("visor-camera");
+    const pontos = visor?.x.tarefa === "pontos";
+    $("caixa-visor-campo").hidden = !pontos;
+    if (!pontos) {
+      sec.hidden = true;
+      return;
+    }
+    const campo = camera?.pronta ? camera.campo : { ...CAMPO_PADRAO, conhecido: false };
+    let c = null;
+    if ((visor.pontosNaTela ?? []).length >= 4) {
+      c = conferirRotulo(visor.chaveNaTela, visor.pontosNaTela, visor.x.largura, visor.x.altura, campo);
+      if (!campo.conhecido) c = soRobustos(c);
+    }
+    visor.camera = c;
+    sec.hidden = !c;
+    if (c) {
+      sec.className = `detalhe camera-visor ${c.nivel}`;
+      $("visor-camera-resumo").textContent = resumoDaConferencia(c);
+      $("visor-camera-onde").textContent = c.cam ? `${textoDaCamera(c.cam)}${campo.conhecido ? ` Campo de ${numero(campo.L, 1)} × ${numero(campo.W, 1)} m.` : ""}` : "";
+    }
+    visor.tela.camadaCampo = c && $("visor-campo").checked ? camadaDoCampo(c) : null;
+    visor.tela.desenhar();
   }
 
   // ------------------------------------------------------------------ excluir
@@ -625,7 +751,8 @@ export async function montar(raiz, ctx) {
     window.visorPartida = tela; // ajuda a depurar e a testar
     const prev = await previsao(x);
     const opcoes = opcoesDoVisor(x, prev);
-    visor = { k, x, tela, url, opcoes, escolhida: null };
+    visor = { k, x, tela, url, opcoes, escolhida: null, pontosNaTela: null, chaveNaTela: null, camera: null };
+    mostrarCameraNoVisor();
     $("visor-titulo").textContent = x.tarefa === "pontos" ? `Quadro ${tempoDoQuadro(x.pts)}` : `Recorte ${x.id}`;
     ficha(
       x.tarefa === "pontos"
@@ -690,8 +817,11 @@ export async function montar(raiz, ctx) {
     const linha = (texto) => det.append(Object.assign(document.createElement("p"), { textContent: texto }));
     try {
       if (x.tarefa === "pontos") {
-        const pontos = op.tipo === "rotulo" ? op.a.dados.pontos : op.tipo === "modelo" ? op.prev.pontos : [];
-        tela.definir(pontos);
+        const pontos = op.tipo === "rotulo" ? pontosQueValem(op.a.dados) : op.tipo === "modelo" ? op.prev.pontos : [];
+        tela.definir(op.tipo === "rotulo" ? op.a.dados.pontos : pontos);
+        visor.pontosNaTela = pontos;
+        visor.chaveNaTela = op.tipo === "rotulo" ? op.a.nome : null;
+        mostrarCameraNoVisor();
         if (pontos.length) det.append(Object.assign(document.createElement("p"), { className: "pontos-lista", textContent: pontos.map((p) => p.ponto).join(", ") }));
       } else {
         let m = null;
@@ -768,6 +898,7 @@ export async function montar(raiz, ctx) {
     visor.tela.mostrarNomes = $("visor-nomes").checked;
     visor.tela.desenhar();
   };
+  $("visor-campo").onchange = () => mostrarCameraNoVisor();
   $("visor-mostrar").onchange = () => {
     if (!visor) return;
     if (visor.x.tarefa === "pontos") visor.tela.mostrarPontos = $("visor-mostrar").checked;
@@ -797,6 +928,9 @@ export async function montar(raiz, ctx) {
     } else if (k === "h") {
       $("visor-mostrar").checked = !$("visor-mostrar").checked;
       $("visor-mostrar").dispatchEvent(new Event("change"));
+    } else if (k === "c" && visor.x.tarefa === "pontos") {
+      $("visor-campo").checked = !$("visor-campo").checked;
+      $("visor-campo").dispatchEvent(new Event("change"));
     } else if (k === "0") visor.tela.ajustarVista();
     else return;
     e.preventDefault();
@@ -816,6 +950,7 @@ export async function montar(raiz, ctx) {
     mostrarFicha();
     $("secao-itens").hidden = false;
     mostrarItens();
+    conferirCamera().catch(() => {});
   }
 
   await recarregar();

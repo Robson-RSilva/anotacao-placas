@@ -5,6 +5,29 @@ Formato de [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); versões
 
 ## [Não lançado]
 
+## [0.16.0] - 2026-11-10
+
+A câmera dos rótulos: a página calcula a câmera de cada quadro pelos pontos e confere se eles batem
+entre si (ADR-0015).
+
+### Adicionado
+
+- **Conferência pela câmera** (`web/js/nucleo/camera.js`): a homografia do gramado dá a focal e a pose,
+  um Levenberg–Marquardt refina com todos os pontos (o topo das traves junto), e a câmera refeita sem
+  cada ponto diz onde ele devia estar. Avisos: um ponto longe de onde os outros dizem (atenção acima de
+  5 px, conferir acima de 10 px na referência de 960 px, com mais folga para o ponto que os outros mal
+  determinam), os nomes espelhados (a câmera ficaria embaixo do gramado), os nomes girados meia-volta
+  (a câmera do lado oposto às cabines) e a câmera impossível.
+- **A medida do campo de cada partida** pelos rótulos (comprimento e largura; as medidas internas são as
+  da regra), resistente a rótulos errados. Sem quadros para medir, só valem os avisos do espelho, do
+  giro e da câmera impossível.
+- **Na página da partida**: o resumo da câmera (quadros para conferir, com atenção, a medida do campo),
+  filtros pela conferência, o selo "câmera: conferir/atenção" nas miniaturas e, no visor, o diagnóstico,
+  onde fica a câmera e, com `C` ("campo da câmera"), as linhas do campo vistas por ela por cima da
+  imagem, com a seta do ponto acusado até onde os outros o põem.
+- **Na página de marcar e na revisão dos pontos**: uma linha embaixo dos pontos, com 5 ou mais, que
+  avisa na hora (não impede salvar).
+
 ## [0.15.0] - 2026-11-07
 
 ### Adicionado

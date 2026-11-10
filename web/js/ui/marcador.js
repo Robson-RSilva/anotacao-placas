@@ -58,6 +58,7 @@ export class Marcador {
     this.mostrarNomes = false;
     this.mostrarPontos = true;
     this.resultado = null; // no treino: {pontos: [{ponto, x, y, verdade, estado}], faltaram: [{x, y, ponto}]}
+    this.camadaCampo = null; // a câmera dos rótulos: {linhas: [[[x, y], ...]], setas: [{de, para, cor}]}
     this.desfeitos = [];
     this.refeitos = [];
     this.vista = { escala: 1, ox: 0, oy: 0 };
@@ -454,6 +455,7 @@ export class Marcador {
     ctx.imageSmoothingEnabled = escala < 2;
     ctx.drawImage(this.img, 0, 0);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    if (this.camadaCampo) this._desenharCamadaCampo(ctx);
     if (this.mostrarPontos) {
       if (this.resultado) this._desenharResultado(ctx);
       this._desenharPontos(ctx, (x, y) => this.paraTela(x, y), 1);
@@ -501,6 +503,51 @@ export class Marcador {
       this._marca(ctx, sx, sy, "#ffffff", 7 * fator, true);
       if (fator === 1) this._texto(ctx, "? clique no mapa", sx, sy);
     }
+  }
+
+  /** As linhas do campo vistas pela câmera dos rótulos e, nos pontos acusados, a seta até onde os outros os põem. */
+  _desenharCamadaCampo(ctx) {
+    const { linhas = [], setas = [] } = this.camadaCampo;
+    ctx.save();
+    const [x0, y0] = this.paraTela(0, 0);
+    const [x1, y1] = this.paraTela(this.w, this.h);
+    ctx.beginPath();
+    ctx.rect(x0, y0, x1 - x0, y1 - y0); // só dentro da imagem
+    ctx.clip();
+    ctx.setLineDash([]);
+    ctx.lineJoin = "round";
+    for (const [cor, largura] of [["rgba(0,0,0,0.55)", 3], ["rgba(255,221,0,0.9)", 1.4]]) {
+      ctx.strokeStyle = cor;
+      ctx.lineWidth = largura;
+      for (const l of linhas) {
+        ctx.beginPath();
+        l.forEach(([x, y], k) => {
+          const [sx, sy] = this.paraTela(x, y);
+          if (k) ctx.lineTo(sx, sy);
+          else ctx.moveTo(sx, sy);
+        });
+        ctx.stroke();
+      }
+    }
+    for (const s of setas) {
+      const [ax, ay] = this.paraTela(s.de[0], s.de[1]);
+      const [bx, by] = this.paraTela(s.para[0], s.para[1]);
+      ctx.strokeStyle = s.cor;
+      ctx.lineWidth = 2;
+      ctx.setLineDash([5, 4]);
+      ctx.beginPath();
+      ctx.moveTo(ax, ay);
+      ctx.lineTo(bx, by);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.beginPath();
+      ctx.moveTo(bx - 6, by - 6);
+      ctx.lineTo(bx + 6, by + 6);
+      ctx.moveTo(bx + 6, by - 6);
+      ctx.lineTo(bx - 6, by + 6);
+      ctx.stroke();
+    }
+    ctx.restore();
   }
 
   _desenharResultado(ctx) {

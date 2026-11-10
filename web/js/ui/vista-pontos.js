@@ -1,13 +1,15 @@
 // Vista "Pontos do campo": pega a próxima imagem da fila e marca, direto nela, cada ponto do campo que
 // aparece — escolhendo no mapa qual é. No teste do gabarito, mostra o resultado na hora e a resposta.
 // Com `?editar=<partida>&quadro=<quadro>&de=<rótulo|modelo|nada>`, abre esse quadro para editar (vindo
-// da página da partida) e, ao salvar, volta para lá.
+// da página da partida) e, ao salvar, volta para lá. Com 5 pontos ou mais, a linha da câmera confere se
+// eles batem entre si (ui/conferencia.js).
 
 import { Molde, descricaoPonto } from "../nucleo/campo.js";
 import { PARTIDA_GABARITO } from "../nucleo/convencoes.js";
 import { aprovado, proximo, situacao } from "../nucleo/filas.js";
 import { compararPontos, motivoPontos } from "../nucleo/gabarito.js";
 import { salvarEdicao, salvarRotulo } from "../nucleo/rotulos.js";
+import { ConferenciaAoVivo } from "./conferencia.js";
 import { Mapa } from "./mapa.js";
 import { Marcador, textoCruzamento } from "./marcador.js";
 import { abrirImagem, caixas, escrevendo, parametros, textoDevolvido, textoLiberacao, textoPartiu } from "./tarefa.js";
@@ -46,6 +48,7 @@ export async function montar(raiz, ctx) {
   let resultado = null; // depois de um item do teste: {minha, resposta, vendo, tela}
   let vivo = true;
   const tempo = new TempoAtivo({ aoTique: (s) => { $("tempo").textContent = formatarTempo(s); } });
+  const camera = new ConferenciaAoVivo($("camera"), indice);
 
   const mapa = new Mapa($("mapa"), {
     giro: Number(local.ler("giro-mapa", "0")) || 0,
@@ -99,6 +102,8 @@ export async function montar(raiz, ctx) {
       ul.append(li);
     }
     if (!resultado) mapa.atualizar({ estados: new Map(lista.map((p) => [p.ponto, "marcado"])), selecionado: marcador.selecionado });
+    if (resultado) camera.esconder();
+    else camera.conferirDepois(lista);
     escreverEscolha();
   }
 
@@ -117,6 +122,7 @@ export async function montar(raiz, ctx) {
   }
 
   function mostrarVazio(texto, link = null) {
+    camera.definirItem(null);
     largarMarcador();
     soltarImagem();
     $("painel").hidden = true;
@@ -169,6 +175,7 @@ export async function montar(raiz, ctx) {
     window.itemPontos = null;
     if (marcador) marcador.somenteLeitura = true;
     $("resultado").hidden = true;
+    camera.definirItem(null);
     const pessoa = ctx.pessoa();
     if (!pessoa) return mostrarVazio("Digite o seu código na página central.");
     if (editar) return abrirEdicao(pessoa);
@@ -192,6 +199,8 @@ export async function montar(raiz, ctx) {
     atualizarPainel();
     item = { ...prox, pessoa }; // só agora: salvar grava para esta imagem, em nome de quem a abriu
     window.itemPontos = { partida: prox.partida, quadro: prox.quadro, treino: prox.treino };
+    camera.definirItem(item);
+    camera.conferirDepois(marcador.lista());
   }
 
   const abrirProximo = () => carregar().catch((e) => mostrarVazio(mensagemDeErro(e)));
@@ -243,6 +252,8 @@ export async function montar(raiz, ctx) {
     atualizarPainel();
     item = { ...prox, pessoa, base: base?.nome ?? null, edicao: true };
     window.itemPontos = { partida: editar, quadro, treino: false, edicao: true };
+    camera.definirItem(item);
+    camera.conferirDepois(marcador.lista());
   }
 
   async function verResultado(pessoa) {
@@ -482,6 +493,7 @@ export async function montar(raiz, ctx) {
       window.removeEventListener("keyup", teclas);
       window.removeEventListener("storage", aoTrocarPessoa);
       tempo.destruir();
+      camera.destruir();
       cx.destruir();
       mapa.destruir();
       largarMarcador();

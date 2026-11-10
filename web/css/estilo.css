@@ -313,3 +313,17 @@ button.perigo:hover, .botao.perigo:hover { border-color: var(--ruim); background
   .visor { flex-direction: column; }
   .visor-painel { width: auto; max-height: 48vh; border-left: 0; border-top: 1px solid var(--borda); }
 }
+
+/* a conferência da câmera dos rótulos */
+.camera-partida { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 0.8rem; margin: 0.4rem 0; }
+.camera-partida p { margin: 0; flex: 1 1 24rem; }
+.selo.camera-conferir { color: var(--ruim); border-color: color-mix(in srgb, var(--ruim) 45%, var(--borda)); }
+.selo.camera-atencao { color: var(--medio); border-color: color-mix(in srgb, var(--medio) 50%, var(--borda)); }
+.camera-status { margin: 0.5rem 0 0; padding: 0.45rem 0.6rem; border-radius: var(--raio); font-size: 0.82rem; border-left: 3px solid var(--borda); background: color-mix(in srgb, var(--sutil) 8%, var(--superficie)); }
+.camera-status.ok { border-left-color: var(--bom); }
+.camera-status.atencao { border-left-color: var(--medio); background: color-mix(in srgb, var(--medio) 12%, var(--superficie)); }
+.camera-status.conferir { border-left-color: var(--ruim); background: color-mix(in srgb, var(--ruim) 12%, var(--superficie)); }
+.camera-visor h2 { margin-bottom: 0.3rem; }
+.camera-visor p { margin: 0 0 0.35rem; }
+.camera-visor.atencao #visor-camera-resumo { color: var(--medio); }
+.camera-visor.conferir #visor-camera-resumo { color: var(--ruim); }

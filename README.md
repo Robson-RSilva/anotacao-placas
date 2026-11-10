@@ -163,6 +163,25 @@ O nome da partida, na tabela da central, abre a página dela ([ADR-0014](docs/ad
 - os **arquivos** da partida, para ver os JSON e baixar; **baixar a partida** inteira em .zip; e
   **excluir a partida**, só com o nome dela escrito (no Drive, os arquivos vão para a lixeira dele).
 
+## A câmera dos rótulos
+
+Os pontos de um quadro vêm todos da mesma câmera: com 4 no gramado ela fica determinada, e cada ponto a
+mais tem de cair onde ela diz. A página calcula essa câmera e confere os pontos
+([ADR-0015](docs/adr/0015-camera-dos-rotulos.md)):
+
+- refaz a câmera **sem cada ponto** e mede onde ela põe esse ponto; um ponto **longe de onde os outros
+  dizem** (atenção acima de 5 px, conferir acima de 10 px, na referência de 960 px, com mais folga para o
+  ponto que os outros mal determinam) quase sempre está fora do lugar ou com o nome trocado;
+- **nomes espelhados** (esquerda e direita trocados): a câmera ficaria embaixo do gramado; **girados
+  meia-volta**: a câmera fica do lado oposto às cabines (atenção — pode ser uma câmera daquele lado);
+- mede o **comprimento e a largura do campo** pelos rótulos da partida (as medidas internas são as da
+  regra); enquanto não há quadros para medir, só valem os avisos do espelho e do giro.
+
+Na **página da partida**, o resumo diz quantos quadros conferir e a medida do campo, os filtros
+mostram só esses, e o visor traz o diagnóstico e, com `C`, o campo visto pela câmera por cima da imagem,
+com a seta do ponto acusado até onde os outros o põem. Na **página de marcar** e na **revisão**, uma
+linha embaixo dos pontos (com 5 ou mais) avisa na hora; ela não impede salvar.
+
 ## O gabarito e os lotes de ouro
 
 A página **Gabarito** (pela central) é o teste de quem começa. São imagens com a resposta certa:
@@ -299,8 +318,10 @@ arquitetura em [docs/arquitetura.md](docs/arquitetura.md) e decisões em [docs/a
 
 ## Próximos passos
 
-- Os recortes das placas do vídeo real: a câmera de cada quadro pelos pontos aprovados e o cadastro
-  das placas do estádio dão a projeção de cada placa, e dela o lote de recortes (`origem: "modelo"`).
+- A ferramenta do estádio, nesta página: com a câmera dos rótulos de uma partida de referência, as
+  placas clicadas em 1 a 3 quadros e trianguladas na hora, até publicar o pacote do estádio.
+- Os recortes das placas do vídeo real: a câmera de cada quadro pelos pontos aprovados e o pacote do
+  estádio dão a projeção de cada placa, e dela o lote de recortes (`origem: "modelo"`).
 - Previsor com o detector do laboratório (`anotacao prever --previsor pacote.modulo:objeto`): os
   pontos já marcados e a oclusão das placas como pré-pintura, para quem anota só corrigir.
 - Gabarito arbitrado mais exigente: só os itens em que as duas pessoas da dupla às cegas concordam,

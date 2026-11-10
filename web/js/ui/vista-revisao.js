@@ -6,6 +6,7 @@ import { descricaoPonto } from "../nucleo/campo.js";
 import { pendentesRevisao } from "../nucleo/filas.js";
 import { MOTIVOS } from "../nucleo/formatos.js";
 import { ForaDaFila, salvarRevisao } from "../nucleo/rotulos.js";
+import { ConferenciaAoVivo } from "./conferencia.js";
 import { Mapa } from "./mapa.js";
 import { Marcador, textoCruzamento } from "./marcador.js";
 import { Pintor } from "./pintor.js";
@@ -28,6 +29,7 @@ async function montarRevisao(raiz, ctx, tarefa) {
   let enviando = false;
   let vivo = true;
   const tempo = new TempoAtivo({ aoTique: (s) => { $("tempo").textContent = formatarTempo(s); } });
+  const camera = pontos ? new ConferenciaAoVivo($("camera"), indice) : null;
   $("motivo").replaceChildren(...Object.entries(MOTIVOS[tarefa]).map(([v, t]) => new Option(t, v)));
 
   const corrigindo = () => !$("secao-corrigir").hidden;
@@ -52,6 +54,7 @@ async function montarRevisao(raiz, ctx, tarefa) {
     if (!tela || !pontos) return;
     const lista = tela.lista();
     $("r-pontos").textContent = atual ? `${atual.rotulo.pontos.length} marcado(s)${corrigindo() ? ` · na correção: ${lista.length}` : ""}` : "";
+    if (atual) camera.conferirDepois(lista);
     mapa.atualizar({ estados: new Map(lista.map((p) => [p.ponto, "marcado"])), selecionado: tela.selecionado });
     const e = $("escolha");
     $("cruzamento").setAttribute("aria-pressed", String(Boolean(tela.cruzamento)));
@@ -88,6 +91,7 @@ async function montarRevisao(raiz, ctx, tarefa) {
   }
 
   function mostrarVazio(texto) {
+    camera?.definirItem(null);
     largarTela();
     soltarImagem();
     $("painel").hidden = true;
@@ -169,6 +173,7 @@ async function montarRevisao(raiz, ctx, tarefa) {
     $("vazio").hidden = true;
     atual = { arquivo, rotulo, mascara, regiao, pessoa };
     window.itemRevisao = { partida: arquivo.partida, quadro: arquivo.quadro, rotulo: arquivo.nome };
+    camera?.definirItem({ partida: arquivo.partida, largura: rotulo.largura, altura: rotulo.altura });
     modo("ver");
     tempo.zerar();
   }
@@ -337,6 +342,7 @@ async function montarRevisao(raiz, ctx, tarefa) {
       window.removeEventListener("keyup", teclas);
       window.removeEventListener("storage", aoTrocarPessoa);
       tempo.destruir();
+      camera?.destruir();
       cx.destruir();
       mapa?.destruir();
       largarTela();
