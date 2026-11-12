@@ -3,16 +3,16 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
-import { Molde, PONTOS_MARCAVEIS, PONTOS_SEM_MARCA, amostrar, construirCampo, descricaoPonto, distanciaElemento } from "../../web/js/nucleo/campo.js";
+import { LARGURA_LINHA, Molde, PONTOS_MARCAVEIS, PONTOS_SEM_MARCA, amostrar, construirCampo, descricaoPonto, distanciaElemento } from "../../web/js/nucleo/campo.js";
 
 const lab = JSON.parse(readFileSync(new URL("../fixtures/campo_laboratorio.json", import.meta.url), "utf-8"));
 const ref = JSON.parse(readFileSync(new URL("../fixtures/convencoes.json", import.meta.url), "utf-8"));
 
 const perto = (a, b, tol = 1e-12) => a.length === b.length && a.every((v, i) => Math.abs(v - b[i]) <= tol);
 
-test("o campo construído é o do laboratório (elementos, pontos e simetria)", () => {
+test("com largura 0, o campo construído é o do laboratório (elementos, pontos e simetria)", () => {
   for (const ref of lab.campos) {
-    const geo = construirCampo(ref.L, ref.W);
+    const geo = construirCampo(ref.L, ref.W, 0);
     assert.equal(geo.elementos.length, 26);
     assert.equal(geo.pontos.length, 43);
     geo.elementos.forEach((el, k) => {
@@ -51,7 +51,7 @@ test("espelhar nomes pela rotação de 180°", () => {
 });
 
 test("distância exata a retas e arcos", () => {
-  const geo = construirCampo(105, 68);
+  const geo = construirCampo(105, 68, 0); // a geometria da regra ao pé da letra: as contas ficam redondas
   const el = (nome) => geo.elementos.find((e) => e.nome === nome);
   assert.ok(Math.abs(distanciaElemento(el("lateral_cab"), [0, -30, 0]) - 4) < 1e-12);
   assert.ok(Math.abs(distanciaElemento(el("circulo_central"), [0, 0, 0]) - 9.15) < 1e-12);
@@ -62,17 +62,23 @@ test("distância exata a retas e arcos", () => {
   assert.ok(Math.abs(distanciaElemento(ml, [-52.5 + 11 - 9.15, 0, 0]) - Math.hypot(ponta[0] - (-52.5 + 11 - 9.15), ponta[1])) < 1e-9);
 });
 
-test("o campo de cada medida é reaproveitado, e as marcações da regra não mudam", () => {
+test("o campo de cada medida é reaproveitado, e os pontos ficam no meio das linhas", () => {
+  assert.equal(LARGURA_LINHA, 0.12);
   const padrao = Molde.doCampo(105, 68);
   assert.equal(Molde.doCampo(), padrao);
   const outro = Molde.doCampo(100, 64);
   assert.equal(Molde.doCampo(100, 64), outro);
-  assert.deepEqual(outro.ponto("canto_esq_cab"), [-50, -32, 0]);
+  assert.ok(perto(outro.ponto("canto_esq_cab"), [-49.94, -31.94, 0], 1e-9));
   assert.throws(() => padrao.ponto("nao_existe"));
-  const area = (m) => [m.ponto("ga_esq_frente_cab")[0] - m.ponto("ga_esq_fundo_cab")[0], m.ponto("ga_esq_frente_opo")[1] - m.ponto("ga_esq_frente_cab")[1]];
+  const area = (m, t) => [m.ponto(`${t}_esq_frente_cab`)[0] - m.ponto(`${t}_esq_fundo_cab`)[0], m.ponto(`${t}_esq_frente_opo`)[1] - m.ponto(`${t}_esq_frente_cab`)[1]];
   for (const m of [padrao, outro]) {
-    const [fundo, largura] = area(m);
-    assert.ok(Math.abs(fundo - 16.5) < 1e-9 && Math.abs(largura - 40.32) < 1e-9, `${m.L} × ${m.W}`);
+    const [fundo, largura] = area(m, "ga");
+    assert.ok(Math.abs(fundo - 16.38) < 1e-9 && Math.abs(largura - 40.2) < 1e-9, `${m.L} × ${m.W}`);
+    const [fundo_pa, largura_pa] = area(m, "pa");
+    assert.ok(Math.abs(fundo_pa - 5.38) < 1e-9 && Math.abs(largura_pa - 18.2) < 1e-9, `${m.L} × ${m.W}`);
+    assert.ok(perto(m.ponto("gol_esq_topo_cab"), [-m.L / 2 + 0.06, -3.72, 2.5], 1e-9));
+    assert.ok(perto(m.ponto("penalti_esq"), [-m.L / 2 + 11, 0, 0], 1e-9));
+    assert.ok(Math.abs(Math.hypot(...m.ponto("circ_meio_cab")) - 9.09) < 1e-9);
   }
 });
 

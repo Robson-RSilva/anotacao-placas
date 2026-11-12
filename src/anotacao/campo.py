@@ -5,6 +5,11 @@
   tarefa de pontos se marcam 39: os quatro que não ficam num cruzamento nem numa marca
   (`PONTOS_SEM_MARCA`) não têm o que clicar na imagem.
 * Medidas internas pela regra; o comprimento e a largura mudam de um estádio para outro.
+* Os pontos ficam **no meio das linhas** (ADR-0016): a regra mede as áreas até a borda de fora da linha (a linha
+  pertence à área que ela fecha), e o anotador clica no meio do cruzamento — e, no gol, no meio do tubo. Com
+  linhas de `largura_linha` (12 cm, o máximo da regra), cada linha anda meia largura para dentro da área que
+  ela fecha: a pequena área tem 5,38 m de fundo entre os meios das linhas, o topo da trave fica a 2,50 m. Com
+  `largura_linha=0`, a geometria é a da regra ao pé da letra (a do laboratório antigo).
 * A permutação dos nomes sob a rotação de 180 graus sai da geometria, não de uma tabela à mão.
 
 Os nomes são os do Manual de anotação (ex.: `canto_esq_cab`, `ga_dir_frente_opo`). O espelho em
@@ -82,6 +87,7 @@ class Campo:
     spot_dist: float = 11.0
     goal_half: float = 3.66
     goal_height: float = 2.44
+    largura_linha: float = 0.12
     elementos: list[Elemento] = field(default_factory=list)
     pontos: dict[str, tuple[np.ndarray, str]] = field(default_factory=dict)
 
@@ -90,7 +96,14 @@ class Campo:
             self._construir()
 
     def _construir(self) -> None:
-        hl, hw = self.L / 2, self.W / 2
+        # as medidas da regra vão até a borda de fora das linhas; os pontos ficam no meio delas (ADR-0016)
+        m = self.largura_linha / 2
+        hl, hw = self.L / 2 - m, self.W / 2 - m
+        areas = (
+            (self.penalty_depth - 2 * m, self.penalty_half - m),
+            (self.goal_area_depth - 2 * m, self.goal_area_half - m),
+        )
+        raio, marca = self.circle_r - m, self.spot_dist - m
         E: list[Elemento] = []
 
         def reta(nome, grupo, a, b):
@@ -104,20 +117,17 @@ class Campo:
         reta("fundo_esq", "fundo", (-hl, -hw, 0), (-hl, hw, 0))
         reta("fundo_dir", "fundo", (hl, -hw, 0), (hl, hw, 0))
         reta("meio", "meio", (0, -hw, 0), (0, hw, 0))
-        for tag, depth, half in (
-            ("grande_area", self.penalty_depth, self.penalty_half),
-            ("pequena_area", self.goal_area_depth, self.goal_area_half),
-        ):
+        for tag, (depth, half) in zip(("grande_area", "pequena_area"), areas, strict=True):
             for s, lado in ((-1, "esq"), (1, "dir")):
                 x0, x1 = s * hl, s * (hl - depth)
                 reta(f"{tag}_{lado}_cab", tag, (x0, -half, 0), (x1, -half, 0))
                 reta(f"{tag}_{lado}_opo", tag, (x0, half, 0), (x1, half, 0))
                 reta(f"{tag}_{lado}_frente", tag, (x1, -half, 0), (x1, half, 0))
-        arco("circulo_central", "circulo", (0, 0), self.circle_r, -np.pi, np.pi)
-        a = np.arccos((self.penalty_depth - self.spot_dist) / self.circle_r)
-        arco("meia_lua_esq", "meia_lua", (-hl + self.spot_dist, 0), self.circle_r, -a, a)
-        arco("meia_lua_dir", "meia_lua", (hl - self.spot_dist, 0), self.circle_r, np.pi - a, np.pi + a)
-        g, gh = self.goal_half, self.goal_height
+        arco("circulo_central", "circulo", (0, 0), raio, -np.pi, np.pi)
+        a = np.arccos((areas[0][0] - marca) / raio)
+        arco("meia_lua_esq", "meia_lua", (-hl + marca, 0), raio, -a, a)
+        arco("meia_lua_dir", "meia_lua", (hl - marca, 0), raio, np.pi - a, np.pi + a)
+        g, gh = self.goal_half + m, self.goal_height + m
         for s, lado in ((-1, "esq"), (1, "dir")):
             x = s * hl
             reta(f"gol_{lado}_trave_cab", "gol", (x, -g, 0), (x, -g, gh))
@@ -135,28 +145,25 @@ class Campo:
             ponto(f"canto_{lado}_opo", (sx * hl, hw, 0), "linha")
         ponto("meio_cab", (0, -hw, 0), "linha")
         ponto("meio_opo", (0, hw, 0), "linha")
-        for curto, depth, half in (
-            ("ga", self.penalty_depth, self.penalty_half),
-            ("pa", self.goal_area_depth, self.goal_area_half),
-        ):
+        for curto, (depth, half) in zip(("ga", "pa"), areas, strict=True):
             for sx, lado in ((-1, "esq"), (1, "dir")):
                 ponto(f"{curto}_{lado}_fundo_cab", (sx * hl, -half, 0), "linha")
                 ponto(f"{curto}_{lado}_fundo_opo", (sx * hl, half, 0), "linha")
                 ponto(f"{curto}_{lado}_frente_cab", (sx * (hl - depth), -half, 0), "linha")
                 ponto(f"{curto}_{lado}_frente_opo", (sx * (hl - depth), half, 0), "linha")
-        r = self.circle_r
+        r = raio
         ponto("circ_meio_cab", (0, -r, 0), "circulo")
         ponto("circ_meio_opo", (0, r, 0), "circulo")
         ponto("circ_esq", (-r, 0, 0), "circulo")
         ponto("circ_dir", (r, 0, 0), "circulo")
         ponto("centro", (0, 0, 0), "marca")
         for sx, lado in ((-1, "esq"), (1, "dir")):
-            ponto(f"penalti_{lado}", (sx * (hl - self.spot_dist), 0, 0), "marca")
-        yy = np.sqrt(r**2 - (self.penalty_depth - self.spot_dist) ** 2)
+            ponto(f"penalti_{lado}", (sx * (hl - marca), 0, 0), "marca")
+        yy = np.sqrt(r**2 - (areas[0][0] - marca) ** 2)
         for sx, lado in ((-1, "esq"), (1, "dir")):
-            ponto(f"ml_{lado}_cab", (sx * (hl - self.penalty_depth), -yy, 0), "circulo")
-            ponto(f"ml_{lado}_opo", (sx * (hl - self.penalty_depth), yy, 0), "circulo")
-            ponto(f"ml_{lado}_topo", (sx * (hl - self.spot_dist - r), 0, 0), "circulo")
+            ponto(f"ml_{lado}_cab", (sx * (hl - areas[0][0]), -yy, 0), "circulo")
+            ponto(f"ml_{lado}_opo", (sx * (hl - areas[0][0]), yy, 0), "circulo")
+            ponto(f"ml_{lado}_topo", (sx * (hl - marca - r), 0, 0), "circulo")
         for sx, lado in ((-1, "esq"), (1, "dir")):
             ponto(f"gol_{lado}_pe_cab", (sx * hl, -g, 0), "gol")
             ponto(f"gol_{lado}_pe_opo", (sx * hl, g, 0), "gol")

@@ -1,4 +1,5 @@
-"""O campo é o mesmo do laboratório: nomes, geometria, amostras e simetria."""
+"""O campo: com `largura_linha=0`, a geometria da regra é a do laboratório (nomes, geometria, amostras e
+simetria); no padrão, os pontos ficam no meio das linhas (ADR-0016)."""
 
 import numpy as np
 
@@ -7,7 +8,7 @@ from anotacao.campo import PONTOS_SEM_MARCA, Campo, perm180_dos_nomes, pontos_ma
 
 def test_campo_igual_ao_laboratorio(laboratorio):
     for ref in laboratorio["campos"]:
-        F = Campo(L=ref["L"], W=ref["W"])
+        F = Campo(L=ref["L"], W=ref["W"], largura_linha=0.0)
         assert F.nomes_elementos == [e["nome"] for e in ref["elementos"]]
         assert F.nomes_pontos == [p["nome"] for p in ref["pontos"]]
         for el, e in zip(F.elementos, ref["elementos"], strict=True):
@@ -25,6 +26,26 @@ def test_campo_igual_ao_laboratorio(laboratorio):
         pe, pk = F.perm180()
         assert pe == ref["perm180_elementos"]
         assert pk == ref["perm180_pontos"]
+
+
+def test_pontos_no_meio_das_linhas():
+    """Cada linha anda meia largura (6 cm) para dentro da área que ela fecha; o topo da trave fica no meio do
+    tubo. A simetria e os nomes não mudam."""
+    for L, W in ((105.0, 68.0), (100.0, 64.0)):
+        F = Campo(L=L, W=W)
+        P = {n: X for n, (X, _) in F.pontos.items()}
+        assert np.allclose(P["canto_esq_cab"], [-L / 2 + 0.06, -W / 2 + 0.06, 0])
+        assert np.isclose(P["ga_esq_frente_cab"][0] - P["ga_esq_fundo_cab"][0], 16.38)
+        assert np.isclose(P["ga_esq_frente_opo"][1] - P["ga_esq_frente_cab"][1], 40.20)
+        assert np.isclose(P["pa_esq_frente_cab"][0] - P["pa_esq_fundo_cab"][0], 5.38)
+        assert np.isclose(P["pa_esq_frente_opo"][1] - P["pa_esq_frente_cab"][1], 18.20)
+        assert np.allclose(P["gol_esq_topo_cab"], [-L / 2 + 0.06, -3.72, 2.50])
+        assert np.allclose(P["penalti_esq"], [-L / 2 + 11.0, 0, 0])  # 11 m da borda de fora da linha de fundo
+        assert np.isclose(np.linalg.norm(P["circ_meio_cab"]), 9.09)
+        ml = P["ml_esq_cab"]
+        assert np.isclose(np.hypot(ml[0] - P["penalti_esq"][0], ml[1]), 9.09)
+        assert np.isclose(ml[0], P["ga_esq_frente_cab"][0])  # a meia-lua encontra a linha da grande área no meio dela
+        assert F.perm180() == Campo(L=L, W=W, largura_linha=0.0).perm180()
 
 
 def test_contagens_e_simetria():

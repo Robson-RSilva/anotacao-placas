@@ -1,7 +1,9 @@
 // O campo — espelho de src/anotacao/campo.py, que é a mesma definição do laboratório: 26 elementos
 // (17 retas no gramado, 3 arcos e 6 segmentos dos gols) e 43 pontos-chave, dos quais 39 se marcam
-// na tarefa de pontos. As medidas internas são as da regra. A permutação dos nomes sob a rotação de
-// 180° sai da geometria (tests/js/campo.test.js confere com o laboratório). O mapa da página de
+// na tarefa de pontos. As medidas internas são as da regra, que vão até a borda de fora das linhas; os
+// pontos ficam no meio delas (ADR-0016): o anotador clica no meio do cruzamento e, no gol, no meio do
+// tubo. Com largura 0, a geometria é a da regra ao pé da letra (tests/js/campo.test.js confere com o
+// laboratório). A permutação dos nomes sob a rotação de 180° sai da geometria. O mapa da página de
 // pontos (ui/mapa.js) desenha esta geometria.
 
 const MEDIDAS = Object.freeze({
@@ -14,6 +16,9 @@ const MEDIDAS = Object.freeze({
   gol_meio: 3.66,
   gol_altura: 2.44,
 });
+
+/** A largura das linhas pintadas (m; 12 cm é o máximo da regra). Os pontos ficam no meio delas. */
+export const LARGURA_LINHA = 0.12;
 
 export function linspace(a, b, n) {
   if (n === 1) return [a];
@@ -70,13 +75,20 @@ export function distanciaElemento(el, P) {
 }
 
 /**
- * Geometria do campo L x W (metros): {L, W, elementos, pontos, perm180} — o mesmo formato de
- * `Campo.para_web()` no Python.
+ * Geometria do campo L x W (metros, as medidas da regra): {L, W, elementos, pontos, perm180} — o mesmo
+ * formato de `Campo.para_web()` no Python. Cada linha anda meia `largura` para dentro da área que ela fecha.
  */
-export function construirCampo(L = 105, W = 68) {
+export function construirCampo(L = 105, W = 68, largura = LARGURA_LINHA) {
   const M = MEDIDAS;
-  const hl = L / 2;
-  const hw = W / 2;
+  const m = largura / 2;
+  const hl = L / 2 - m;
+  const hw = W / 2 - m;
+  const areas = [
+    ["grande_area", "ga", M.grande_area_fundo - 2 * m, M.grande_area_meia - m],
+    ["pequena_area", "pa", M.pequena_area_fundo - 2 * m, M.pequena_area_meia - m],
+  ];
+  const raio = M.raio_circulo - m;
+  const marca = M.penalti - m;
   const elementos = [];
   const reta = (nome, grupo, A, B) => elementos.push({ nome, tipo: "reta", grupo, A, B });
   const arco = (nome, grupo, c, raio, a0, a1) => elementos.push({ nome, tipo: "arco", grupo, centro: [c[0], c[1], 0], raio, a0, a1 });
@@ -86,10 +98,7 @@ export function construirCampo(L = 105, W = 68) {
   reta("fundo_esq", "fundo", [-hl, -hw, 0], [-hl, hw, 0]);
   reta("fundo_dir", "fundo", [hl, -hw, 0], [hl, hw, 0]);
   reta("meio", "meio", [0, -hw, 0], [0, hw, 0]);
-  for (const [tag, fundo, meia] of [
-    ["grande_area", M.grande_area_fundo, M.grande_area_meia],
-    ["pequena_area", M.pequena_area_fundo, M.pequena_area_meia],
-  ]) {
+  for (const [tag, , fundo, meia] of areas) {
     for (const [s, lado] of [[-1, "esq"], [1, "dir"]]) {
       const x0 = s * hl;
       const x1 = s * (hl - fundo);
@@ -98,12 +107,12 @@ export function construirCampo(L = 105, W = 68) {
       reta(`${tag}_${lado}_frente`, tag, [x1, -meia, 0], [x1, meia, 0]);
     }
   }
-  arco("circulo_central", "circulo", [0, 0], M.raio_circulo, -Math.PI, Math.PI);
-  const a = Math.acos((M.grande_area_fundo - M.penalti) / M.raio_circulo);
-  arco("meia_lua_esq", "meia_lua", [-hl + M.penalti, 0], M.raio_circulo, -a, a);
-  arco("meia_lua_dir", "meia_lua", [hl - M.penalti, 0], M.raio_circulo, Math.PI - a, Math.PI + a);
-  const g = M.gol_meio;
-  const gh = M.gol_altura;
+  arco("circulo_central", "circulo", [0, 0], raio, -Math.PI, Math.PI);
+  const a = Math.acos((areas[0][2] - marca) / raio);
+  arco("meia_lua_esq", "meia_lua", [-hl + marca, 0], raio, -a, a);
+  arco("meia_lua_dir", "meia_lua", [hl - marca, 0], raio, Math.PI - a, Math.PI + a);
+  const g = M.gol_meio + m;
+  const gh = M.gol_altura + m;
   for (const [s, lado] of [[-1, "esq"], [1, "dir"]]) {
     const x = s * hl;
     reta(`gol_${lado}_trave_cab`, "gol", [x, -g, 0], [x, -g, gh]);
@@ -119,7 +128,7 @@ export function construirCampo(L = 105, W = 68) {
   }
   ponto("meio_cab", [0, -hw, 0], "linha");
   ponto("meio_opo", [0, hw, 0], "linha");
-  for (const [curto, fundo, meia] of [["ga", M.grande_area_fundo, M.grande_area_meia], ["pa", M.pequena_area_fundo, M.pequena_area_meia]]) {
+  for (const [, curto, fundo, meia] of areas) {
     for (const [sx, lado] of [[-1, "esq"], [1, "dir"]]) {
       ponto(`${curto}_${lado}_fundo_cab`, [sx * hl, -meia, 0], "linha");
       ponto(`${curto}_${lado}_fundo_opo`, [sx * hl, meia, 0], "linha");
@@ -127,18 +136,18 @@ export function construirCampo(L = 105, W = 68) {
       ponto(`${curto}_${lado}_frente_opo`, [sx * (hl - fundo), meia, 0], "linha");
     }
   }
-  const r = M.raio_circulo;
+  const r = raio;
   ponto("circ_meio_cab", [0, -r, 0], "circulo");
   ponto("circ_meio_opo", [0, r, 0], "circulo");
   ponto("circ_esq", [-r, 0, 0], "circulo");
   ponto("circ_dir", [r, 0, 0], "circulo");
   ponto("centro", [0, 0, 0], "marca");
-  for (const [sx, lado] of [[-1, "esq"], [1, "dir"]]) ponto(`penalti_${lado}`, [sx * (hl - M.penalti), 0, 0], "marca");
-  const yy = Math.sqrt(r ** 2 - (M.grande_area_fundo - M.penalti) ** 2);
+  for (const [sx, lado] of [[-1, "esq"], [1, "dir"]]) ponto(`penalti_${lado}`, [sx * (hl - marca), 0, 0], "marca");
+  const yy = Math.sqrt(r ** 2 - (areas[0][2] - marca) ** 2);
   for (const [sx, lado] of [[-1, "esq"], [1, "dir"]]) {
-    ponto(`ml_${lado}_cab`, [sx * (hl - M.grande_area_fundo), -yy, 0], "circulo");
-    ponto(`ml_${lado}_opo`, [sx * (hl - M.grande_area_fundo), yy, 0], "circulo");
-    ponto(`ml_${lado}_topo`, [sx * (hl - M.penalti - r), 0, 0], "circulo");
+    ponto(`ml_${lado}_cab`, [sx * (hl - areas[0][2]), -yy, 0], "circulo");
+    ponto(`ml_${lado}_opo`, [sx * (hl - areas[0][2]), yy, 0], "circulo");
+    ponto(`ml_${lado}_topo`, [sx * (hl - marca - r), 0, 0], "circulo");
   }
   for (const [sx, lado] of [[-1, "esq"], [1, "dir"]]) {
     ponto(`gol_${lado}_pe_cab`, [sx * hl, -g, 0], "gol");

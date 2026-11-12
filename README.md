@@ -175,7 +175,8 @@ mais tem de cair onde ela diz. A página calcula essa câmera e confere os ponto
 - **nomes espelhados** (esquerda e direita trocados): a câmera ficaria embaixo do gramado; **girados
   meia-volta**: a câmera fica do lado oposto às cabines (atenção — pode ser uma câmera daquele lado);
 - mede o **comprimento e a largura do campo** pelos rótulos da partida (as medidas internas são as da
-  regra); enquanto não há quadros para medir, só valem os avisos do espelho e do giro.
+  regra, com os pontos no meio das linhas, onde se clica — ADR-0016); enquanto não há quadros para medir,
+  só valem os avisos do espelho e do giro.
 
 Na **página da partida**, o resumo diz quantos quadros conferir e a medida do campo, os filtros
 mostram só esses, e o visor traz o diagnóstico e, com `C`, o campo visto pela câmera por cima da imagem,

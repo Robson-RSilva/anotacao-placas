@@ -32,7 +32,8 @@
   câmera); com os nomes espelhados, a câmera que fecha fica embaixo do gramado (`espelhado`, conferir).
   Com os nomes girados meia-volta, ela fica do lado oposto às cabines (`lado_oposto`, atenção: pode ser
   uma câmera de verdade daquele lado). Câmera fora do possível numa transmissão é `impossivel`.
-- **A medida do campo sai dos rótulos de cada partida.** As medidas internas são as da regra, mas o
+- **A medida do campo sai dos rótulos de cada partida.** As medidas internas são as da regra (com os pontos no
+  meio das linhas desde a [ADR-0016](0016-pontos-no-meio-das-linhas.md)), mas o
   comprimento e a largura mudam de estádio para estádio, e com a medida errada quase todo quadro acusaria.
   `medirCampo` procura L e W que deixam a homografia de cada quadro mais justa (o erro de cada quadro tem
   teto, para um rótulo errado não puxar), e só troca 105 × 68 quando a mediana do erro cai claramente.

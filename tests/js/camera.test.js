@@ -251,7 +251,7 @@ test("a medida do campo não se deixa levar por rótulos errados", () => {
 });
 
 test("a câmera de um close (teleobjetiva, pouca perspectiva) sai mesmo com o ruído do clique", () => {
-  const cam = olharPara([0, -60, 20], [-46, 0, 0], 10);
+  const cam = olharPara([0, -60, 20], [-47, 0, 0], 10);
   const r = sorteio(12);
   const pontos = pontosVistos(cam, { sigma: 1, r });
   assert.ok(pontos.length >= 6);

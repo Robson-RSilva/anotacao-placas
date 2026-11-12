@@ -5,6 +5,19 @@ Formato de [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); versões
 
 ## [Não lançado]
 
+## [0.17.0] - 2026-11-12
+
+Os pontos do campo no meio das linhas, onde o anotador clica (ADR-0016).
+
+### Mudado
+
+- **O campo** (`src/anotacao/campo.py` e `web/js/nucleo/campo.js`): a regra mede as áreas até a borda de fora
+  da linha; o anotador clica no meio do cruzamento (e, no gol, no meio do tubo). Com linhas de 12 cm
+  (`largura_linha`), cada linha anda meia largura para dentro da área que ela fecha — a pequena área tem 5,38 m
+  de fundo entre os meios das linhas, o topo da trave fica a 2,50 m. A conferência da câmera dos rótulos fica
+  mais justa (menos avisos à toa, sobretudo nos closes). Com largura 0, a geometria é a da regra ao pé da
+  letra, que os testes comparam com a do laboratório. Nada muda na hora de anotar.
+
 ## [0.16.0] - 2026-11-10
 
 A câmera dos rótulos: a página calcula a câmera de cada quadro pelos pontos e confere se eles batem
