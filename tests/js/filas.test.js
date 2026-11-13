@@ -241,10 +241,10 @@ test("devolvido volta primeiro, como versão nova, partindo da versão anterior"
   assert.equal(itemJ.inicio, `${pasta.rotulos(PARTIDA, "placas")}/${nomeJ.replace(".json", ".png")}`);
 });
 
-test("de onde a imagem começa: a previsão do modelo, a não ser nos itens sem previsão", async () => {
+test("de onde a imagem começa: a previsão do modelo, a não ser nos itens sem previsão e nos da dupla", async () => {
   const { pasta, indice } = await pastaExemplo();
-  const fila = await criarPartida(pasta, [{}, { sem_previsao: true }]);
-  await criarRecortes(pasta, [{}, { sem_previsao: true }]);
+  const fila = await criarPartida(pasta, [{}, { sem_previsao: true }, { dupla: true }]);
+  await criarRecortes(pasta, [{}, { sem_previsao: true }, { dupla: true }]);
   for (const [k, it] of fila.itens.entries()) {
     await pasta.gravar("previsao_pontos", pasta.previsaoPontos(PARTIDA, it.quadro), {
       formato: "previsao.pontos/1",
@@ -256,24 +256,27 @@ test("de onde a imagem começa: a previsão do modelo, a não ser nos itens sem 
     });
     await pasta.escrever(pasta.previsaoPlacas(PARTIDA, recorte(k)), Uint8Array.of(137, 80, 78, 71, 13, 10, 26, 10));
   }
-  // A01 pega os dois itens de cada tarefa, um depois do outro
+  // A01 pega os três itens de cada tarefa, um depois do outro
   const vistos = { pontos: new Map(), placas: new Map() };
   for (const tarefa of ["pontos", "placas"]) {
-    for (let k = 0; k < 2; k++) {
+    for (let k = 0; k < 3; k++) {
       const it = await proximo(indice, tarefa, "A01");
       vistos[tarefa].set(it.quadro, it);
       if (tarefa === "pontos") await gravarPontos(pasta, { quadro: it.quadro, pessoa: "A01", pontos: PONTOS, m: k });
       else await gravarPlacas(pasta, { quadro: it.quadro, pessoa: "A01", mascara: new Uint8Array(RW * RH), m: k });
     }
   }
-  const [q0, q1] = fila.itens.map((it) => it.quadro);
+  const [q0, q1, q2] = fila.itens.map((it) => it.quadro);
   assert.deepEqual(vistos.pontos.get(q0).partiu_de, { fonte: "modelo", versao: "detector_A@3f9c", referencia: null });
   assert.deepEqual(vistos.pontos.get(q0).inicio, PONTOS);
-  assert.equal(vistos.pontos.get(q1).partiu_de.fonte, "nenhuma");
-  assert.equal(vistos.pontos.get(q1).inicio, null);
+  for (const q of [q1, q2]) {
+    assert.equal(vistos.pontos.get(q).partiu_de.fonte, "nenhuma");
+    assert.equal(vistos.pontos.get(q).inicio, null);
+  }
   assert.equal(vistos.placas.get(recorte(0)).inicio, pasta.previsaoPlacas(PARTIDA, recorte(0)));
   assert.equal(vistos.placas.get(recorte(0)).partiu_de.fonte, "modelo");
   assert.equal(vistos.placas.get(recorte(1)).inicio, null);
+  assert.equal(vistos.placas.get(recorte(2)).inicio, null);
 });
 
 test("revisão às cegas: qualquer pessoa menos o autor, cada rótulo uma vez, correções fora", async () => {

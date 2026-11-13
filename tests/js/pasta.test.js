@@ -45,6 +45,29 @@ test("caminhos validados e com o layout do Python", () => {
   assert.throws(() => p.rotulos(PARTIDA));
   assert.throws(() => partes("a/../b"));
   assert.throws(() => partes("a//b"));
+  // os modelos exportados pelo laboratório (a página não cria a pasta)
+  assert.equal(p.cartaoModelo("detector-v1"), "modelos/detector-v1/cartao.json");
+  assert.equal(p.arquivoModelo("detector-v1", "detector.onnx"), "modelos/detector-v1/detector.onnx");
+  assert.throws(() => p.modelo("../fora"));
+  assert.throws(() => p.arquivoModelo("detector-v1", "../detector.onnx"));
+});
+
+test("o conjunto da partida na divisão: entra numa lista e sai das outras; treino sai de todas", async () => {
+  const p = new Pasta(new PastaMemoria());
+  const OUTRA = "2026-11-03_outro-estadio_time-c-time-d";
+  assert.equal(await p.definirConjunto(PARTIDA, "treino"), false); // sem divisao.json, já é treino: nada a gravar
+  assert.equal(await p.existe("divisao.json"), false);
+  assert.equal(await p.definirConjunto(PARTIDA, "teste_congelado"), true);
+  assert.deepEqual(await p.lerDivisao(), { formato: "divisao/1", validacao: [], teste_congelado: [PARTIDA], teste_externo: [] });
+  assert.equal(await p.definirConjunto(PARTIDA, "teste_congelado"), false);
+  await p.definirConjunto(OUTRA, "validacao");
+  assert.equal(await p.definirConjunto(PARTIDA, "validacao"), true);
+  assert.deepEqual(await p.lerDivisao(), { formato: "divisao/1", validacao: [OUTRA, PARTIDA], teste_congelado: [], teste_externo: [] });
+  await p.definirConjunto(PARTIDA, "treino");
+  assert.deepEqual((await p.lerDivisao()).validacao, [OUTRA]);
+  await assert.rejects(p.definirConjunto(PARTIDA, "teste"), /conjunto desconhecido/);
+  await p.escrever("divisao.json", "{ quebrado", { sobrescrever: true });
+  await assert.rejects(p.definirConjunto(PARTIDA, "validacao"), /JSON inválido/); // não grava por cima
 });
 
 test("escrita nunca sobrescreve sem pedir, e o índice vê a mudança", async () => {

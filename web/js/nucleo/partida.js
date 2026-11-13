@@ -6,8 +6,9 @@
 // dele. Um recorte sai do lote (o lote que fica vazio sai inteiro) e leva a pintura, as revisões e a
 // pré-pintura. A fila e os lotes são reescritos; o resto são arquivos de cada pessoa, que só se apagam.
 
-import { lerNome, lerNomeMascara } from "./convencoes.js";
+import { RE_QUADRO, lerNome, lerNomeMascara } from "./convencoes.js";
 import { aprovado, quemAnotou } from "./filas.js";
+import { conjuntoDe } from "./formatos.js";
 import { tipoDoCaminho } from "./transferencia.js";
 
 /** O que se mostra da situação de um item. */
@@ -31,12 +32,23 @@ export class ImportacaoEmAndamento extends Error {
 
 /**
  * Tudo o que a página mostra de uma partida, lido de uma vez: {partida, manifesto, tomadas, fila, lotes
- * (Map lote -> lote), recortes (Map recorte -> {lote, item}), ip: {pontos, placas}, erros}. O que não
- * dá para ler vai para `erros` ([{oque, erro}]) sem parar o resto: a página ainda mostra os arquivos e
- * deixa excluir.
+ * (Map lote -> lote), recortes (Map recorte -> {lote, item}), ip: {pontos, placas}, previsoes (os quadros
+ * com previsão dos pontos), conjunto (o da divisão), erros}. O que não dá para ler vai para `erros`
+ * ([{oque, erro}]) sem parar o resto: a página ainda mostra os arquivos e deixa excluir.
  */
 export async function carregarPartida(indice, partida) {
-  const out = { partida, manifesto: null, tomadas: null, fila: null, lotes: new Map(), recortes: new Map(), ip: { pontos: null, placas: null }, erros: [] };
+  const out = {
+    partida,
+    manifesto: null,
+    tomadas: null,
+    fila: null,
+    lotes: new Map(),
+    recortes: new Map(),
+    ip: { pontos: null, placas: null },
+    previsoes: new Set(),
+    conjunto: null,
+    erros: [],
+  };
   const tentar = async (oque, f) => {
     try {
       return await f();
@@ -59,6 +71,13 @@ export async function carregarPartida(indice, partida) {
     out.ip[tarefa] = ip;
     for (const inv of ip?.invalidos ?? []) out.erros.push({ oque: inv.caminho, erro: inv.erro });
   }
+  const dir = `${indice.pasta.partida(partida)}/previsoes/pontos`;
+  for (const item of (await tentar("previsões dos pontos", () => indice.pasta.listar(dir))) ?? []) {
+    const q = item.nome.slice(0, -5);
+    if (item.tipo === "arquivo" && item.nome.endsWith(".json") && RE_QUADRO.test(q)) out.previsoes.add(q);
+  }
+  const divisao = await tentar("divisao.json", () => indice.divisao());
+  out.conjunto = divisao ? conjuntoDe(divisao, partida) : null;
   return out;
 }
 
@@ -109,7 +128,8 @@ export function oQueSaiJunto(dados, tarefa, itens) {
 }
 
 /** Falha se a partida está sendo importada agora (alguém pode estar gravando os quadros dela). */
-async function conferirImportacao(pasta, partida, agora = Date.now()) {
+/** Falha (ImportacaoEmAndamento) se esta partida está sendo importada agora. */
+export async function conferirImportacao(pasta, partida, agora = Date.now()) {
   try {
     const marca = await pasta.lerJson(pasta.importando(partida));
     if (agora - Date.parse(marca.atualizado_em) < 10 * 60_000) throw new ImportacaoEmAndamento();

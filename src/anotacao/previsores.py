@@ -1,7 +1,8 @@
 """Previsor: um modelo que já deixa a imagem começada, para quem anota só corrigir.
 
 As páginas não dependem de nenhum modelo. Com um previsor, `anotacao prever` grava, para os itens da
-fila (menos os "sem previsão", que medem o viés de ancoragem):
+fila (menos os "sem previsão", que medem o viés de ancoragem, e os da dupla às cegas, cuja concordância
+entre duas pessoas que anotaram do zero é a régua dos rótulos):
 
 * pontos (`--tarefa pontos`): `previsoes/pontos/<quadro>.json` (formato previsao.pontos/1). O
   previsor recebe o quadro e devolve os pontos que achou, {nome: (x, y)} em px da imagem;
@@ -18,6 +19,9 @@ Um previsor é qualquer objeto chamável com `nome` e `versao`:
 
 e é carregado por `--previsor pacote.modulo:objeto` (o objeto pode ser a instância, a classe ou uma
 função que devolve a instância).
+
+O detector do laboratório não precisa disto: a página o roda no navegador, na importação e pelo botão da
+página da partida, a partir de `modelos/` da pasta da equipe (ADR-0017).
 """
 
 from __future__ import annotations
@@ -54,6 +58,11 @@ def carregar_previsor(especificacao: str | None):
     return obj
 
 
+def pede_previsao(item) -> bool:
+    """Se o item da fila (ou do lote de recortes) começa da previsão: nem "sem previsão", nem dupla às cegas."""
+    return not item.sem_previsao and not item.dupla
+
+
 def _pontos(achados, w: int, h: int) -> list[dict]:
     """Os pontos do previsor que esta versão marca, dentro da imagem."""
     out = []
@@ -85,7 +94,7 @@ def prever(
         if tarefa == "pontos":
             man = pasta.ler_manifesto(pid)
             w, h = man.video.largura, man.video.altura
-            itens = [it for it in pasta.ler_fila(pid).itens if not it.sem_previsao]
+            itens = [it for it in pasta.ler_fila(pid).itens if pede_previsao(it)]
             for k, item in enumerate(itens):
                 destino = pasta.previsao_pontos(pid, item.quadro)
                 if destino.exists() and not refazer:
@@ -105,7 +114,7 @@ def prever(
                 if progresso:
                     progresso(pid, k + 1, len(itens))
             continue
-        recortes = [it for _, it in indice.recortes(pid).itens.values() if not it.sem_previsao]
+        recortes = [it for _, it in indice.recortes(pid).itens.values() if pede_previsao(it)]
         for k, it in enumerate(recortes):
             destino = pasta.previsao_placas(pid, it.recorte)
             if destino.exists() and not refazer:

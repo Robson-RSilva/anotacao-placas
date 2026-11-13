@@ -20,6 +20,8 @@
 //     gabarito/itens/<g1001>.json|.jpg (|.png nas placas), gabarito/rotulos/<tarefa>/...
 //     pessoas/<codigo>/<dispositivo>.json   em que computadores cada código é usado
 //     conjuntos/<data-hora>/            saída do unificar (Python)
+//     modelos/<nome>/                   um detector exportado pelo laboratório (cartao.json, detector.onnx):
+//                                       a página o roda na importação (opcional; não é criada aqui)
 //
 // As tarefas são `pontos` e `placas`. As pastas das versões anteriores (rotulos/camera,
 // rotulos/oclusao e estadios/, até a 0.7; rotulos/jogadores, da 0.8; rotulos/pessoas, da 0.9) ficam
@@ -38,7 +40,8 @@ import {
   lerNome,
   lerNomeMascara,
 } from "./convencoes.js";
-import { validar } from "./formatos.js";
+import { CONJUNTOS, comConjunto, validar } from "./formatos.js";
+import { PASTA_MODELOS, RE_ARQUIVO_MODELO, RE_MODELO } from "./modelos.js";
 
 export class ArquivoExiste extends Error {
   constructor(caminho) {
@@ -82,6 +85,7 @@ export class Pasta {
   static EQUIPE = "equipe.json";
   static DIVISAO = "divisao.json";
   static PROJETO = "projeto.json";
+  static MODELOS = PASTA_MODELOS;
 
   /** Registro de um código num navegador (um arquivo por computador: o Drive nunca entra em conflito). */
   dispositivo(codigo, dispositivo) {
@@ -126,6 +130,20 @@ export class Pasta {
   /** Os pontos de um modelo para o quadro, quando há. */
   previsaoPontos(partida, quadro) {
     return `${this.partida(partida)}/previsoes/pontos/${checar(RE_QUADRO, quadro, "quadro")}.json`;
+  }
+
+  /** A pasta de um modelo exportado pelo laboratório (`modelos/<nome>/`). */
+  modelo(nome) {
+    return `${Pasta.MODELOS}/${checar(RE_MODELO, nome, "modelo")}`;
+  }
+
+  cartaoModelo(nome) {
+    return `${this.modelo(nome)}/cartao.json`;
+  }
+
+  /** Um arquivo da pasta do modelo (o ONNX que o cartão diz). */
+  arquivoModelo(nome, arquivo) {
+    return `${this.modelo(nome)}/${checar(RE_ARQUIVO_MODELO, arquivo, "arquivo do modelo")}`;
   }
 
   /** Os lotes de recortes da partida (`<lote>.json`) e as imagens deles (`<recorte>.jpg`). */
@@ -393,6 +411,21 @@ export class Pasta {
     return (await this.existe(Pasta.DIVISAO))
       ? this.ler("divisao", Pasta.DIVISAO)
       : { formato: "divisao/1", validacao: [], teste_congelado: [], teste_externo: [] };
+  }
+
+  /**
+   * Põe a partida num conjunto da divisão ("treino" a tira das listas), sem mexer nas outras partidas.
+   * Devolve se o arquivo mudou. Lê e grava de uma vez (entre as abas deste navegador, uma de cada vez).
+   */
+  async definirConjunto(partida, conjunto) {
+    checar(RE_PARTIDA, partida, "partida");
+    return comTrava(`anotacao:${this.nome}:divisao`, async () => {
+      const atual = await this.lerDivisao();
+      const nova = comConjunto(atual, partida, conjunto);
+      if (CONJUNTOS.slice(1).every((k) => JSON.stringify(nova[k]) === JSON.stringify(atual[k] ?? []))) return false;
+      await this.gravar("divisao", Pasta.DIVISAO, nova, { sobrescrever: true });
+      return true;
+    });
   }
 
   async lerManifesto(partida) {

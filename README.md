@@ -6,7 +6,7 @@ pessoa. Duas tarefas, cada uma feita direto na imagem:
 
 | Página | O que se faz | Para o treino |
 | --- | --- | --- |
-| Central e importação | cadastro da partida (estádio, emissora, competição, data e hora, iluminação, chuva) e os quadros sorteados, do vídeo inteiro ou só dos trechos escolhidos | separar treino e teste por jogo e equilibrar a amostra |
+| Central e importação | cadastro da partida (estádio, emissora, competição, data e hora, iluminação, chuva), o conjunto dela e os quadros sorteados, do vídeo inteiro ou só dos trechos escolhidos — já com os pontos do detector, quando há um | separar treino e teste por jogo e equilibrar a amostra |
 | Pontos do campo | clicar em cada ponto do campo que aparece (cruzamentos de linhas, marcas, traves), dando o nome de cada um pelo mapa do campo | alvo dos pontos-chave do detector |
 | Oclusão nas placas | no recorte de cada placa (a placa já endireitada, com o contorno pronto), pintar o que está na frente dela — gente, bola, trave, outra placa, o grafismo da emissora | alvo da máscara de oclusão: quanto de cada placa quem assiste vê |
 | Revisão às cegas | aprovar, corrigir ou devolver o trabalho de outra pessoa, sem saber de quem é | só entra no treino o que foi aprovado |
@@ -32,8 +32,8 @@ ferramenta e documento próprios (ver [ADR-0003](docs/adr/0003-anotacao-separada
    arquivos de cada pessoa e conta os pontos do placar.
 
 Nada é instalado e nada vai para a internet: o site são arquivos estáticos (HTML, CSS e JavaScript) e
-todo o processamento — inclusive ler o vídeo — acontece no navegador de cada pessoa. Os vídeos,
-quadros e rótulos ficam no computador e na pasta sincronizada. A política de segurança da página
+todo o processamento — inclusive ler o vídeo e rodar o detector de pontos — acontece no navegador de
+cada pessoa. Os vídeos, quadros, rótulos e modelos ficam no computador e na pasta sincronizada. A política de segurança da página
 (CSP) não deixa ela falar com nenhum outro endereço. Depois da primeira visita, o site abre também
 sem internet.
 
@@ -85,8 +85,19 @@ Não é preciso cadastrar equipe nem levantar o estádio antes: basta importar a
    Arquivo → Remuxar gravações). A leitura leva tempo: num teste com 2 núcleos e sem decodificação
    pela placa de vídeo, 2 minutos de vídeo em 1080p levaram 1 minuto. Deixe a aba aberta até terminar;
    dá para voltar à central enquanto isso. Uma partida que ninguém começou a usar (sem rótulos,
-   revisões, recortes nem previsões) pode ser importada de novo: a página oferece apagar a importação
-   anterior e refazer tudo.
+   revisões nem recortes) pode ser importada de novo: a página oferece apagar a importação anterior e
+   refazer tudo.
+
+   **O conjunto e a detecção**, lado a lado ([ADR-0017](docs/adr/0017-detector-na-importacao.md)): o
+   conjunto em que a partida entra (treino, validação, teste congelado ou teste externo — a página grava
+   a divisão no fim) e **usar a detecção**. Com um detector em `modelos/` da pasta da equipe (a pasta que
+   o laboratório exporta, com o `detector.onnx` e o `cartao.json`, copiada uma vez por modelo), a
+   importação roda a rede no próprio navegador, na CPU (cerca de 1 s por quadro), e cada quadro chega
+   com os pontos de escore 0,5 ou mais para quem anota conferir e corrigir. Os quadros "sem previsão" e
+   os da dupla às cegas ficam do zero (são as réguas da medida). A detecção vem ligada, menos no teste,
+   em que a recomendação é anotar do zero: os pontos sugeridos puxam o clique justo na margem que
+   decide se uma câmera conta como certa. Se a detecção falhar, a importação segue sem ela e diz por
+   quê.
 2. **Marcar os pontos do campo.** A imagem abre sem molde por cima (só com os pontos de um modelo,
    quando há previsão, para corrigir). Ao lado fica o **mapa do campo** com os 39 pontos que se
    marcam (cruzamentos das linhas, marcas do pênalti e do centro, pés e topos das traves). Escolha o
@@ -145,7 +156,11 @@ para debaixo do mouse.
 
 O nome da partida, na tabela da central, abre a página dela ([ADR-0014](docs/adr/0014-pagina-da-partida.md)):
 
-- a **ficha**: o jogo, o vídeo e a importação (quando, quanto tempo levou, trechos, tomadas, rajadas);
+- a **ficha**: o jogo, o vídeo e a importação (quando, quanto tempo levou, trechos, tomadas, rajadas, a
+  detecção, o conjunto e quantos quadros têm a previsão do detector);
+- **Gerar previsões**: os pontos do detector em uso nos quadros que ainda não têm rótulo — para uma
+  partida importada sem a detecção, ou para trocar pelas de um detector novo (a previsão que já é do
+  modelo em uso fica). Roda num worker, que continua se você sair da página; no teste, pergunta antes;
 - os **quadros** e os **recortes das placas** em miniaturas, com a anotação por cima e a situação de
   cada um — sem rótulo, esperando revisão, devolvido, aprovado, descartado —, com filtros por situação
   (e por lote, nos recortes);
@@ -249,7 +264,7 @@ trabalho/                                   a pasta da equipe, sincronizada com 
   partidas/<partida>/
     manifesto.json, tomadas.json, fila.json
     quadros/<quadro>.jpg                      só os sorteados
-    previsoes/pontos/<quadro>.json            pontos de um modelo (anotacao prever --tarefa pontos)
+    previsoes/pontos/<quadro>.json            pontos do detector (na importação ou pelo botão da partida)
     recortes/<lote>.json, recortes/<recorte>.jpg   os recortes das placas (<recorte> = <quadro>_<placa>)
     previsoes/placas/<recorte>.png            pré-pintura de um modelo (anotacao prever --tarefa placas)
     rotulos/pontos/<quadro>__<código>__v<n>.json
@@ -258,6 +273,7 @@ trabalho/                                   a pasta da equipe, sincronizada com 
   gabarito/itens/, gabarito/rotulos/          nunca entram no treino
   pessoas/<código>/<navegador>.json           em que computadores cada código é usado
   conjuntos/<data-hora>/                      saída do unificar
+  modelos/<nome>/                             um detector exportado pelo laboratório (cartao.json, detector.onnx)
 ```
 
 Um arquivo por pessoa e por versão: ninguém edita o arquivo de outra pessoa, então o Drive nunca
@@ -276,8 +292,8 @@ pip install -e .
 anotacao exemplo trabalho                   # pasta de exemplo, com os nomes de A01 e A02
 anotacao recortes LOTE.json --pasta P       # traz um lote de recortes das placas (com os .jpg ao lado)
 anotacao gabarito ORIGEM --pasta P          # importa itens do gabarito (<id>.json + JPEG; nas placas, + PNG)
-anotacao prever --tarefa pontos --pasta P --previsor pacote.modulo:objeto      # pontos de um modelo
 anotacao prever --tarefa placas --pasta P --previsor pacote.modulo:objeto      # pré-pintura das placas
+anotacao prever --tarefa pontos --pasta P --previsor pacote.modulo:objeto      # pontos de outro modelo
 anotacao validar --pasta P                  # confere todos os arquivos
 anotacao unificar --pasta P                 # gera os conjuntos de treino
 anotacao ouro --pasta P                     # um lote de ouro com os itens aprovados (o botão da central)
@@ -290,7 +306,8 @@ um mosaico de cada lote com a resposta por cima) e, com `--demonstracao`, uma pa
 recortes das placas para experimentar a página numa pasta de teste (nunca na da equipe);
 `scripts/conferir_regras.py` passa anotadores simulados por esses lotes, com as regras da página; e
 `scripts/video_demo_do_laboratorio.py` monta um vídeo MP4 de demonstração a partir de uma
-transmissão sintética.
+transmissão sintética. O detector do laboratório não precisa do `anotacao prever`: a página o roda a
+partir de `modelos/`.
 
 ## Publicação
 
@@ -314,7 +331,10 @@ pytest -m e2e                             # ponta a ponta no navegador (precisa 
 O endereço local (127.0.0.1) conta como seguro para o navegador, então a escolha de pasta e o
 WebCodecs funcionam como no site publicado. O campo (nomes e lugares dos pontos, simetria de 180°)
 existe em Python e em JavaScript e é testado contra o laboratório; a leitura do vídeo e os cortes são
-testados contra a implementação de referência da v0.1. Detalhes em [CONTRIBUTING.md](CONTRIBUTING.md),
+testados contra a implementação de referência da v0.1; a preparação da imagem e a decodificação do
+detector, contra casos gerados pelo laboratório (`scripts/casos_do_detector.py`, rodado no ambiente
+dele). O ONNX Runtime Web (`web/vendor/onnxruntime-web/`, MIT) vem do npm, sem mudar nada, pelo
+`python scripts/onnxruntime_web.py <versão>`. Detalhes em [CONTRIBUTING.md](CONTRIBUTING.md),
 arquitetura em [docs/arquitetura.md](docs/arquitetura.md) e decisões em [docs/adr/](docs/adr/).
 
 ## Próximos passos
@@ -323,8 +343,8 @@ arquitetura em [docs/arquitetura.md](docs/arquitetura.md) e decisões em [docs/a
   placas clicadas em 1 a 3 quadros e trianguladas na hora, até publicar o pacote do estádio.
 - Os recortes das placas do vídeo real: a câmera de cada quadro pelos pontos aprovados e o pacote do
   estádio dão a projeção de cada placa, e dela o lote de recortes (`origem: "modelo"`).
-- Previsor com o detector do laboratório (`anotacao prever --previsor pacote.modulo:objeto`): os
-  pontos já marcados e a oclusão das placas como pré-pintura, para quem anota só corrigir.
+- A detecção na GPU (WebGPU), com a CPU de reserva quando o computador não tiver.
+- A oclusão das placas como pré-pintura, quando houver o modelo dela.
 - Gabarito arbitrado mais exigente: só os itens em que as duas pessoas da dupla às cegas concordam,
   e uma terceira que decide quando divergem.
 - Baixar o vídeo pela própria página (depende de onde os vídeos vêm).

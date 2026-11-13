@@ -212,12 +212,24 @@ export function conferir(tipo, obj) {
   }
 }
 
+/** Os conjuntos de uma partida: treino (o que não está na divisão) e as três listas do `divisao.json`. */
+export const CONJUNTOS = Object.freeze(["treino", "validacao", "teste_congelado", "teste_externo"]);
+
 /** Conjunto de uma partida segundo a divisão (o que não está lá é treino). */
 export function conjuntoDe(divisao, partida) {
-  for (const nome of ["validacao", "teste_congelado", "teste_externo"]) {
+  for (const nome of CONJUNTOS.slice(1)) {
     if ((divisao[nome] || []).includes(partida)) return nome;
   }
   return "treino";
+}
+
+/** A divisão com a partida no conjunto pedido (e fora dos outros); as outras partidas ficam como estavam. */
+export function comConjunto(divisao, partida, conjunto) {
+  if (!CONJUNTOS.includes(conjunto)) throw new Error(`conjunto desconhecido: ${conjunto}`);
+  const nova = { formato: "divisao/1" };
+  for (const nome of CONJUNTOS.slice(1)) nova[nome] = (divisao[nome] || []).filter((p) => p !== partida);
+  if (conjunto !== "treino") nova[conjunto].push(partida);
+  return nova;
 }
 
 /** Códigos com um papel na equipe, em ordem. */

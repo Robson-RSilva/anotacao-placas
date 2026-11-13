@@ -26,6 +26,8 @@ O mesmo layout existe nas páginas (`web/js/nucleo/pasta.js`).
       gabarito/itens/<g1001>.json|.jpg (|.png nas placas), gabarito/rotulos/<tarefa>/...
       pessoas/<codigo>/<dispositivo>.json           em que computadores cada código é usado
       conjuntos/<data-hora>/                        saída do unificar
+      modelos/<nome>/                               um detector exportado pelo laboratório (cartao.json,
+                                                    detector.onnx), que a página roda na importação
 
 As tarefas são `pontos` e `placas`. As pastas das versões anteriores (`rotulos/camera`,
 `rotulos/oclusao` e `estadios/`, até a 0.7; `rotulos/jogadores`, da 0.8; `rotulos/pessoas`, da 0.9)

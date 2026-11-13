@@ -176,6 +176,8 @@
         <div class="titulo-secao largo">
           <h2 id="nome-partida"></h2>
           <div class="botoes">
+            <button type="button" id="prever-partida" title="Os pontos do detector da pasta modelos/ nos quadros que ainda não têm rótulo (menos os sem previsão e os da dupla às cegas)">Gerar previsões</button>
+            <button type="button" id="cancelar-previsao" hidden>Parar</button>
             <button type="button" id="baixar-partida" title="Todos os arquivos da partida: manifesto, tomadas, fila, quadros, recortes, rótulos e revisões">Baixar a partida (.zip)</button>
             <button type="button" id="excluir-partida" class="perigo">Excluir a partida…</button>
           </div>
@@ -719,6 +721,18 @@
           <label class="largo">Trechos do vídeo (opcional)
             <input name="trechos" autocomplete="off" placeholder="ex.: 0:05:00-0:50:00, 1:05:00-1:50:00 (vazio: o vídeo inteiro)">
           </label>
+          <div class="largo linha-conjunto">
+            <label>Conjunto
+              <select name="conjunto" id="conjunto" aria-describedby="dica-deteccao">
+                <option value="treino">treino</option>
+                <option value="validacao">validação</option>
+                <option value="teste_congelado">teste congelado</option>
+                <option value="teste_externo">teste externo</option>
+              </select>
+            </label>
+            <label class="caixa-marcar"><input type="checkbox" name="deteccao" id="deteccao" disabled> usar a detecção <span class="sutil" id="nome-modelo"></span></label>
+            <span class="sutil" id="dica-deteccao" role="status"></span>
+          </div>
           <label class="largo">Observações <input name="observacoes" autocomplete="off"></label>
           <label class="largo">Vídeo <input name="video" type="file" accept="video/mp4,video/quicktime,.mp4,.mov,.m4v" required></label>
           <div class="largo botoes">
@@ -788,8 +802,14 @@
       </section>
 
       <section class="cartao">
+        <h2>Detector</h2>
+        <p id="st-modelos" class="sutil" role="status"></p>
+        <p class="sutil">Para os quadros já chegarem com os pontos: copie para <code>modelos/</code> desta pasta a pasta que o laboratório exporta (<code>exportados/&lt;nome&gt;</code>, com o <code>detector.onnx</code> e o <code>cartao.json</code>). A importação roda o detector no computador de quem importa (a opção "usar a detecção", ao lado do conjunto), e a página da partida tem o botão "Gerar previsões" para as partidas já importadas. Os quadros "sem previsão" e os da dupla às cegas ficam do zero.</p>
+      </section>
+
+      <section class="cartao">
         <h2>Conjunto de treino</h2>
-        <p class="sutil">O conjunto (Parquet com manifesto) é gerado em Python por quem treina: <code>anotacao unificar --pasta "&lt;pasta de trabalho&gt;"</code>. Para a imagem já abrir com os pontos (ou a pintura das placas) de um modelo: <code>anotacao prever --tarefa pontos</code> (ou <code>placas</code>). Os recortes das placas entram numa partida já importada com <code>anotacao recortes &lt;lote&gt;.json</code> (ou o .zip do lote, pela página central).</p>
+        <p class="sutil">O conjunto (Parquet com manifesto) é gerado em Python por quem treina: <code>anotacao unificar --pasta "&lt;pasta de trabalho&gt;"</code>. Para a pintura das placas (ou os pontos de outro modelo, fora do laboratório): <code>anotacao prever --tarefa placas</code> (ou <code>pontos</code>). Os recortes das placas entram numa partida já importada com <code>anotacao recortes &lt;lote&gt;.json</code> (ou o .zip do lote, pela página central).</p>
       </section>
     </main>
   </template>

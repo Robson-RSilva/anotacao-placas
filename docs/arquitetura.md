@@ -3,11 +3,13 @@
 ```text
 GitHub Pages (site estático)          navegador de cada pessoa                     pasta e Drive
 ┌───────────────────────────┐  baixa  ┌──────────────────────────────────────┐    ┌──────────────────────┐
-│ web/: HTML, CSS, JS       │ ──────► │ aplicativo de uma página             │    │ pasta de trabalho    │
-│ e esquemas                │ (uma    │  · filas, gabarito, placar, pintura  │───►│ (um arquivo por      │
-└───────────────────────────┘  vez)   │  · importação num worker (WebCodecs) │    │  pessoa e versão)    │
-                                      │ File System Access API ou OPFS       │    └──────────┬───────────┘
-                                      └──────────────────────────────────────┘               │ sincronização
+│ web/: HTML, CSS, JS,      │ ──────► │ aplicativo de uma página             │    │ pasta de trabalho    │
+│ esquemas e o ONNX Runtime │ (uma    │  · filas, gabarito, placar, pintura  │───►│ (um arquivo por      │
+│ Web (WebAssembly)         │  vez)   │  · importação num worker (WebCodecs) │    │  pessoa e versão;    │
+└───────────────────────────┘         │    e o detector de pontos (ONNX)     │◄───│  modelos/ do         │
+                                      │ File System Access API ou OPFS       │    │  laboratório)        │
+                                      └──────────────────────────────────────┘    └──────────┬───────────┘
+                                                                                             │ sincronização
                                                                                    Google Drive (equipe)
                                       Python (quem coordena e treina): validar, unificar, gabarito, prever,
                                       trazer os lotes de recortes das placas (do simulador; depois, da projeção)
@@ -58,6 +60,13 @@ GitHub Pages (site estático)          navegador de cada pessoa                 
   até o fim dele; o resto do arquivo só passa pelo hash. Depois acha os cortes (o começo e o fim de
   cada trecho também cortam), agrupa as tomadas, sorteia e decodifica de novo só os grupos de quadros
   (GOP) com sorteados, para gravá-los em JPEG na resolução original.
+- **O detector na importação** (ADR-0017): com a detecção ligada, o mesmo worker abre o modelo de
+  `modelos/` da pasta (o `detector.onnx` e o cartão que o laboratório exporta; o sha256 é conferido) no
+  ONNX Runtime Web, que vem junto com o site (`web/vendor/onnxruntime-web/`: WebAssembly, na CPU, uma
+  thread), lê cada JPEG gravado, prepara a entrada como o `modelo.py` do laboratório (a janela de 16:9 e
+  a INTER_AREA do OpenCV, portadas e conferidas byte a byte), roda a rede e grava os pontos de escore
+  0,5 ou mais em `previsoes/pontos/`. O WebAssembly só roda nos workers, que não herdam a CSP do
+  documento: a política da página continua sem `'wasm-unsafe-eval'`.
 
 ## Módulos
 
@@ -73,12 +82,15 @@ GitHub Pages (site estático)          navegador de cada pessoa                 
 | `nucleo/filas.js`, `nucleo/gabarito.js`, `nucleo/placar.js` | o que cada pessoa faz a seguir em cada tarefa, a comparação com o gabarito e a liberação, o placar e a concordância |
 | `nucleo/regiao.js` | a região da placa no recorte: o polígono em pixels (a mesma conta do Python) |
 | `nucleo/camera.js` | a câmera de um quadro pelos pontos (homografia, focal e pose, refino), a conferência deixando um ponto de fora e a medida do campo — o modelo de câmera do laboratório, sem a distorção |
+| `nucleo/detector.js` | o detector sem o navegador: a janela, a INTER_AREA, a ampliação e o warpAffine do OpenCV (byte a byte), o tensor da rede e a decodificação dos mapas (a do `modelo.py`) |
+| `nucleo/modelos.js` | os modelos de `modelos/`: o cartão que a página consegue usar, o mais novo, o identificador (`nome@sha12`) e quem começa da previsão |
 | `nucleo/rotulos.js`, `nucleo/png.js` | montar e gravar rótulos (com a máscara) e revisões; o PNG de índices |
 | `nucleo/zip.js`, `nucleo/transferencia.js` | levar e trazer arquivos em .zip |
 | `nucleo/hash.js`, `nucleo/aleatorio.js`, `nucleo/estatistica.js` | SHA-256 por partes, sorteio reprodutível, mediana e percentil |
 | `video/mp4.js` | índice do MP4: codec e tabela de amostras |
 | `video/descritores.js`, `video/cortes.js`, `video/sorteio.js` | do vídeo aos quadros sorteados (as contas da v0.1) |
-| `video/importar.js`, `video/trabalhador.js` | a importação, num worker |
+| `video/importar.js`, `video/trabalhador.js` | a importação e as previsões, num worker |
+| `video/previsao.js` | o ONNX Runtime Web: abrir o modelo da pasta, decodificar o JPEG e gravar as previsões dos quadros (na importação e no botão da página da partida) |
 | `ui/mapa.js`, `ui/marcador.js` | o mapa do campo e a imagem em que se marcam os pontos (zoom, lupa, arrastar, apagar) |
 | `ui/pintor.js` | a pintura no recorte (pincel, laço, borracha, só dentro da região da placa) e o resultado do teste por cima |
 | `ui/tarefa.js` | o que as duas tarefas têm em comum: abrir a imagem (o quadro ou o recorte), descartar, confirmar, os avisos |
@@ -97,7 +109,7 @@ GitHub Pages (site estático)          navegador de cada pessoa                 
 | `formatos.py` | modelos dos arquivos (pydantic) e JSON Schemas |
 | `pasta.py`, `indice.py` | layout da pasta, escrita atômica, índice |
 | `recortes.py` | montar um lote de recortes das placas (com a dupla e o "sem previsão" sorteados) e trazê-lo para a partida |
-| `gabarito.py`, `previsores.py` | importar o gabarito (conferindo a máscara verdadeira); os pontos e a pré-pintura de um modelo |
+| `gabarito.py`, `previsores.py` | importar o gabarito (conferindo a máscara verdadeira); a pré-pintura (ou os pontos de outro modelo) por um previsor em Python |
 | `mascara.py` | o PNG de índices e o polígono em pixels, os mesmos das páginas |
 | `unificar.py` | conjuntos de treino em Parquet (pontos e placas) |
 | `ouro.py` | o gabarito arbitrado: lotes de ouro tirados dos rótulos aprovados, rodada a rodada (o mesmo que `web/js/nucleo/ouro.js`, o botão da central) |
@@ -106,12 +118,17 @@ GitHub Pages (site estático)          navegador de cada pessoa                 
 
 Fora do pacote, `scripts/lotes_de_ouro.py` gera com o simulador do laboratório os lotes de ouro e a
 partida de demonstração das placas, e `scripts/conferir_regras.py` passa anotadores simulados por
-esses lotes, com as contas da própria página.
+esses lotes, com as contas da própria página. `scripts/casos_do_detector.py` (no ambiente do
+exposicao-treino) gera os casos de teste do detector — uma rede pequena de pesos sorteados, exportada
+pelo próprio laboratório, e o que o OpenCV e o `modelo.py` dão em imagens de vários tamanhos — e
+`scripts/onnxruntime_web.py` traz o ONNX Runtime Web do npm, conferindo a integridade.
 
 ## Segurança e privacidade
 
 - A página só fala com o próprio site: a CSP (`connect-src 'self'`) impede que ela mande dados para
-  outro endereço, e o service worker só guarda os arquivos do site.
+  outro endereço, e o service worker só guarda os arquivos do site. O ONNX Runtime Web vem com o site
+  (do npm, sem mudar nada; os sha256 em `web/vendor/onnxruntime-web/VERSAO.json`), e o modelo, da pasta
+  da equipe: nenhum dos dois é buscado fora.
 - O acesso à pasta é o que o navegador concede: só a pasta escolhida, com permissão confirmada pela
   pessoa. Todos os caminhos passam pela validação dos IDs (nada de `../`).
 - A página não mostra a partida, o quadro nem o autor do que está anotando ou revisando, para o

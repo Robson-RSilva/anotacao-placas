@@ -5,6 +5,40 @@ Formato de [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); versões
 
 ## [Não lançado]
 
+## [0.18.0] - 2026-11-13
+
+O detector de pontos na importação: os quadros já chegam com os pontos do modelo, para quem anota
+conferir e corrigir (ADR-0017).
+
+### Adicionado
+
+- **A detecção na importação**: com um detector em `modelos/` da pasta da equipe (a pasta que o laboratório
+  exporta a partir da 0.7.0 dele, com o `detector.onnx` e o `cartao.json`), a importação roda a rede no
+  computador de quem importa — no navegador, na CPU, com o ONNX Runtime Web que vem junto com a página — e
+  grava em `previsoes/pontos/` os pontos de escore 0,5 ou mais de cada quadro. Os "sem previsão" e os da
+  dupla às cegas ficam do zero. Se a detecção falhar, a importação segue sem ela e diz por quê.
+- **O conjunto da partida na importação** (treino, validação, teste congelado, teste externo), com a
+  detecção ao lado: ligada, menos no teste, em que a recomendação é anotar do zero. A página grava a
+  partida na divisão (`divisao.json`) no fim da importação.
+- **"Gerar previsões" na página da partida**: os pontos do detector em uso nos quadros que ainda não têm
+  rótulo (a previsão que já é desse modelo fica; a de outro é refeita), num worker que continua se a pessoa
+  sair da página. No teste, pergunta antes. A ficha da partida mostra o conjunto, a detecção da importação e
+  quantos quadros têm previsão.
+- **A coordenação mostra o detector em uso** (e por que um modelo da pasta não dá para usar).
+- A preparação da imagem e a decodificação são as do `modelo.py` do laboratório, conferidas byte a byte
+  contra o OpenCV e com a rede rodando no ONNX Runtime Web, em casos gerados pelo próprio laboratório
+  (`scripts/casos_do_detector.py`). O ONNX Runtime Web vem do npm pelo `scripts/onnxruntime_web.py`, com a
+  integridade conferida (`web/vendor/onnxruntime-web/VERSAO.json`).
+
+### Mudado
+
+- **As previsões não impedem mais importar de novo**: elas são do detector e se refazem (rótulos, revisões e
+  recortes continuam impedindo).
+- Os itens da dupla às cegas começam do zero mesmo quando há previsão — na fila da página e no `anotacao
+  prever` (pontos e placas).
+- A coordenação relê a divisão antes de salvar: uma partida posta num conjunto por uma importação feita com
+  a página aberta não volta para o treino.
+
 ## [0.17.0] - 2026-11-12
 
 Os pontos do campo no meio das linhas, onde o anotador clica (ADR-0016).

@@ -7,7 +7,7 @@ import { Pasta } from "../../web/js/nucleo/pasta.js";
 import { MarcaDeImportacao, PartidaJaExiste, trabalhoNaPartida } from "../../web/js/video/importar.js";
 import { PARTIDA, PastaMemoria } from "./apoio.js";
 
-test("o que impede importar de novo: rótulos, revisões, recortes ou previsões (pasta vazia não conta)", async () => {
+test("o que impede importar de novo: rótulos, revisões ou recortes (pasta vazia e previsões não contam)", async () => {
   const pasta = new Pasta(new PastaMemoria());
   assert.deepEqual(await trabalhoNaPartida(pasta, PARTIDA), []); // nem existe
   const raiz = pasta.partida(PARTIDA);
@@ -15,13 +15,13 @@ test("o que impede importar de novo: rótulos, revisões, recortes ou previsões
     await pasta.escrever(c, "x");
   }
   await pasta.diretorio(`${raiz}/rotulos/pontos`, { criar: true });
+  await pasta.escrever(`${raiz}/previsoes/pontos/t0000000040.json`, "{}"); // do detector, na importação
   assert.deepEqual(await trabalhoNaPartida(pasta, PARTIDA), []); // só a importação: pode refazer
   await pasta.escrever(`${raiz}/rotulos/pontos/t0000000040__A01__v1.json`, "{}");
   assert.deepEqual(await trabalhoNaPartida(pasta, PARTIDA), ["rótulos"]);
   await pasta.escrever(`${raiz}/revisoes/pontos/t0000000040__R01__v1.json`, "{}");
   await pasta.escrever(`${raiz}/recortes/r1.json`, "{}");
-  await pasta.escrever(`${raiz}/previsoes/pontos/t0000000040.json`, "{}");
-  assert.deepEqual(await trabalhoNaPartida(pasta, PARTIDA), ["rótulos", "revisões", "recortes de placas", "previsões"]);
+  assert.deepEqual(await trabalhoNaPartida(pasta, PARTIDA), ["rótulos", "revisões", "recortes de placas"]);
   assert.equal(new PartidaJaExiste("x").podeSubstituir, false);
   assert.equal(new PartidaJaExiste("x", { podeSubstituir: true }).podeSubstituir, true);
 });

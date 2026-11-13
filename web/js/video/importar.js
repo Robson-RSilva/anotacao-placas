@@ -9,15 +9,19 @@
 // 3. agrupamento das tomadas por aparência e zoom;
 // 4. sorteio de 1 ou 2 quadros por tomada de 1 s ou mais (a fila é aberta: quem anota pega o próximo);
 // 5. extração dos quadros sorteados em JPEG, na resolução original;
-// 6. tomadas, fila e manifesto — o manifesto por último: partida sem manifesto não existe.
+// 6. com a detecção ligada, os pontos do detector da pasta `modelos/` em cada quadro que começa da
+//    previsão (os "sem previsão" e os da dupla às cegas ficam do zero) — se a detecção falhar, a
+//    importação segue sem ela (as previsões podem ser geradas depois, na página da partida);
+// 7. tomadas, fila e manifesto — o manifesto por último: partida sem manifesto não existe;
+// 8. a partida no conjunto escolhido (o `divisao.json`).
 //
-// Uma partida que ninguém começou a usar (sem rótulos, revisões, recortes nem previsões) pode ser
-// importada de novo: a importação anterior é apagada inteira e tudo é refeito.
+// Uma partida que ninguém começou a usar (sem rótulos, revisões nem recortes) pode ser importada de
+// novo: a importação anterior é apagada inteira (as previsões também) e tudo é refeito.
 
 import { Aleatorio } from "../nucleo/aleatorio.js";
 import { VERSAO, arredondarPar, idPartida } from "../nucleo/convencoes.js";
 import { arredondar, mediana } from "../nucleo/estatistica.js";
-import { validar } from "../nucleo/formatos.js";
+import { CONJUNTOS, validar } from "../nucleo/formatos.js";
 import { Sha256 } from "../nucleo/hash.js";
 import { formatarTempo } from "../nucleo/trechos.js";
 import {
@@ -31,6 +35,7 @@ import {
 } from "./cortes.js";
 import { ALTURA, LARGURA, descrever, distanciaEstrutura, qui2 } from "./descritores.js";
 import { ErroVideo, abrirMp4, apresentacao, leitorDeArquivo } from "./mp4.js";
+import { ErroDetector, abrirDetector, preverQuadros } from "./previsao.js";
 import { PARAMETROS, elegiveis, sortear } from "./sorteio.js";
 
 /** A partida já existe. `podeSubstituir`: ninguém começou a usá-la, então dá para importar de novo. */
@@ -42,12 +47,12 @@ export class PartidaJaExiste extends Error {
   }
 }
 
-// o que, numa partida já importada, é trabalho de alguém (e impede importar de novo)
+// o que, numa partida já importada, é trabalho de alguém (e impede importar de novo); as previsões são
+// do detector e se refazem
 const TRABALHO = [
   ["rotulos", "rótulos"],
   ["revisoes", "revisões"],
   ["recortes", "recortes de placas"],
-  ["previsoes", "previsões"],
 ];
 
 async function temArquivo(pasta, caminho) {
@@ -565,6 +570,8 @@ async function extrair(leitor, faixa, ap, config, alvos, gravar, { aoProgresso, 
  * Importa um vídeo (File) para a pasta. `cadastro`: estádio (o nome, que entra no ID da partida),
  * emissora, competição, data e hora (ISO com fuso), mandante, visitante, iluminação, chuva e
  * observações. `trechos`: [[início, fim], ...] em segundos, ou null para o vídeo inteiro.
+ * `conjunto`: em que conjunto da divisão a partida entra (treino, validacao, teste_congelado ou
+ * teste_externo). `modelo`: a pasta do detector em `modelos/` para a detecção, ou null (sem detecção).
  * `substituir`: se a partida já existe e ninguém começou a usá-la, apaga a importação anterior e
  * importa de novo.
  */
@@ -574,11 +581,14 @@ export async function importarVideo({
   cadastro,
   trechos = null,
   alvo = PARAMETROS.alvo,
+  conjunto = "treino",
+  modelo = null,
   substituir = false,
   aoProgresso = () => {},
   sinal = null,
 }) {
   const t0 = performance.now();
+  if (!CONJUNTOS.includes(conjunto)) throw new Error(`conjunto desconhecido: ${conjunto}`);
   const pid = idPartida(cadastro.data_hora, cadastro.estadio, cadastro.mandante, cadastro.visitante);
   const jaExiste = await pasta.existe(pasta.manifesto(pid));
   if (jaExiste) await conferirSubstituicao(pasta, pid, substituir);
@@ -603,13 +613,37 @@ export async function importarVideo({
   }
   await marca.renovar(true);
   try {
-    return await importarComMarca({ pasta, arquivo, cadastro, trechos, alvo, aoProgresso, sinal, t0, pid, marca });
+    return await importarComMarca({ pasta, arquivo, cadastro, trechos, alvo, conjunto, modelo, aoProgresso, sinal, t0, pid, marca });
   } finally {
     await marca.tirar();
   }
 }
 
-async function importarComMarca({ pasta, arquivo, cadastro, trechos, alvo, aoProgresso: avisar, sinal, t0, pid, marca }) {
+/**
+ * A detecção na importação: os pontos do modelo nos quadros extraídos. Se o modelo não abre (ou falha logo
+ * nos primeiros quadros), devolve o erro e a importação segue sem previsões.
+ */
+async function detectar({ pasta, pid, itens, modelo, aoProgresso, sinal, antesDeGravar }) {
+  aoProgresso("preparando a detecção", 0);
+  let detector;
+  try {
+    detector = await abrirDetector(pasta, modelo);
+  } catch (e) {
+    if (!(e instanceof ErroDetector)) throw e;
+    return { modelo: null, erro: e.message, previstos: 0, pontos: 0, ficaram_do_zero: 0, falhas: 0, segundos: 0 };
+  }
+  try {
+    const r = await preverQuadros(pasta, pid, itens, detector, { aoProgresso: (f) => aoProgresso("prevendo os pontos", f), sinal, antesDeGravar });
+    return { modelo: detector.id, ...r, erro: r.falhas ? `${r.falhas} quadro(s) sem previsão: ${r.erro}` : null };
+  } catch (e) {
+    if (!(e instanceof ErroDetector)) throw e;
+    return { modelo: detector.id, erro: e.message, previstos: 0, pontos: 0, ficaram_do_zero: 0, falhas: 0, segundos: 0 };
+  } finally {
+    await detector.fechar().catch(() => {});
+  }
+}
+
+async function importarComMarca({ pasta, arquivo, cadastro, trechos, alvo, conjunto, modelo, aoProgresso: avisar, sinal, t0, pid, marca }) {
   const aoProgresso = (etapa, frac) => {
     avisar(etapa, frac);
     marca.renovar().catch(() => {}); // no máximo uma vez por minuto; se falhar, tenta na próxima
@@ -684,6 +718,7 @@ async function importarComMarca({ pasta, arquivo, cadastro, trechos, alvo, aoPro
     throw new ErroVideo(`${naoExtraidos} de ${sorteados.length} quadros sorteados não puderam ser extraídos; ${DICA}`);
   }
   const [largura, altura] = tamanhos.size ? [...tamanhos.values()][0] : lido.tamanho;
+  const deteccao = modelo ? await detectar({ pasta, pid, itens, modelo, aoProgresso, sinal, antesDeGravar: conferirQueNinguemImportou }) : null;
 
   aoProgresso("gravando a partida", 0);
   await conferirQueNinguemImportou();
@@ -749,6 +784,13 @@ async function importarComMarca({ pasta, arquivo, cadastro, trechos, alvo, aoPro
     parametros.trechos = trechos.map(([a, b]) => `${arredondar(a, 1)}-${arredondar(b, 1)}`).join(";");
     parametros.quadros_nos_trechos = plano.n_dentro;
   }
+  if (deteccao) {
+    parametros.deteccao = deteccao.modelo ?? "falhou";
+    parametros.deteccao_quadros = deteccao.previstos;
+    parametros.deteccao_segundos = arredondar(deteccao.segundos, 1);
+    if (deteccao.erro) parametros.deteccao_erro = deteccao.erro.slice(0, 300);
+  }
+  const previsor = deteccao?.previstos ? deteccao.modelo : null;
   await pasta.gravar("manifesto", pasta.manifesto(pid), {
     formato: "manifesto.partida/1",
     partida: pid,
@@ -763,8 +805,15 @@ async function importarComMarca({ pasta, arquivo, cadastro, trechos, alvo, aoPro
       altura,
       n_quadros: n,
     },
-    pre_processamento: { ferramenta: VERSAO, criado_em: agora, segundos: arredondar(segundos, 2), parametros, previsor: null },
+    pre_processamento: { ferramenta: VERSAO, criado_em: agora, segundos: arredondar(segundos, 2), parametros, previsor },
   });
+  // a divisão por último: a partida já existe; se não der para gravar, a importação vale e o aviso diz
+  let divisaoErro = null;
+  try {
+    await pasta.definirConjunto(pid, conjunto);
+  } catch (e) {
+    divisaoErro = e?.message || String(e);
+  }
   aoProgresso("pronto", 1);
   return {
     partida: pid,
@@ -776,6 +825,9 @@ async function importarComMarca({ pasta, arquivo, cadastro, trechos, alvo, aoPro
     n_sorteio: sorteados.length,
     n_sorteados: itens.length,
     n_nao_extraidos: naoExtraidos,
+    conjunto,
+    divisao_erro: divisaoErro,
+    deteccao,
     segundos,
   };
 }

@@ -2,3 +2,7 @@
 *.jpg binary
 *.png binary
 *.parquet binary
+*.onnx binary
+*.wasm binary
+# o ONNX Runtime Web fica como saiu do npm (os sha256 em VERSAO.json)
+web/vendor/** -text

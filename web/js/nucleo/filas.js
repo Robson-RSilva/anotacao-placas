@@ -25,6 +25,7 @@ import { Aleatorio } from "./aleatorio.js";
 import { PARTIDA_GABARITO } from "./convencoes.js";
 import { REGRA, gabaritoDaPessoa, liberacao, nTreino, resultados } from "./gabarito.js";
 import { sha256Hex } from "./hash.js";
+import { pedePrevisao } from "./modelos.js";
 
 export const INTERVALO_GABARITO = 15;
 
@@ -140,7 +141,8 @@ async function itemDoGabarito(indice, tarefa, pessoa, g, treino) {
 
 /**
  * De onde a imagem começa: a versão devolvida, a previsão de um modelo ou nada. Devolve {inicio,
- * partiu_de}; `inicio` é a lista de pontos (pontos) ou o caminho de uma máscara (placas), ou null.
+ * partiu_de}; `inicio` é a lista de pontos (pontos) ou o caminho de uma máscara (placas), ou null. Os
+ * itens "sem previsão" e os da dupla às cegas começam do zero mesmo quando há previsão (pedePrevisao).
  */
 async function comecarDe(indice, tarefa, partida, item, anterior) {
   const pasta = indice.pasta;
@@ -149,7 +151,7 @@ async function comecarDe(indice, tarefa, partida, item, anterior) {
     if (tarefa === "pontos") return { inicio: anterior.dados.pontos, partiu_de: partiu };
     return { inicio: anterior.dados.mascara ? `${pasta.rotulos(partida, tarefa)}/${anterior.dados.mascara}` : null, partiu_de: partiu };
   }
-  if (!item.sem_previsao) {
+  if (pedePrevisao(item)) {
     if (tarefa === "pontos") {
       let prev = null;
       try {

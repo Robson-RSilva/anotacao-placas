@@ -35,6 +35,7 @@ from anotacao.formatos import (
     ItemRecorte,
     LoteRecortes,
     Manifesto,
+    PrevisaoPontos,
     RevisaoPontos,
     RotuloPlacas,
     RotuloPontos,
@@ -60,6 +61,7 @@ pytestmark = pytest.mark.e2e
 playwright = pytest.importorskip("playwright.sync_api")
 
 WEB = Path(__file__).resolve().parents[2] / "web"
+DETECTOR = Path(__file__).resolve().parents[1] / "fixtures" / "detector"
 PARTIDA = "2026-11-02_estadio-sintetico_time-a-time-b"
 
 
@@ -178,6 +180,22 @@ def _importar(pagina, site: str, video: Path, trechos: str = "") -> None:
     pagina.click("#ir-importar")
     _preencher_importacao(pagina, video, trechos)
     assert _processar(pagina) == ""
+
+
+def _copiar_modelo(pagina, nome: str = "detector-teste") -> dict:
+    """Põe o detector dos testes (uma rede pequena, de pesos sorteados, exportada pelo laboratório) em
+    modelos/ da pasta, como quem treina copia a pasta exportada. Devolve o cartão."""
+    for arquivo in ("cartao.json", "detector.onnx"):
+        pagina.evaluate(
+            """async ([c, b64]) => {
+                const s = atob(b64);
+                const u = new Uint8Array(s.length);
+                for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i);
+                await anotacao.pasta.escrever(c, u, { sobrescrever: true });
+            }""",
+            [f"modelos/{nome}/{arquivo}", base64.b64encode((DETECTOR / arquivo).read_bytes()).decode()],
+        )
+    return json.loads((DETECTOR / "cartao.json").read_text(encoding="utf-8"))
 
 
 def _escolher_pessoa(pagina, url: str, codigo: str) -> None:
@@ -1414,6 +1432,116 @@ def _gravar_fila(pagina, fila: Fila) -> None:
     pagina.evaluate("async ([c, o]) => await anotacao.pasta.gravar('fila', c, o, {sobrescrever: true})", [caminho, obj])
 
 
+def _previsao(pagina, quadro: str) -> PrevisaoPontos | None:
+    caminho = f"partidas/{PARTIDA}/previsoes/pontos/{quadro}.json"
+    if not pagina.evaluate("async (c) => await anotacao.pasta.existe(c)", caminho):
+        return None
+    return PrevisaoPontos.model_validate_json(_ler(pagina, caminho))
+
+
+def test_importar_com_a_deteccao(site, video, navegador, capturas):
+    """Com um detector em modelos/, a importação grava os pontos dele em cada quadro (a rede roda no
+    navegador, no ONNX Runtime Web) e põe a partida no conjunto escolhido; quem anota começa dos pontos.
+    O JPEG que a rede vê é o mesmo que o OpenCV lê. Na página da partida, "Gerar previsões" faz o que
+    falta, sem mexer nos quadros que já têm rótulo nem nos que ficam do zero."""
+    caminho, _ = video
+    erros: list[str] = []
+    pagina = _pagina(navegador, erros)
+    dialogos: list[str] = []
+    pagina.on("dialog", lambda d: dialogos.append(d.message))  # _pagina já aceita
+    _criar_pasta(pagina, site)
+    _escolher_pessoa(pagina, site, "A01")
+    cartao = _copiar_modelo(pagina)
+    sha12 = cartao["arquivos"]["sha256_onnx"][:12]
+    modelo = f"detector-teste@{sha12}"
+
+    # 1) o formulário: o conjunto e, ao lado, a detecção — ligada, menos no teste
+    pagina.click("#ir-importar")
+    pagina.wait_for_selector("#nome-modelo:has-text('detector-teste')")
+    assert pagina.is_checked("#deteccao") and pagina.is_enabled("#deteccao")
+    pagina.select_option("#conjunto", "teste_congelado")
+    assert not pagina.is_checked("#deteccao")
+    assert "No teste, a recomendação é anotar do zero" in pagina.inner_text("#dica-deteccao")
+    pagina.select_option("#conjunto", "validacao")
+    assert pagina.is_checked("#deteccao")
+    _preencher_importacao(pagina, caminho)
+    assert _processar(pagina) == ""
+    texto = pagina.inner_text("#res-importar")
+    assert f"Detecção ({modelo}): 3 quadros chegaram com pontos" in texto, texto
+    assert "Conjunto: validação." in texto
+    pagina.screenshot(path=str(capturas / "importar_com_deteccao.png"))
+
+    fila = Fila.model_validate_json(_ler(pagina, f"partidas/{PARTIDA}/fila.json"))
+    man = Manifesto.model_validate_json(_ler(pagina, f"partidas/{PARTIDA}/manifesto.json"))
+    q = [it.quadro for it in fila.itens]
+    assert len(q) == 3 and man.pre_processamento.previsor == modelo
+    par = man.pre_processamento.parametros
+    assert par["deteccao"] == modelo and par["deteccao_quadros"] == 3 and "deteccao_erro" not in par
+    assert json.loads(_ler(pagina, "divisao.json"))["validacao"] == [PARTIDA]
+    marcaveis = set(cartao["contrato"]["nomes"]["marcaveis"])
+    previsoes = {k: _previsao(pagina, k) for k in q}
+    for k, p in previsoes.items():
+        assert (p.fonte, p.versao, p.quadro) == ("detector-teste", sha12, k)
+        assert p.pontos and all(x.ponto in marcaveis and 0 <= x.x <= 640 and 0 <= x.y <= 360 for x in p.pontos)
+
+    # 2) a imagem que a rede vê: o JPEG decodificado pelo navegador é o do OpenCV
+    jpg = _bytes(pagina, f"partidas/{PARTIDA}/quadros/{q[0]}.jpg")
+    rgba = pagina.evaluate(
+        """async (c) => {
+            const { pixelsDoQuadro } = await import("./js/video/previsao.js");
+            const { rgba } = await pixelsDoQuadro(await anotacao.pasta.arquivo(c));
+            let s = "";
+            for (let i = 0; i < rgba.length; i += 0x8000) s += String.fromCharCode(...rgba.subarray(i, i + 0x8000));
+            return btoa(s);
+        }""",
+        f"partidas/{PARTIDA}/quadros/{q[0]}.jpg",
+    )
+    no_navegador = np.frombuffer(base64.b64decode(rgba), np.uint8).reshape(360, 640, 4)[..., 2::-1]
+    no_opencv = cv2.imdecode(np.frombuffer(jpg, np.uint8), cv2.IMREAD_COLOR)
+    assert np.abs(no_navegador.astype(int) - no_opencv.astype(int)).max() <= 1
+
+    # 3) quem anota começa dos pontos do detector
+    pagina.goto(site + "#/pontos")
+    pagina.wait_for_selector("#painel:not([hidden])")
+    pagina.wait_for_function("window.itemPontos && window.itemPontos.quadro")
+    agora = pagina.evaluate("window.itemPontos.quadro")
+    assert "Começa com os pontos de um modelo" in pagina.inner_text("#partiu")
+    marcados = sorted((x["ponto"], x["x"], x["y"]) for x in pagina.evaluate("marcador.lista()"))
+    assert marcados == sorted((x.ponto, x.x, x.y) for x in previsoes[agora].pontos)
+
+    # 4) "Gerar previsões": q0 ganha um rótulo, q2 passa a "sem previsão", e as três previsões somem
+    _gravar_rotulo_pontos(pagina, q[0], "A02", {"centro": (320.0, 180.0)})
+    fila.itens[2].sem_previsao = True
+    _gravar_fila(pagina, fila)
+    for k in q:
+        pagina.evaluate("async (c) => await anotacao.pasta.apagar(c)", f"partidas/{PARTIDA}/previsoes/pontos/{k}.json")
+    pagina.goto(site + f"#/partida?id={PARTIDA}")
+    pagina.wait_for_selector("#ficha-partida:not([hidden])")
+    assert "0 de 3" in pagina.inner_text("#dados-partida")
+    pagina.click("#prever-partida")
+    pagina.wait_for_selector("#res-partida:has-text('os pontos do')", timeout=60_000)
+    assert pagina.inner_text("#res-partida") == (
+        f"1 quadro ganhou os pontos do {modelo}; 1 já tem rótulo e fica como está; "
+        "1 fica do zero (sem previsão ou dupla às cegas)."
+    )
+    assert [_previsao(pagina, k) is not None for k in q] == [False, True, False]
+    pagina.wait_for_selector("#dados-partida:has-text('1 de 3')")
+    # de novo: a previsão que já é deste modelo fica
+    pagina.click("#prever-partida")
+    pagina.wait_for_selector("#res-partida:has-text('já tinha')", timeout=60_000)
+    assert pagina.inner_text("#res-partida").startswith(f"0 quadros ganharam os pontos do {modelo}; 1 já tinha")
+
+    # 5) no teste, pergunta antes (e, com o sim, gera)
+    pagina.evaluate(f"async () => await anotacao.pasta.definirConjunto('{PARTIDA}', 'teste_congelado')")
+    pagina.reload()
+    pagina.wait_for_selector("#ficha-partida:not([hidden])")
+    assert "teste congelado" in pagina.inner_text("#dados-partida")
+    pagina.click("#prever-partida")
+    pagina.wait_for_selector("#res-partida:has-text('já tinha')", timeout=60_000)
+    assert any("Esta partida está no teste congelado" in d for d in dialogos), dialogos
+    assert not erros, erros
+
+
 def test_camera_dos_rotulos(site, video, navegador, capturas):
     """A câmera dos rótulos: a página da partida mede o campo pelos rótulos e aponta o quadro com um ponto
     fora do lugar (com o campo projetado e a seta no visor) e o da câmera do outro lado; a página de marcar
@@ -1770,7 +1898,8 @@ def test_campo_de_numero_aceita_o_que_se_digita(site, video, navegador):
 
 def test_politica_de_seguranca_nao_bloqueia_nada(site, video, navegador):
     """Com a CSP ligada (os outros testes a desligam para poder rodar JavaScript na página), as vistas
-    abrem e a importação roda no worker sem nenhuma violação nem erro no console."""
+    abrem e a importação roda no worker, com a detecção (o ONNX Runtime em WebAssembly), sem nenhuma
+    violação nem erro no console."""
     contexto = navegador.new_context(viewport={"width": 1400, "height": 860})
     pagina = contexto.new_page()
     avisos: list[str] = []
@@ -1784,18 +1913,22 @@ def test_politica_de_seguranca_nao_bloqueia_nada(site, video, navegador):
     pagina.fill("#pessoa", "A01")
     pagina.press("#pessoa", "Enter")
     pagina.wait_for_selector("#st-pontos:has-text('Pode anotar')")
+    _copiar_modelo(pagina)  # pelo protocolo do navegador, que a CSP não bloqueia
     pagina.goto(site + "#/importar")
+    pagina.wait_for_selector("#nome-modelo:has-text('detector-teste')")
     _preencher_importacao(pagina, video[0], "0:01-0:05")
     pagina.click("#processar")
     pagina.wait_for_selector("#res-importar:has-text('Pronto'), #erro-importar:not(:empty)", timeout=120_000)
     assert pagina.inner_text("#erro-importar") == ""
+    assert "Detecção (detector-teste@" in pagina.inner_text("#res-importar")
     for rota, seletor in [
         ("#/pontos", "#painel:not([hidden]) .mapa, #vazio:not([hidden])"),
         ("#/placas", "#painel:not([hidden]), #vazio:not([hidden])"),
         ("#/revisao-pontos", "#vazio:not([hidden])"),
         ("#/revisao-placas", "#vazio:not([hidden])"),
         ("#/gabarito", "#lotes tbody td"),
-        ("#/coordenacao", "#equipe"),
+        ("#/coordenacao", "#st-modelos:has-text('detector-teste@')"),
+        (f"#/partida?id={PARTIDA}", "#dados-partida:has-text('Quadros com previsão')"),
         ("#/", "#placar tbody td"),
     ]:
         pagina.goto(site + rota)
@@ -1855,6 +1988,10 @@ def test_funciona_sem_internet(site_montado, navegador):
         "caches.open('anotacao-site').then((c) => c.keys())"
         ".then((k) => k.some((r) => r.url.endsWith('trabalhador.js')))"
     )
+    # o ONNX Runtime também fica guardado: a detecção roda sem internet
+    guardado = "async (a) => Boolean(await caches.match(`vendor/onnxruntime-web/${a}`))"
+    for arquivo in ("ort.wasm.bundle.min.js", "ort-wasm-simd-threaded.wasm"):
+        assert pagina.evaluate(guardado, arquivo), arquivo
     pagina.context.set_offline(True)
     pagina.reload()
     pagina.wait_for_selector("#btn-navegador")

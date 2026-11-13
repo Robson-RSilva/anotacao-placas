@@ -41,9 +41,17 @@ passa.
 - **Só dados de treino** (ADR-0003). Uma tarefa nova só entra se o que ela grava treina ou testa um
   modelo.
 - **Código próprio.** Nada de código, pesos, anotações ou avaliadores de repositórios públicos de
-  calibração; só bibliotecas gerais. As páginas não têm dependências de front-end.
+  calibração; só bibliotecas gerais. As páginas não têm dependências de front-end; a única biblioteca que
+  vem junto é o motor de inferência do detector, o ONNX Runtime Web (`web/vendor/onnxruntime-web/`, MIT),
+  como saiu do npm: para trocar de versão, `python scripts/onnxruntime_web.py <versão>` (confere a
+  integridade e grava os sha256 que `tests/test_onnxruntime_web.py` confere).
 - **A página não fala com a internet.** Nada de CDN, análise de uso ou envio de dados: a CSP do
   `index.html` só permite o próprio site.
+- **O detector como o do laboratório.** A preparação da imagem e a decodificação (`web/js/nucleo/detector.js`)
+  são as do `modelo.py` que o exposicao-treino exporta, conferidas contra os casos de
+  `tests/fixtures/detector/`. Mudou o `preparar` ou o `Detector` lá, rode `python scripts/casos_do_detector.py`
+  no ambiente do exposicao-treino e ajuste até `node --test tests/js/detector.test.js` passar. Os casos usam
+  uma rede pequena de pesos sorteados: nenhum modelo treinado vai para o repositório.
 - **Formato mudou, versão muda.** Mudar um modelo em `formatos.py` exige subir o sufixo do formato
   quando quebra arquivos antigos (`rotulo.pontos/2`), atualizar `docs/formatos.md` e regenerar os
   arquivos das páginas: `python scripts/gerar_arquivos_web.py` (há um teste que confere). Regras entre
@@ -64,7 +72,8 @@ passa.
   da 0.9: um item com o id de outro que já está na pasta não é importado). As faixas g5xxx e g6xxx são
   do gabarito arbitrado: o botão da central (`web/js/nucleo/ouro.js`) e o `anotacao ouro`
   (`src/anotacao/ouro.py`) montam os mesmos itens — mudou um, mude o outro (o e2e compara os dois).
-- **Nunca dados no Git.** Vídeos, quadros, rótulos e conjuntos ficam na pasta de trabalho do Drive.
-  Os únicos vídeos do repositório são os de teste, de poucos KB, em `tests/fixtures/video/`.
+- **Nunca dados no Git.** Vídeos, quadros, rótulos, conjuntos e modelos treinados ficam na pasta de
+  trabalho do Drive (os modelos em `modelos/`). Os únicos vídeos do repositório são os de teste, de poucos
+  KB, em `tests/fixtures/video/`.
 - **Manual junto.** Regra de anotação nova vai primeiro para o Manual de anotação, com versão; a
   versão que a ferramenta grava em cada rótulo está em `convencoes.py` e `convencoes.js` (`MANUAL`).

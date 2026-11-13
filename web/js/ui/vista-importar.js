@@ -1,7 +1,8 @@
-// Vista "Importar partida": cadastro e vídeo; o processamento roda num worker, que continua mesmo
-// quando a pessoa volta para a página central.
+// Vista "Importar partida": cadastro e vídeo, o conjunto da partida e a detecção; o processamento roda num
+// worker, que continua mesmo quando a pessoa volta para a página central.
 
 import { isoComFuso, slug } from "../nucleo/convencoes.js";
+import { listarModelos } from "../nucleo/modelos.js";
 import { ErroTrechos, lerTrechos } from "../nucleo/trechos.js";
 import { el, formatarDuracao, lerInteiro, mensagemDeErro, numero } from "./util.js";
 
@@ -43,6 +44,9 @@ function iniciarImportacao(ctx, mensagem) {
 
 const contar = (n, um, varios) => `${numero(n, 0)} ${n === 1 ? um : varios}`;
 
+const NOMES_CONJUNTOS = { treino: "treino", validacao: "validação", teste_congelado: "teste congelado", teste_externo: "teste externo" };
+const ehTeste = (conjunto) => conjunto === "teste_congelado" || conjunto === "teste_externo";
+
 /** O resumo da importação: o que foi lido, o que saiu e quanto tempo levou. */
 function resumo(r) {
   const tomadas = contar(r.n_tomadas, "tomada", "tomadas");
@@ -62,6 +66,19 @@ function resumo(r) {
   if (r.n_nao_extraidos) {
     frases.push(`${contar(r.n_nao_extraidos, "quadro sorteado não pôde ser extraído", "quadros sorteados não puderam ser extraídos")} e ficou de fora.`);
   }
+  const d = r.deteccao;
+  if (d && d.previstos) {
+    const zero = d.ficaram_do_zero ? ` (${contar(d.ficaram_do_zero, "ficou", "ficaram")} do zero: sem previsão ou dupla às cegas)` : "";
+    frases.push(`Detecção (${d.modelo}): ${contar(d.previstos, "quadro chegou", "quadros chegaram")} com pontos, ${numero(d.pontos / d.previstos, 1)} por quadro${zero}, em ${formatarDuracao(d.segundos)}.`);
+    if (d.erro) frases.push(`${d.erro}.`);
+  } else if (d) {
+    frases.push(`A detecção não rodou (${d.erro || "nenhum quadro pedia previsão"}): dá para gerar as previsões depois, na página da partida.`);
+  }
+  frases.push(
+    r.divisao_erro
+      ? `A partida não entrou na divisão (${r.divisao_erro}): marque o conjunto dela na coordenação.`
+      : `Conjunto: ${NOMES_CONJUNTOS[r.conjunto] ?? r.conjunto}.`,
+  );
   frases.push(`A importação levou ${formatarDuracao(r.segundos)}.`);
   return frases.join(" ");
 }
@@ -85,9 +102,48 @@ export async function montar(raiz, ctx) {
     $("processar").disabled = true;
   }
 
+  // ------------------------------------------------------------------ o conjunto e a detecção
+  let modelo = null; // o modelo de `modelos/` que a detecção usa (o mais novo que dá para usar)
+  let semModelo = "procurando os modelos da pasta…";
+  function mostrarDeteccao({ mudouConjunto = false } = {}) {
+    const caixa = $("deteccao");
+    const conjunto = form.elements.conjunto.value;
+    if (mudouConjunto) caixa.checked = Boolean(modelo) && !ehTeste(conjunto); // no teste, a recomendação é do zero
+    caixa.disabled = !modelo || Boolean(ctx.importacao?.worker);
+    if (!modelo) caixa.checked = false;
+    $("nome-modelo").textContent = modelo ? `(${modelo.nome})` : "";
+    const frases = [];
+    if (!modelo) frases.push(semModelo);
+    else if (caixa.checked) {
+      frases.push(`Os quadros chegam com os pontos do ${modelo.nome} de escore 0,5 ou mais, para quem anota conferir e corrigir; os "sem previsão" e os da dupla às cegas ficam do zero. Leva cerca de 1 s por quadro, na CPU.`);
+    } else frases.push("Sem detecção: os quadros chegam sem pontos.");
+    if (ehTeste(conjunto)) {
+      frases.push("No teste, a recomendação é anotar do zero: os pontos sugeridos puxam o clique para onde o modelo pôs, justo na margem que decide se uma câmera conta como certa.");
+    }
+    $("dica-deteccao").textContent = frases.join(" ");
+  }
+  async function procurarModelos() {
+    try {
+      const lista = await listarModelos(ctx.pasta);
+      modelo = lista.find((m) => !m.erro) ?? null;
+      const quebrado = lista.find((m) => m.erro);
+      semModelo = quebrado
+        ? `Sem detecção: modelos/${quebrado.nome}: ${quebrado.erro}.`
+        : 'Sem detecção: não há modelo em "modelos" na pasta da equipe. Para os quadros chegarem com os pontos, copie para lá a pasta que o laboratório exporta (exportados/<nome>, com o detector.onnx).';
+    } catch (e) {
+      modelo = null;
+      semModelo = `Sem detecção: não consegui ler os modelos da pasta (${mensagemDeErro(e)}).`;
+    }
+    mostrarDeteccao({ mudouConjunto: true });
+  }
+  form.elements.conjunto.onchange = () => mostrarDeteccao({ mudouConjunto: true });
+  $("deteccao").onchange = () => mostrarDeteccao();
+
   function mostrar(job) {
     const rodando = Boolean(job?.worker);
-    for (const campo of form.elements) if (campo.id !== "cancelar") campo.disabled = rodando || (campo.id === "processar" && !suportado);
+    for (const campo of form.elements) {
+      if (campo.id !== "cancelar") campo.disabled = rodando || (campo.id === "processar" && !suportado) || (campo.id === "deteccao" && !modelo);
+    }
     $("cancelar").hidden = !rodando;
     $("substituir").hidden = rodando || !job?.podeSubstituir;
     $("progresso").hidden = !job;
@@ -113,6 +169,8 @@ export async function montar(raiz, ctx) {
     mostrar(job);
   };
   if (ctx.importacao) acompanhar(ctx.importacao);
+  mostrarDeteccao();
+  procurarModelos();
 
   /** Lê o formulário e começa a importação; `substituir`: apaga a importação anterior desta partida. */
   function enviar(substituir) {
@@ -155,8 +213,10 @@ export async function montar(raiz, ctx) {
       chuva: f.get("chuva") === "on",
       observacoes: String(f.get("observacoes") || "").trim(),
     };
+    const conjunto = String(f.get("conjunto") || "treino");
+    const usarModelo = modelo && $("deteccao").checked ? modelo.nome : null;
     $("res-importar").textContent = "";
-    acompanhar(iniciarImportacao(ctx, { arquivo, cadastro, trechos, alvo, substituir }));
+    acompanhar(iniciarImportacao(ctx, { arquivo, cadastro, trechos, alvo, conjunto, modelo: usarModelo, substituir }));
   }
 
   form.onsubmit = (e) => {

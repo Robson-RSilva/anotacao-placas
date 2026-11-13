@@ -1,7 +1,9 @@
 // Vista "Partida": o que uma partida importada tem — os quadros sorteados e os recortes das placas, com as
 // anotações desenhadas por cima; cada versão de cada rótulo, com as revisões; os arquivos — e o que se
 // faz com ela: editar uma anotação (na página de marcar ou na de pintar), excluir quadros, recortes, um
-// lote ou a partida inteira, e baixar tudo num .zip.
+// lote ou a partida inteira, baixar tudo num .zip e gerar as previsões do detector (os pontos de um modelo
+// da pasta `modelos/`, nos quadros que ainda não têm rótulo — num worker, que continua se a pessoa sair
+// da página).
 //
 // #/partida?id=<partida>[&aba=quadros|recortes|arquivos][&ver=<quadro ou recorte>]
 //
@@ -21,6 +23,7 @@ import {
   situacaoDoItem,
 } from "../nucleo/partida.js";
 import { MOTIVOS } from "../nucleo/formatos.js";
+import { modeloEmUso } from "../nucleo/modelos.js";
 import { exportarZip } from "../nucleo/transferencia.js";
 import { formatarTempo as tempoDoVideo } from "../nucleo/trechos.js";
 import { CAMPO_PADRAO, NIVEIS, camadaDoCampo, conferirPartida, conferirRotulo, pontosQueValem, resumoDaConferencia, soRobustos, textoDaCamera } from "./conferencia.js";
@@ -33,6 +36,7 @@ const MINIATURA = 320; // px de largura das miniaturas
 const COR_PONTO = "#4fc3f7";
 const PARTIU = { nenhuma: "do zero", modelo: "de um modelo", rotulo_anterior: "da versão anterior", rotulo_revisado: "de outro rótulo (correção)" };
 const DECISAO = { aprovar: "aprovado", corrigir: "corrigido", devolver: "devolvido" };
+const CONJUNTO = { treino: "treino", validacao: "validação", teste_congelado: "teste congelado", teste_externo: "teste externo" };
 
 const plural = (n, um, varios) => `${numero(n, 0)} ${n === 1 ? um : varios}`;
 const dataHora = (iso) => new Date(iso).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
@@ -41,6 +45,52 @@ const tamanho = (b) => (b < 1024 ? `${b} B` : b < 2 ** 20 ? `${numero(b / 1024, 
 /** O tempo do quadro no vídeo, com o décimo de segundo: "2:00:47.4". */
 export function tempoDoQuadro(ptsMs) {
   return `${tempoDoVideo(Math.floor(ptsMs / 1000))}.${Math.floor((ptsMs % 1000) / 100)}`;
+}
+
+/** O resumo das previsões geradas pelo botão. */
+function textoDasPrevisoes(r) {
+  const partes = [`${plural(r.previstos, "quadro ganhou", "quadros ganharam")} os pontos do ${r.modelo}`];
+  if (r.mantidos) partes.push(`${plural(r.mantidos, "já tinha", "já tinham")} a previsão deste modelo`);
+  if (r.pulados) partes.push(`${plural(r.pulados, "já tem", "já têm")} rótulo e fica como está`);
+  if (r.ficaram_do_zero) partes.push(`${plural(r.ficaram_do_zero, "fica", "ficam")} do zero (sem previsão ou dupla às cegas)`);
+  if (r.sem_imagem) partes.push(`${plural(r.sem_imagem, "quadro ainda não tem", "quadros ainda não têm")} a imagem (sincronizando): gere de novo depois`);
+  if (r.falhas) partes.push(`${plural(r.falhas, "falhou", "falharam")} (${r.erro})`);
+  return `${partes.join("; ")}.`;
+}
+
+/** As previsões de uma partida num worker; o trabalho fica em `ctx.previsao` e continua fora da página. */
+function iniciarPrevisao(ctx, partida, modelo) {
+  const worker = new Worker(new URL("../video/trabalhador.js", import.meta.url), { type: "module" });
+  const job = { worker, partida, etapa: "começando", frac: 0, resultado: null, erro: null, ouvintes: new Set() };
+  ctx.previsao = job;
+  const avisar = () => {
+    for (const f of job.ouvintes) f();
+  };
+  const terminar = () => {
+    worker.terminate();
+    job.worker = null;
+    avisar();
+  };
+  worker.onmessage = (e) => {
+    const m = e.data;
+    if (m.tipo === "progresso") {
+      job.etapa = m.etapa;
+      job.frac = m.frac;
+      avisar();
+    } else if (m.tipo === "fim") {
+      job.resultado = m.resultado;
+      terminar();
+    } else if (m.tipo === "erro") {
+      job.erro = m.nome === "AbortError" ? "parou: os quadros que já tinham ganhado os pontos ficam com eles" : mensagemDeErro({ name: m.nome, message: m.mensagem });
+      terminar();
+    }
+  };
+  worker.onerror = (e) => {
+    job.erro = e.message || "falha ao gerar as previsões";
+    terminar();
+  };
+  worker.postMessage({ tipo: "prever", raiz: ctx.pasta.raiz, partida, modelo });
+  return job;
 }
 
 /** Uma lista de definição (dt/dd) com os pares [rótulo, valor] que têm valor. */
@@ -172,6 +222,7 @@ export async function montar(raiz, ctx) {
       const pp = m.pre_processamento;
       const par = pp.parametros ?? {};
       const fila = dados.fila?.itens.length;
+      const detectou = par.deteccao === undefined ? null : par.deteccao === "falhou" ? "falhou" : `${par.deteccao}`;
       bloco("Importação", [
         ["Em", dataHora(pp.criado_em)],
         ["Ferramenta", `v${pp.ferramenta}`],
@@ -180,6 +231,9 @@ export async function montar(raiz, ctx) {
         ["Quadros na fila", fila === undefined ? null : `${numero(fila, 0)}${par.sorteio_alvo ? ` (pedidos: ${numero(par.sorteio_alvo, 0)})` : ""}`],
         ["Tomadas", dados.tomadas ? numero(dados.tomadas.tomadas.length, 0) : null],
         ["Rajadas de cortes", par.rajadas ? numero(par.rajadas, 0) : null],
+        ["Detecção", detectou],
+        ["Conjunto", dados.conjunto ? CONJUNTO[dados.conjunto] : null],
+        ["Quadros com previsão", fila === undefined ? null : `${numero(dados.previsoes.size, 0)} de ${numero(fila, 0)}`],
       ]);
     }
     $("dados-partida").replaceChildren(...blocos);
@@ -583,6 +637,59 @@ export async function montar(raiz, ctx) {
     };
   }
 
+  // ------------------------------------------------------------------ as previsões do detector
+  let ouvintePrevisao = null;
+  function mostrarPrevisao(job) {
+    const rodando = Boolean(job?.worker);
+    $("prever-partida").disabled = rodando;
+    $("cancelar-previsao").hidden = !rodando;
+    if (rodando) status(`${job.etapa} ${Math.round(100 * (job.frac || 0))}%… (pode sair da página: continua nesta aba)`);
+    else if (job?.resultado) status(textoDasPrevisoes(job.resultado));
+    else if (job?.erro) status(`Previsões: ${job.erro}.`);
+  }
+  function acompanharPrevisao(job) {
+    if (ouvintePrevisao) ctx.previsao?.ouvintes.delete(ouvintePrevisao);
+    let rodava = Boolean(job.worker);
+    ouvintePrevisao = () => {
+      mostrarPrevisao(job);
+      if (rodava && !job.worker && vivo) recarregar(); // terminou: a ficha e os quadros mostram o que mudou
+      rodava = Boolean(job.worker);
+    };
+    job.ouvintes.add(ouvintePrevisao);
+    mostrarPrevisao(job);
+  }
+  if (ctx.previsao?.partida === pid) acompanharPrevisao(ctx.previsao);
+  $("prever-partida").onclick = async () => {
+    if (ctx.previsao?.worker) {
+      status(`Já há previsões sendo geradas nesta aba (${ctx.previsao.partida}): espere terminar.`);
+      return;
+    }
+    if (ctx.importacao?.worker) {
+      status("Há uma importação em andamento nesta aba: espere terminar.");
+      return;
+    }
+    let modelo = null;
+    try {
+      modelo = await modeloEmUso(pasta);
+    } catch (e) {
+      status(mensagemDeErro(e));
+      return;
+    }
+    if (!modelo) {
+      status('Não há modelo que a página consiga usar em "modelos" na pasta da equipe: copie para lá a pasta que o laboratório exporta (com o detector.onnx).');
+      return;
+    }
+    const conj = dados?.conjunto;
+    if (conj === "teste_congelado" || conj === "teste_externo") {
+      const ok = confirm(
+        `Esta partida está no ${CONJUNTO[conj]}. No teste, a recomendação é anotar do zero: os pontos sugeridos puxam o clique para onde o modelo pôs, justo na margem que decide se uma câmera conta como certa. Gerar as previsões mesmo assim?`,
+      );
+      if (!ok) return;
+    }
+    acompanharPrevisao(iniciarPrevisao(ctx, pid, modelo.nome));
+  };
+  $("cancelar-previsao").onclick = () => ctx.previsao?.worker?.postMessage({ tipo: "cancelar" });
+
   // ------------------------------------------------------------------ a partida inteira
   $("baixar-partida").onclick = async () => {
     status("montando o .zip…");
@@ -615,6 +722,10 @@ export async function montar(raiz, ctx) {
     if ($("nome-confirmacao").value.trim() !== pid) return;
     if (ctx.importacao?.worker) {
       status("Há uma importação em andamento nesta aba: espere terminar.");
+      return;
+    }
+    if (ctx.previsao?.worker && ctx.previsao.partida === pid) {
+      status("As previsões desta partida estão sendo geradas: pare ou espere terminar.");
       return;
     }
     $("excluir-de-vez").disabled = true;
@@ -968,6 +1079,7 @@ export async function montar(raiz, ctx) {
   return {
     desmontar() {
       vivo = false;
+      if (ouvintePrevisao) ctx.previsao?.ouvintes.delete(ouvintePrevisao);
       miniaturas?.disconnect();
       fecharVisor();
       window.removeEventListener("keydown", teclas);

@@ -1,0 +1,23 @@
+{
+ "pacote": "onnxruntime-web",
+ "versao": "1.31.1",
+ "licenca": "MIT",
+ "arquivos": {
+  "ort.wasm.bundle.min.js": {
+   "de": "https://registry.npmjs.org/onnxruntime-web/-/onnxruntime-web-1.31.1.tgz#package/dist/ort.wasm.bundle.min.mjs",
+   "sha256": "51bd7168175767324ab0acfcfc4ca94a096a3826e3ebac9ccc4f195eb865f8dd"
+  },
+  "ort-wasm-simd-threaded.wasm": {
+   "de": "https://registry.npmjs.org/onnxruntime-web/-/onnxruntime-web-1.31.1.tgz#package/dist/ort-wasm-simd-threaded.wasm",
+   "sha256": "4b884c203b0fa48d057be3332c65513ff85aa3c5bddd6946acc0fab7ecda001d"
+  },
+  "LICENSE": {
+   "de": "https://raw.githubusercontent.com/microsoft/onnxruntime/v1.31.1/LICENSE",
+   "sha256": "2f07c72751aed99790b8a4869cf2311df85a860b22ded05fa22803587a48922c"
+  },
+  "ThirdPartyNotices.txt": {
+   "de": "https://raw.githubusercontent.com/microsoft/onnxruntime/v1.31.1/ThirdPartyNotices.txt",
+   "sha256": "143764b952fdb1a7c69ce653bfba74a7744d6a8a573bfb73e235fba356c83de3"
+  }
+ }
+}

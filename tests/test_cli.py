@@ -258,13 +258,15 @@ def test_recortes_trazidos_para_a_partida(pasta, tmp_path, capsys):
 
 
 def test_prever_pontos(pasta, capsys):
-    fila = criar_partida(pasta, [{}, {"sem_previsao": True}, {}])
+    """Os pontos de cada quadro da fila, menos os "sem previsão" e os da dupla às cegas (ficam do zero)."""
+    fila = criar_partida(pasta, [{}, {"sem_previsao": True}, {}, {"dupla": True}])
     args = ["prever", "--tarefa", "pontos", "--pasta", str(pasta.raiz), "--previsor", "previsor_teste:PontosFixos"]
     assert main(args) == 0
     assert "2 previsões gravadas (fixo@1)" in capsys.readouterr().out
     p = ler_json(pasta.previsao_pontos(PARTIDA, fila.itens[0].quadro), PrevisaoPontos)
     assert p.fonte == "fixo" and [x.ponto for x in p.pontos] == ["centro", "meio_cab"]
     assert not pasta.previsao_pontos(PARTIDA, fila.itens[1].quadro).exists()
+    assert not pasta.previsao_pontos(PARTIDA, fila.itens[3].quadro).exists()
     assert main(args) == 0
     assert "0 previsões" in capsys.readouterr().out
     assert main([*args, "--refazer"]) == 0
@@ -272,13 +274,14 @@ def test_prever_pontos(pasta, capsys):
 
 
 def test_prever_placas(pasta, capsys):
-    """A pré-pintura de cada recorte (menos os "sem previsão"), só dentro da região da placa."""
+    """A pré-pintura de cada recorte (menos os "sem previsão" e os da dupla), só dentro da região da placa."""
     criar_partida(pasta, [{}], imagens=False)
-    rec = criar_recortes(pasta, 3, sem_previsao=(1,))
+    rec = criar_recortes(pasta, 4, sem_previsao=(1,), duplas=(3,))
     r = list(rec)
     args = ["prever", "--tarefa", "placas", "--pasta", str(pasta.raiz), "--previsor", "previsor_teste:MascaraFixa"]
     assert main(args) == 0
     assert "2 previsões gravadas (mascara-fixa@1)" in capsys.readouterr().out
+    assert not pasta.previsao_placas(PARTIDA, r[3]).exists()
     m = ler_png(pasta.previsao_placas(PARTIDA, r[0]))
     it = rec[r[0]]["item"]
     assert m.shape == (72, 240) and set(np.unique(m)) == {0, 1}

@@ -1,8 +1,10 @@
-// Vista "Coordenação" (opcional): nomes, projeto, gabarito (itens soltos) e divisão por partida.
+// Vista "Coordenação" (opcional): nomes, projeto, gabarito (itens soltos), divisão por partida e o detector
+// em uso (o modelo de `modelos/` que a importação roda).
 
 import { RE_GABARITO, codigoPessoa } from "../nucleo/convencoes.js";
 import { ErroFormato, conferir, conjuntoDe, tipoDoItem, validar } from "../nucleo/formatos.js";
 import { REGRA } from "../nucleo/gabarito.js";
+import { idDoModelo, listarModelos } from "../nucleo/modelos.js";
 import { ehPng } from "../nucleo/png.js";
 import { celula, el, linhaVazia, mensagemDeErro } from "./util.js";
 
@@ -157,9 +159,17 @@ export async function montar(raiz, ctx) {
     tDivisao.append(tr);
   }
   $("salvar-divisao").onclick = async () => {
+    let atual;
+    try {
+      atual = await pasta.lerDivisao(); // de novo: uma importação pode ter posto uma partida nova
+    } catch (e) {
+      $("erro-divisao").className = "erro";
+      $("erro-divisao").textContent = mensagemDeErro(e);
+      return;
+    }
     const nova = { formato: "divisao/1", validacao: [], teste_congelado: [], teste_externo: [] };
-    // partidas que não estão nesta pasta continuam onde estavam
-    for (const k of ["validacao", "teste_congelado", "teste_externo"]) nova[k] = divisao[k].filter((p) => !partidas.includes(p));
+    // partidas que não estão nesta tabela continuam onde estavam
+    for (const k of ["validacao", "teste_congelado", "teste_externo"]) nova[k] = atual[k].filter((p) => !partidas.includes(p));
     for (const sel of tDivisao.querySelectorAll("select")) if (sel.value !== "treino") nova[sel.value].push(sel.dataset.partida);
     const erros = conferir("divisao", nova);
     if (erros.length) {
@@ -176,4 +186,19 @@ export async function montar(raiz, ctx) {
       $("erro-divisao").textContent = mensagemDeErro(e);
     }
   };
+
+  // ------------------------------------------------------------------ o detector em uso
+  try {
+    const modelos = await listarModelos(pasta);
+    const emUso = modelos.find((m) => !m.erro);
+    const frases = [];
+    if (emUso) {
+      const quando = new Date(emUso.cartao.criado_em).toLocaleDateString("pt-BR");
+      frases.push(`Detector em uso na importação e no botão "Gerar previsões" da página da partida: ${idDoModelo(emUso.cartao)} (exportado em ${quando}).`);
+    } else frases.push('Nenhum detector em "modelos": a importação não faz a detecção.');
+    for (const m of modelos.filter((x) => x.erro)) frases.push(`modelos/${m.nome}: ${m.erro}.`);
+    $("st-modelos").textContent = frases.join(" ");
+  } catch (e) {
+    $("st-modelos").textContent = `Não consegui ler os modelos: ${mensagemDeErro(e)}.`;
+  }
 }

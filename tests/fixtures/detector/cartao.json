@@ -1,0 +1,309 @@
+{
+  "formato": "cartao-do-modelo/1",
+  "nome": "detector-teste",
+  "criado_em": "2026-11-13T02:30:05+00:00",
+  "exposicao_treino": "0.7.0",
+  "codigo_commit": "b9e292112037",
+  "arquivos": {
+    "pesos": "detector.pt",
+    "sha256_pesos": "f6f01f15b49a81fe488eabcafbf318867613f76def0f4e215dedf21074c934fc",
+    "modelo": "modelo.py",
+    "onnx": "detector.onnx",
+    "sha256_onnx": "a7b398163c80bc70f1562b63558d3f98402e3c34df7e3f5cd5de788690f8da39"
+  },
+  "origem": {
+    "pesos": "/tmp/tmps39wkgs5/execucao/melhor.pt",
+    "execucao": "execucao",
+    "epoca": 0,
+    "iteracao": 0,
+    "dados": {
+      "conjunto": null,
+      "hash": null,
+      "treino": null,
+      "validacao": null
+    },
+    "situacao_do_treino": null,
+    "maquina": {}
+  },
+  "contrato": {
+    "arquitetura": {
+      "classe": "MarkingNet",
+      "ch": [
+        8,
+        16,
+        16,
+        16,
+        16
+      ],
+      "coord": true,
+      "context": true,
+      "parametros": 73504
+    },
+    "entrada": {
+      "largura": 128,
+      "altura": 72,
+      "cor": "BGR (como o OpenCV lê)",
+      "escala": "pixel / 255, em [0, 1]",
+      "normalizacao": {
+        "media": [
+          0.4,
+          0.45,
+          0.4
+        ],
+        "desvio": [
+          0.25,
+          0.25,
+          0.25
+        ],
+        "onde": "dentro da rede"
+      },
+      "redimensionamento": "INTER_AREA do quadro inteiro para a largura da entrada; proporção diferente de 16:9 ganha faixas pretas centradas"
+    },
+    "saidas": {
+      "passo": 2,
+      "kp": {
+        "canais": 43,
+        "ativacao": "sigmoide",
+        "nomes": [
+          "canto_esq_cab",
+          "canto_esq_opo",
+          "canto_dir_cab",
+          "canto_dir_opo",
+          "meio_cab",
+          "meio_opo",
+          "ga_esq_fundo_cab",
+          "ga_esq_fundo_opo",
+          "ga_esq_frente_cab",
+          "ga_esq_frente_opo",
+          "ga_dir_fundo_cab",
+          "ga_dir_fundo_opo",
+          "ga_dir_frente_cab",
+          "ga_dir_frente_opo",
+          "pa_esq_fundo_cab",
+          "pa_esq_fundo_opo",
+          "pa_esq_frente_cab",
+          "pa_esq_frente_opo",
+          "pa_dir_fundo_cab",
+          "pa_dir_fundo_opo",
+          "pa_dir_frente_cab",
+          "pa_dir_frente_opo",
+          "circ_meio_cab",
+          "circ_meio_opo",
+          "circ_esq",
+          "circ_dir",
+          "centro",
+          "penalti_esq",
+          "penalti_dir",
+          "ml_esq_cab",
+          "ml_esq_opo",
+          "ml_esq_topo",
+          "ml_dir_cab",
+          "ml_dir_opo",
+          "ml_dir_topo",
+          "gol_esq_pe_cab",
+          "gol_esq_pe_opo",
+          "gol_esq_topo_cab",
+          "gol_esq_topo_opo",
+          "gol_dir_pe_cab",
+          "gol_dir_pe_opo",
+          "gol_dir_topo_cab",
+          "gol_dir_topo_opo"
+        ]
+      },
+      "off": {
+        "canais": 2,
+        "o_que": "deslocamento sub-pixel (x, y) na célula, em [0, 1]"
+      },
+      "el": {
+        "canais": 26,
+        "ativacao": "sigmoide",
+        "nomes": [
+          "lateral_cab",
+          "lateral_opo",
+          "fundo_esq",
+          "fundo_dir",
+          "meio",
+          "grande_area_esq_cab",
+          "grande_area_esq_opo",
+          "grande_area_esq_frente",
+          "grande_area_dir_cab",
+          "grande_area_dir_opo",
+          "grande_area_dir_frente",
+          "pequena_area_esq_cab",
+          "pequena_area_esq_opo",
+          "pequena_area_esq_frente",
+          "pequena_area_dir_cab",
+          "pequena_area_dir_opo",
+          "pequena_area_dir_frente",
+          "circulo_central",
+          "meia_lua_esq",
+          "meia_lua_dir",
+          "gol_esq_trave_cab",
+          "gol_esq_trave_opo",
+          "gol_esq_travessao",
+          "gol_dir_trave_cab",
+          "gol_dir_trave_opo",
+          "gol_dir_travessao"
+        ]
+      },
+      "person": {
+        "canais": 1,
+        "o_que": "pessoas (só nos dados sintéticos; não ajustado nos reais)"
+      }
+    },
+    "onnx": {
+      "arquivo": "detector.onnx",
+      "entrada": {
+        "nome": "imagem",
+        "forma": [
+          1,
+          3,
+          72,
+          128
+        ],
+        "tipo": "float32"
+      },
+      "saidas": {
+        "kp": [
+          1,
+          43,
+          36,
+          64
+        ],
+        "off": [
+          1,
+          2,
+          36,
+          64
+        ]
+      },
+      "o_que": "a mesma rede, só com os mapas dos pontos (kp, logits) e o deslocamento (off, com a sigmoide)"
+    },
+    "decodificacao": {
+      "limiar": 0.3,
+      "nms_celulas": 2.0,
+      "regra": "o pico de cada canal (um ponto por canal), x = (jx + ox) * 2 na entrada; dois canais a até nms_celulas células: fica o de maior escore; só os 39 pontos que se marcam",
+      "pixels": "contínuos: o primeiro pixel vai de 0 a 1 (centro em 0,5)"
+    },
+    "nomes": {
+      "canonicos": true,
+      "regra": "os nomes de quem olha do lado canônico: o semiespaço sin(45°)·Cx − cos(45°)·Cy ≥ 0 (a câmera principal e as de trás do gol direito); do outro lado, os nomes reais são os canônicos girados 180°",
+      "giro": {
+        "canto_esq_cab": "canto_dir_opo",
+        "canto_esq_opo": "canto_dir_cab",
+        "canto_dir_cab": "canto_esq_opo",
+        "canto_dir_opo": "canto_esq_cab",
+        "meio_cab": "meio_opo",
+        "meio_opo": "meio_cab",
+        "ga_esq_fundo_cab": "ga_dir_fundo_opo",
+        "ga_esq_fundo_opo": "ga_dir_fundo_cab",
+        "ga_esq_frente_cab": "ga_dir_frente_opo",
+        "ga_esq_frente_opo": "ga_dir_frente_cab",
+        "ga_dir_fundo_cab": "ga_esq_fundo_opo",
+        "ga_dir_fundo_opo": "ga_esq_fundo_cab",
+        "ga_dir_frente_cab": "ga_esq_frente_opo",
+        "ga_dir_frente_opo": "ga_esq_frente_cab",
+        "pa_esq_fundo_cab": "pa_dir_fundo_opo",
+        "pa_esq_fundo_opo": "pa_dir_fundo_cab",
+        "pa_esq_frente_cab": "pa_dir_frente_opo",
+        "pa_esq_frente_opo": "pa_dir_frente_cab",
+        "pa_dir_fundo_cab": "pa_esq_fundo_opo",
+        "pa_dir_fundo_opo": "pa_esq_fundo_cab",
+        "pa_dir_frente_cab": "pa_esq_frente_opo",
+        "pa_dir_frente_opo": "pa_esq_frente_cab",
+        "circ_meio_cab": "circ_meio_opo",
+        "circ_meio_opo": "circ_meio_cab",
+        "circ_esq": "circ_dir",
+        "circ_dir": "circ_esq",
+        "centro": "centro",
+        "penalti_esq": "penalti_dir",
+        "penalti_dir": "penalti_esq",
+        "ml_esq_cab": "ml_dir_opo",
+        "ml_esq_opo": "ml_dir_cab",
+        "ml_esq_topo": "ml_dir_topo",
+        "ml_dir_cab": "ml_esq_opo",
+        "ml_dir_opo": "ml_esq_cab",
+        "ml_dir_topo": "ml_esq_topo",
+        "gol_esq_pe_cab": "gol_dir_pe_opo",
+        "gol_esq_pe_opo": "gol_dir_pe_cab",
+        "gol_esq_topo_cab": "gol_dir_topo_opo",
+        "gol_esq_topo_opo": "gol_dir_topo_cab",
+        "gol_dir_pe_cab": "gol_esq_pe_opo",
+        "gol_dir_pe_opo": "gol_esq_pe_cab",
+        "gol_dir_topo_cab": "gol_esq_topo_opo",
+        "gol_dir_topo_opo": "gol_esq_topo_cab"
+      },
+      "marcaveis": [
+        "canto_esq_cab",
+        "canto_esq_opo",
+        "canto_dir_cab",
+        "canto_dir_opo",
+        "meio_cab",
+        "meio_opo",
+        "ga_esq_fundo_cab",
+        "ga_esq_fundo_opo",
+        "ga_esq_frente_cab",
+        "ga_esq_frente_opo",
+        "ga_dir_fundo_cab",
+        "ga_dir_fundo_opo",
+        "ga_dir_frente_cab",
+        "ga_dir_frente_opo",
+        "pa_esq_fundo_cab",
+        "pa_esq_fundo_opo",
+        "pa_esq_frente_cab",
+        "pa_esq_frente_opo",
+        "pa_dir_fundo_cab",
+        "pa_dir_fundo_opo",
+        "pa_dir_frente_cab",
+        "pa_dir_frente_opo",
+        "circ_meio_cab",
+        "circ_meio_opo",
+        "centro",
+        "penalti_esq",
+        "penalti_dir",
+        "ml_esq_cab",
+        "ml_esq_opo",
+        "ml_dir_cab",
+        "ml_dir_opo",
+        "gol_esq_pe_cab",
+        "gol_esq_pe_opo",
+        "gol_esq_topo_cab",
+        "gol_esq_topo_opo",
+        "gol_dir_pe_cab",
+        "gol_dir_pe_opo",
+        "gol_dir_topo_cab",
+        "gol_dir_topo_opo"
+      ],
+      "nao_marcaveis": [
+        "circ_esq",
+        "circ_dir",
+        "ml_esq_topo",
+        "ml_dir_topo"
+      ]
+    },
+    "camera": {
+      "ransac_limiar_px": 8.0,
+      "min_inliers": 5,
+      "max_rms_px": 3.0,
+      "posicao_principal": false,
+      "referencia_px": 960
+    }
+  },
+  "metricas": {
+    "validacao": null,
+    "validacao_cruzada": null,
+    "teste_congelado": null
+  },
+  "criterio_m2": null,
+  "verificacao_modelo_py": {
+    "conferido": true,
+    "maior_diferenca_mapas": 0.0,
+    "maior_diferenca_pontos_px": 0.0,
+    "pontos_comparados": 46
+  },
+  "verificacao_onnx": {
+    "conferido": true,
+    "maior_diferenca_kp": 2.384185791015625e-06,
+    "maior_diferenca_off": 5.960464477539063e-08
+  }
+}
